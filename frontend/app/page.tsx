@@ -9,6 +9,7 @@ const navCards = [
   { href: '/agent',     title: 'Run Agent',           description: 'Execute tasks with real-time streaming output.', icon: '🤖', primary: true },
   { href: '/history',   title: 'History',              description: 'Browse past executions and their results.',      icon: '📋' },
   { href: '/costs',     title: 'Budget',               description: 'Track spending and enforce your monthly cap.',   icon: '💰' },
+  { href: '/analytics', title: 'Analytics',            description: 'Review trends, model performance, and tool usage.', icon: '📈' },
   { href: '/documents', title: 'Documents',            description: 'Upload files for the agent to search and use.',  icon: '📄' },
   { href: '/settings',  title: 'Settings',             description: 'Configure models, tools, and preferences.',      icon: '⚙️' },
   { href: '/commands',  title: 'Commands & Reference', description: 'CLI shortcuts, Telegram commands, API routes.',  icon: '📖' },
@@ -90,10 +91,10 @@ export default function DashboardPage() {
   }, [load])
 
   const budgetBarColor =
-    !stats.budget       ? 'bg-indigo-500' :
-    stats.budget.percent >= 90 ? 'bg-red-500' :
-    stats.budget.percent >= 70 ? 'bg-yellow-500' :
-    'bg-indigo-500'
+    !stats.budget       ? 'accent-indigo-500' :
+    stats.budget.percent >= 90 ? 'accent-red-500' :
+    stats.budget.percent >= 70 ? 'accent-yellow-500' :
+    'accent-indigo-500'
 
   const budgetTextColor =
     !stats.budget       ? 'text-gray-400' :
@@ -149,12 +150,11 @@ export default function DashboardPage() {
               {loading ? '…' : stats.budget ? `${stats.budget.percent.toFixed(1)}%` : 'N/A'}
             </span>
           </div>
-          <div className="h-2 bg-gray-800 rounded-full overflow-hidden mb-3">
-            <div
-              className={`h-full rounded-full transition-all ${budgetBarColor}`}
-              style={{ width: loading || !stats.budget ? '0%' : `${Math.min(stats.budget.percent, 100)}%` }}
-            />
-          </div>
+          <progress
+            className={`w-full h-2 mb-3 ${budgetBarColor}`}
+            max={100}
+            value={loading || !stats.budget ? 0 : Math.min(stats.budget.percent, 100)}
+          />
           <div className="flex justify-between text-xs text-gray-500">
             <span>spent today: <span className="text-gray-300">{loading || !stats.budget ? '…' : formatCost(stats.budget.spent_today)}</span></span>
             <span>remaining: <span className="text-gray-300">{loading || !stats.budget ? '…' : formatCost(stats.budget.remaining)}</span></span>
@@ -219,7 +219,7 @@ export default function DashboardPage() {
                     key={model}
                     className={`px-5 py-3 flex items-center gap-3 ${i < arr.length - 1 ? 'border-b border-gray-800' : ''}`}
                   >
-                    <span className="text-sm text-gray-300 truncate flex-1 font-mono text-xs">
+                    <span className="text-xs text-gray-300 truncate flex-1 font-mono">
                       {shortModel(model)}
                     </span>
                     <span className="text-xs text-gray-500 shrink-0">{info.calls} call{info.calls !== 1 ? 's' : ''}</span>

@@ -36,6 +36,36 @@ export async function getCostStatus() {
   return res.json()
 }
 
+export async function getAnalyticsOverview() {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/overview`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch analytics overview (${res.status})`)
+  return res.json()
+}
+
+export async function getAnalyticsDaily(days = 7) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/daily?days=${days}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch analytics daily (${res.status})`)
+  return res.json()
+}
+
+export async function getAnalyticsModels(days = 30) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/models?days=${days}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch analytics models (${res.status})`)
+  return res.json()
+}
+
+export async function getAnalyticsTools(days = 30) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/tools?days=${days}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch analytics tools (${res.status})`)
+  return res.json()
+}
+
+export async function getAnalyticsAlerts(days = 30) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/alerts?days=${days}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch analytics alerts (${res.status})`)
+  return res.json()
+}
+
 export async function getHistory(limit = 20, offset = 0) {
   const res = await fetchWithTimeout(`${API_URL}/history?limit=${limit}&offset=${offset}`, {
     headers: headers(),
