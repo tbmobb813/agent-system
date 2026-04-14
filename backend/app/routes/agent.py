@@ -10,6 +10,7 @@ And store orchestrator/cost_tracker on app.state in lifespan:
     app.state.agent_orchestrator = AgentOrchestrator(cost_tracker=app.state.cost_tracker)
 """
 
+import asyncio
 import uuid
 import time
 import logging
@@ -143,7 +144,7 @@ async def stream_agent(
             model_used = None
             got_done = False
 
-            async for event in orchestrator.stream(
+            _stream = orchestrator.stream(
                 query=body.query,
                 context=body.context,
                 tools=body.tools,
@@ -151,7 +152,23 @@ async def stream_agent(
                 max_iterations=body.max_iterations,
                 task_id=task_id,
                 conversation_id=body.conversation_id,
-            ):
+            )
+            while True:
+                try:
+                    event = await asyncio.wait_for(
+                        _stream.__anext__(),
+                        timeout=settings.MAX_STREAM_SECONDS,
+                    )
+                except StopAsyncIteration:
+                    break
+                except asyncio.TimeoutError:
+                    status = "failed"
+                    yield format_sse_event({
+                        "type": "error",
+                        "error": f"Run timed out after {settings.MAX_STREAM_SECONDS}s",
+                    })
+                    return
+
                 data = event.model_dump(mode="json")
                 if event.type.value == "text_delta" and event.content:
                     result_parts.append(event.content)

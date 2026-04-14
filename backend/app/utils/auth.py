@@ -4,6 +4,7 @@ Authentication and authorization utilities.
 
 import asyncio
 import hashlib
+import hmac
 import logging
 from fastapi import HTTPException, Header
 from typing import Optional
@@ -41,8 +42,8 @@ async def verify_api_key(
     # Master key bypass — accepts BACKEND_API_KEY and any additional keys in
     # BACKEND_EXTRA_KEYS (comma-separated). Skips DB validation entirely.
     from app.config import settings as app_settings
-    allowed = {k.strip() for k in app_settings.BACKEND_API_KEY.split(",") if k.strip()}
-    if token in allowed:
+    allowed = [k.strip() for k in app_settings.BACKEND_API_KEY.split(",") if k.strip()]
+    if any(hmac.compare_digest(token, k) for k in allowed):
         logger.debug(f"API key accepted via master key bypass: {token[:20]}...")
         return token
 

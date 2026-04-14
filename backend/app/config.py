@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     # Agent — must reliably support function calling; Haiku is the sweet spot
     DEFAULT_MODEL_AGENT: str = Field(default="anthropic/claude-3.5-haiku")
     
+    # Execution limits
+    MAX_STREAM_SECONDS: int = Field(default=300)  # Wall-clock timeout for SSE runs
+
     # Context limits
     MAX_CONTEXT_TOKENS: int = Field(default=128000)
     CONTEXT_TRIGGER_PERCENT: float = Field(default=0.70)

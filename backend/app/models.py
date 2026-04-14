@@ -31,7 +31,7 @@ class EventType(str, Enum):
 
 class AgentRequest(BaseModel):
     """Request to execute an agent task."""
-    query: str = Field(..., description="Main task/question for the agent")
+    query: str = Field(..., max_length=32_000, description="Main task/question for the agent")
     context: Optional[str] = Field(None, description="Additional context")
     tools: Optional[list[str]] = Field(
         default=None,

@@ -29,11 +29,20 @@ logger = logging.getLogger(__name__)
 
 BACKEND_URL = os.getenv("BACKEND_API_URL", "http://localhost:8000")
 API_KEY = os.getenv("TELEGRAM_BOT_API_KEY", "sk-agent-telegram-bot")
+_ALLOWED_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID", "0"))
 
 HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 
 # Per-chat conversation tracking: {chat_id: conversation_id}
 _chat_conversations: dict[int, str] = {}
+
+
+def _is_authorized(update: Update) -> bool:
+    """Return True only if the message comes from the configured chat ID."""
+    if not _ALLOWED_CHAT_ID:
+        logger.warning("TELEGRAM_CHAT_ID not set — rejecting all messages")
+        return False
+    return update.effective_chat.id == _ALLOWED_CHAT_ID
 
 
 # ============================================================================
@@ -67,6 +76,8 @@ async def _call_backend(method: str, path: str, **kwargs) -> dict | None:
 # ============================================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_authorized(update):
+        return
     await update.message.reply_text(
         "🤖 *Personal AI Agent*\n\n"
         "I can help you with research, writing, coding, and analysis.\n\n"
@@ -82,6 +93,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_authorized(update):
+        return
     await update.message.reply_text(
         "📚 *Command Reference*\n\n"
         "*Bot Commands*\n"
@@ -108,6 +121,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_authorized(update):
+        return
     if not context.args:
         await update.message.reply_text("Usage: /ask <your question>")
         return
@@ -115,6 +130,8 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_authorized(update):
+        return
     if not context.args:
         await update.message.reply_text("Usage: /analyze <text to analyze>")
         return
@@ -122,6 +139,8 @@ async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_authorized(update):
+        return
     if not context.args:
         await update.message.reply_text("Usage: /code <describe what you need>")
         return
@@ -129,6 +148,8 @@ async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_authorized(update):
+        return
     await update.message.chat.send_action(ChatAction.TYPING)
 
     data = await _call_backend("get", "/status/costs")
@@ -153,6 +174,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_authorized(update):
+        return
     await update.message.chat.send_action(ChatAction.TYPING)
 
     data = await _call_backend("get", "/history?limit=5")
@@ -185,6 +208,8 @@ async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def new_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start a fresh conversation thread."""
+    if not _is_authorized(update):
+        return
     chat_id = update.message.chat_id
     _chat_conversations.pop(chat_id, None)
     await update.message.reply_text("🔄 Started a new conversation. Previous context cleared.")
@@ -192,6 +217,8 @@ async def new_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle plain text messages as agent queries."""
+    if not _is_authorized(update):
+        return
     await _process_query(update, update.message.text)
 
 
