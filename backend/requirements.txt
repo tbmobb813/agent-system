@@ -1,0 +1,46 @@
+# Core
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-dotenv
+
+# Database
+asyncpg
+sqlalchemy
+alembic
+supabase
+
+# AI / LLMs
+openai
+
+# HTTP
+requests
+httpx
+
+# Utilities
+aiofiles
+tenacity
+pydantic-extra-types
+python-multipart
+
+# Monitoring & Logging
+python-json-logger
+prometheus-client
+
+# Development
+pytest
+pytest-asyncio
+black
+ruff
+
+# Browser automation
+playwright
+
+# Rate limiting
+slowapi
+
+# Document ingestion
+PyPDF2
+python-docx
+tiktoken

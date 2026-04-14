@@ -1,0 +1,146 @@
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'sk-agent-local-dev'
+
+function headers(): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${API_KEY}`,
+  }
+}
+
+/** Fetch with a timeout. Throws if the server doesn't respond in time. */
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 10000): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') throw new Error('Request timed out')
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export async function getHealth() {
+  const res = await fetchWithTimeout(`${API_URL}/health`)
+  if (!res.ok) throw new Error('Health check failed')
+  return res.json()
+}
+
+export async function getCostBreakdown() {
+  const res = await fetchWithTimeout(`${API_URL}/status/costs/breakdown`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch cost breakdown (${res.status})`)
+  return res.json()
+}
+
+export async function getCostStatus() {
+  const res = await fetchWithTimeout(`${API_URL}/status/costs`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch cost status (${res.status})`)
+  return res.json()
+}
+
+export async function getHistory(limit = 20, offset = 0) {
+  const res = await fetchWithTimeout(`${API_URL}/history?limit=${limit}&offset=${offset}`, {
+    headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Failed to fetch history (${res.status})`)
+  return res.json()
+}
+
+export async function getTaskDetail(taskId: string) {
+  const res = await fetchWithTimeout(`${API_URL}/history/${taskId}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch task (${res.status})`)
+  return res.json()
+}
+
+export async function deleteTask(taskId: string) {
+  const res = await fetchWithTimeout(`${API_URL}/history/${taskId}`, {
+    method: 'DELETE',
+    headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Failed to delete task (${res.status})`)
+  return res.json()
+}
+
+export async function getSettings() {
+  const res = await fetchWithTimeout(`${API_URL}/settings`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch settings (${res.status})`)
+  return res.json()
+}
+
+export async function updateSettings(data: object) {
+  const res = await fetchWithTimeout(`${API_URL}/settings`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(`Failed to update settings (${res.status})`)
+  return res.json()
+}
+
+export async function getTools() {
+  const res = await fetchWithTimeout(`${API_URL}/tools`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch tools (${res.status})`)
+  return res.json()
+}
+
+export async function stopAgent(taskId: string) {
+  const res = await fetchWithTimeout(`${API_URL}/agent/stop?task_id=${taskId}`, {
+    method: 'POST',
+    headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Stop failed (${res.status})`)
+  return res.json()
+}
+
+/** Returns raw Response with SSE body for streaming. */
+export function streamAgent(query: string, context?: string, tools?: string[], conversationId?: string) {
+  return fetch(`${API_URL}/agent/stream`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ query, context, tools, conversation_id: conversationId ?? null }),
+  })
+}
+
+export async function getDocuments(limit = 20, offset = 0) {
+  const res = await fetchWithTimeout(`${API_URL}/documents?limit=${limit}&offset=${offset}`, {
+    headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Failed to fetch documents (${res.status})`)
+  return res.json()
+}
+
+export async function uploadDocument(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${API_URL}/documents/upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${API_KEY}` },
+    body: form,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || `Upload failed (${res.status})`)
+  }
+  return res.json()
+}
+
+export async function deleteDocument(documentId: string) {
+  const res = await fetchWithTimeout(`${API_URL}/documents/${documentId}`, {
+    method: 'DELETE',
+    headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Failed to delete document (${res.status})`)
+  return res.json()
+}
+
+export async function runAgent(query: string, context?: string, tools?: string[]) {
+  const res = await fetch(`${API_URL}/agent/run`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ query, context, tools }),
+  })
+  if (!res.ok) throw new Error('Agent run failed')
+  return res.json()
+}

@@ -1,0 +1,129 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database (for local development)
+  # In production, use Supabase managed database
+  postgres:
+    image: postgres:16-alpine
+    container_name: agent-db
+    environment:
+      POSTGRES_DB: agent_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: agent-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - DATABASE_URL=postgresql://postgres:postgres_dev_password@postgres:5432/agent_db
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:3000","http://localhost:8000"]}
+      - SEARXNG_URL=${SEARXNG_URL:-http://localhost:8888}
+      - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY:-}
+      - E2B_API_KEY=${E2B_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/app/app
+    command: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+    networks:
+      - agent-network
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: agent-frontend
+    ports:
+      - "3003:3003"
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      - NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_KEY}
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
+    networks:
+      - agent-network
+
+  # Telegram Bot
+  telegram-bot:
+    build:
+      context: ./telegram-bot
+      dockerfile: Dockerfile.dev
+    container_name: agent-telegram
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - BACKEND_API_URL=http://backend:8000
+      - TELEGRAM_BOT_API_KEY=sk-agent-telegram-bot
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+  # Redis Cache (optional, for future session/rate limit caching)
+  redis:
+    image: redis:7-alpine
+    container_name: agent-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agent-network
+
+volumes:
+  postgres_data:
+
+networks:
+  agent-network:
+    driver: bridge
+
+# Usage:
+# Development (hot reload):
+#   docker-compose up
+#
+# View logs:
+#   docker-compose logs -f backend
+#   docker-compose logs -f frontend
+#
+# Stop:
+#   docker-compose down
+#
+# Reset database:
+#   docker-compose down -v
+#   docker-compose up
+#
+# Access:
+#   Frontend: http://localhost:3000
+#   Backend API: http://localhost:8000
+#   API Docs: http://localhost:8000/docs
+#   Database: postgres://postgres:postgres_dev_password@localhost:5432/agent_db

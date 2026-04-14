@@ -1,0 +1,8 @@
+# Telegram Bot
+python-telegram-bot[job-queue]
+
+# HTTP requests
+httpx
+
+# Utilities
+python-dotenv
