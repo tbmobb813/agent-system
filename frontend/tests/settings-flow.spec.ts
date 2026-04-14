@@ -16,14 +16,14 @@ test('settings page: load and update settings', async ({ page }) => {
           timezone: 'UTC',
         }),
       })
-    } else if (method === 'PUT') {
+    } else if (method === 'POST') {
       const body = await route.request().postDataJSON()
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          ...body,
-          success: true,
+          status: 'updated',
+          settings: body,
         }),
       })
     } else {
@@ -53,4 +53,8 @@ test('settings page: load and update settings', async ({ page }) => {
 
   const autosaveCheckbox = page.locator('input[id="autosave"]')
   await expect(autosaveCheckbox).not.toBeChecked()
+
+  await budgetInput.fill('75')
+  await page.getByRole('button', { name: 'Save Settings' }).click()
+  await expect(page.getByText('Saved!')).toBeVisible()
 })

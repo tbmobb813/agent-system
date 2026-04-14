@@ -180,3 +180,63 @@ async def test_get_context_for_query_formats_chunks(monkeypatch):
     assert '[a.txt — chunk 0]' in ctx
     assert '[b.txt — chunk 1]' in ctx
     assert len(ctx) < 2600
+
+
+async def test_vector_search_docs_returns_rows(monkeypatch):
+    from app.agent.documents import _vector_search_docs
+
+    fake_conn = AsyncMock()
+    fake_conn.fetch = AsyncMock(return_value=[{'id': 'c1', 'content': 'alpha'}])
+
+    class FakePool:
+        def acquire(self):
+            return AsyncContextManager(fake_conn)
+
+    monkeypatch.setattr('app.agent.documents._db.db_pool', FakePool())
+
+    rows = await _vector_search_docs([0.1, 0.2], 'u1', 3, None)
+
+    assert len(rows) == 1
+    assert rows[0]['id'] == 'c1'
+
+
+async def test_fulltext_search_docs_returns_rows(monkeypatch):
+    from app.agent.documents import _fulltext_search_docs
+
+    fake_conn = AsyncMock()
+    fake_conn.fetch = AsyncMock(return_value=[{'id': 'c2', 'content': 'beta'}])
+
+    class FakePool:
+        def acquire(self):
+            return AsyncContextManager(fake_conn)
+
+    monkeypatch.setattr('app.agent.documents._db.db_pool', FakePool())
+
+    rows = await _fulltext_search_docs('query', 'u1', 2, None)
+
+    assert len(rows) == 1
+    assert rows[0]['id'] == 'c2'
+
+
+async def test_ingest_document_truncates_chunk_count(monkeypatch):
+    fake_conn = AsyncMock()
+
+    class FakePool:
+        def acquire(self):
+            return AsyncContextManager(fake_conn)
+
+    async def fake_embed(_text):
+        return [0.1, 0.2]
+
+    monkeypatch.setattr('app.agent.documents._db.db_pool', FakePool())
+    monkeypatch.setattr('app.agent.documents.MAX_CHUNKS', 2)
+    monkeypatch.setattr('app.agent.documents.parse_document', lambda _f, _d: 'doc text')
+    monkeypatch.setattr('app.agent.documents._token_chunks', lambda _t: ['c1', 'c2', 'c3'])
+    monkeypatch.setattr('app.agent.documents._count_tokens', lambda _c: 5)
+    monkeypatch.setattr('app.agent.documents._embed', fake_embed)
+
+    out = await ingest_document('test.txt', b'data', user_id='u1')
+
+    assert out['chunk_count'] == 2
+    # document insert + 2 chunk inserts
+    assert fake_conn.execute.await_count == 3

@@ -19,6 +19,12 @@ class DummyCostTracker:
     async def get_last_call_cost(self) -> float:
         return self._last_cost
 
+    def get_last_model(self) -> str | None:
+        return 'test-model'
+
+    def get_last_usage(self) -> dict:
+        return {'input': 10, 'output': 5}
+
 
 class DummyOrchestrator:
     async def run(self, **kwargs):
@@ -60,6 +66,8 @@ async def test_run_agent_returns_completed_response():
         assert payload['result'] == 'mocked result'
         assert payload['conversation_id'] == 'conv-123'
         assert payload['cost'] == 0.0025
+        assert payload['model_used'] == 'test-model'
+        assert payload['tokens'] == {'input': 10, 'output': 5}
     finally:
         app.state.agent_orchestrator = original_orch
         app.state.cost_tracker = original_cost
@@ -111,6 +119,38 @@ async def test_stream_agent_emits_budget_error_when_over_budget():
         text = response.text
         assert '"type": "error"' in text
         assert 'Insufficient budget' in text
+    finally:
+        app.state.agent_orchestrator = original_orch
+        app.state.cost_tracker = original_cost
+
+
+class TimeoutStreamOrchestrator:
+    async def stream(self, **kwargs):
+        if False:
+            yield None
+
+
+async def test_stream_agent_times_out_cleanly(monkeypatch):
+    original_orch = getattr(app.state, "agent_orchestrator", None)
+    original_cost = getattr(app.state, "cost_tracker", None)
+    original_timeout = app.state if False else None
+
+    app.state.agent_orchestrator = TimeoutStreamOrchestrator()
+    app.state.cost_tracker = DummyCostTracker(estimate=0.01, spent=0.0)
+
+    monkeypatch.setattr('app.routes.agent.settings.MAX_STREAM_SECONDS', 0)
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.post(
+                '/agent/stream',
+                headers={'Authorization': 'Bearer sk-agent-local-dev'},
+                json={'query': 'will timeout'},
+            )
+
+        assert response.status_code == 200
+        assert 'Run timed out after 0s' in response.text
     finally:
         app.state.agent_orchestrator = original_orch
         app.state.cost_tracker = original_cost
@@ -171,3 +211,86 @@ async def test_stop_agent_rejects_invalid_task_id_format():
         assert response.status_code == 422
     finally:
         app.state.agent_orchestrator = original_orch
+
+
+async def test_run_agent_returns_503_when_orchestrator_missing():
+    original_orch = getattr(app.state, "agent_orchestrator", None)
+    original_cost = getattr(app.state, "cost_tracker", None)
+    app.state.agent_orchestrator = None
+    app.state.cost_tracker = DummyCostTracker(estimate=0.01, spent=0.0)
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.post(
+                '/agent/run',
+                headers={'Authorization': 'Bearer sk-agent-local-dev'},
+                json={'query': 'Say hello'},
+            )
+
+        assert response.status_code == 503
+        assert response.json()['detail'] == 'Agent not ready'
+    finally:
+        app.state.agent_orchestrator = original_orch
+        app.state.cost_tracker = original_cost
+
+
+async def test_run_agent_returns_503_when_cost_tracker_missing():
+    original_orch = getattr(app.state, "agent_orchestrator", None)
+    original_cost = getattr(app.state, "cost_tracker", None)
+    app.state.agent_orchestrator = DummyOrchestrator()
+    app.state.cost_tracker = None
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.post(
+                '/agent/run',
+                headers={'Authorization': 'Bearer sk-agent-local-dev'},
+                json={'query': 'Say hello'},
+            )
+
+        assert response.status_code == 503
+        assert response.json()['detail'] == 'Cost tracker not initialized'
+    finally:
+        app.state.agent_orchestrator = original_orch
+        app.state.cost_tracker = original_cost
+
+
+class DummyToolOrchestrator:
+    def get_available_tools(self):
+        return ['web_search', 'api_call']
+
+
+async def test_list_tools_returns_available_tools():
+    original_orch = getattr(app.state, "agent_orchestrator", None)
+    app.state.agent_orchestrator = DummyToolOrchestrator()
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.get(
+                '/agent/tools',
+                headers={'Authorization': 'Bearer sk-agent-local-dev'},
+            )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload['total'] == 2
+        assert payload['tools'] == ['web_search', 'api_call']
+    finally:
+        app.state.agent_orchestrator = original_orch
+
+
+async def test_list_models_returns_routing_info():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url='http://test') as client:
+        response = await client.get(
+            '/agent/models',
+            headers={'Authorization': 'Bearer sk-agent-local-dev'},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['routing_strategy'] == 'complexity_based'
+    assert isinstance(payload['models'], dict)

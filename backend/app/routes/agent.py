@@ -109,6 +109,17 @@ async def stream_agent(
     user_id = body.user_id
     started_at = datetime.utcnow()
 
+    async def _persist_terminal_status(status: str):
+        if not _db.db_pool:
+            return
+        try:
+            await execute(
+                "UPDATE tasks SET status = $1, completed_at = $2 WHERE id = $3",
+                status, datetime.utcnow(), task_id,
+            )
+        except Exception as e:
+            logger.warning(f"Could not update task status: {e}")
+
     async def generate():
         try:
             estimated_cost = await cost_tracker.estimate_cost(body.query)
@@ -163,6 +174,7 @@ async def stream_agent(
                     break
                 except asyncio.TimeoutError:
                     status = "failed"
+                    await _persist_terminal_status(status)
                     yield format_sse_event({
                         "type": "error",
                         "error": f"Run timed out after {settings.MAX_STREAM_SECONDS}s",
@@ -207,14 +219,8 @@ async def stream_agent(
                 yield format_sse_event(data)
 
             # Stream ended without DONE (stopped or interrupted) — update DB
-            if not got_done and db_pool:
-                try:
-                    await execute(
-                        "UPDATE tasks SET status = $1, completed_at = $2 WHERE id = $3",
-                        status, datetime.utcnow(), task_id,
-                    )
-                except Exception as e:
-                    logger.warning(f"Could not update stopped task: {e}")
+            if not got_done:
+                await _persist_terminal_status(status)
 
         except Exception as e:
             logger.error(f"Stream error: {e}", exc_info=True)
