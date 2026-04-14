@@ -6,7 +6,9 @@ Enforces $30/month budget and tracks spending per model.
 from pydantic_settings import BaseSettings
 from pydantic import Field
 from datetime import datetime, timedelta
+import calendar
 import os
+import time
 import logging
 from typing import Optional
 import asyncpg
@@ -126,10 +128,12 @@ class CostTracker:
     def __init__(self):
         """Initialize cost tracker."""
         self.db_pool: Optional[asyncpg.Pool] = None
-        self.spending_cache = {}
-        self.last_call_cost = 0.0
-        self.last_model: Optional[str] = None
-        self.last_usage: Optional[dict] = None
+        # Monthly-spend TTL cache — avoids a DB aggregate on every request
+        self._spent_cache: float = 0.0
+        self._spent_cache_ts: float = 0.0
+        self._SPENT_CACHE_TTL: float = 15.0  # seconds
+        # Per-task call info — keyed by task_id so concurrent runs don't clobber each other
+        self._call_info: dict[str, dict] = {}
     
     async def initialize(self, database_url: str):
         """Initialize database connection pool."""
@@ -188,39 +192,51 @@ class CostTracker:
         output_cost = (output_tokens / 1_000_000) * pricing["output"]
         total_cost = input_cost + output_cost
         
-        self.last_call_cost = total_cost
-        self.last_model = model
-        self.last_usage = {"input": input_tokens, "output": output_tokens}
-
         # Store in database
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO cost_tracking (task_id, model, input_tokens, output_tokens, cost)
                 VALUES ($1, $2, $3, $4, $5)
             """, task_id, model, input_tokens, output_tokens, total_cost)
-        
+
+        # Store per-task so concurrent runs don't clobber each other
+        self._call_info[task_id] = {
+            "cost": total_cost,
+            "model": model,
+            "usage": {"input": input_tokens, "output": output_tokens},
+        }
+
+        # Invalidate the spend cache so the next read reflects this call
+        self._spent_cache_ts = 0.0
+
         # Check budget and fire alerts
-        spent_today = await self.get_spent_today()
+        spent_month = await self.get_spent_today()
         try:
             from app.utils.alerts import alert_manager
-            await alert_manager.check_and_notify(spent_today, settings.OPENROUTER_BUDGET_MONTHLY)
+            await alert_manager.check_and_notify(spent_month, settings.OPENROUTER_BUDGET_MONTHLY)
         except Exception as e:
             logger.warning(f"Budget alert failed: {e}")
 
         return total_cost
     
     async def get_spent_today(self) -> float:
-        """Get total spending from the start of the month."""
+        """Get total spending from the start of the month (cached for 15s)."""
         if not self.db_pool:
             return 0.0
-        
+
+        now = time.monotonic()
+        if now - self._spent_cache_ts < self._SPENT_CACHE_TTL:
+            return self._spent_cache
+
         async with self.db_pool.acquire() as conn:
             result = await conn.fetchval("""
                 SELECT COALESCE(SUM(cost), 0) FROM cost_tracking
                 WHERE DATE(created_at) >= DATE_TRUNC('month', NOW())
             """)
-        
-        return float(result or 0.0)
+
+        self._spent_cache = float(result or 0.0)
+        self._spent_cache_ts = now
+        return self._spent_cache
     
     async def get_spent_today_date(self) -> float:
         """Get spending from today only (for daily alerts)."""
@@ -258,6 +274,10 @@ class CostTracker:
         remaining = settings.OPENROUTER_BUDGET_MONTHLY - spent
         percent = (spent / settings.OPENROUTER_BUDGET_MONTHLY) * 100
         
+        now = datetime.now()
+        last_day = calendar.monthrange(now.year, now.month)[1]
+        reset = datetime(now.year, now.month, last_day, 23, 59, 59) + timedelta(seconds=1)
+
         return {
             "budget": settings.OPENROUTER_BUDGET_MONTHLY,
             "spent_month": spent,
@@ -265,20 +285,31 @@ class CostTracker:
             "remaining": max(0, remaining),
             "percent_used": percent,
             "status": "ok" if remaining > 0 else "exceeded",
-            "reset_date": (datetime.now() + timedelta(days=30)).isoformat(),
+            "reset_date": reset.isoformat(),
         }
-    
-    async def get_last_call_cost(self) -> float:
-        """Get cost of the last API call."""
-        return self.last_call_cost
 
-    def get_last_model(self) -> Optional[str]:
-        """Get the model used in the last tracked call."""
-        return self.last_model
+    def _pop_call_info(self, task_id: str) -> dict:
+        """Return and remove per-task call info. Falls back to zeros if missing."""
+        return self._call_info.pop(task_id, {"cost": 0.0, "model": None, "usage": None})
 
-    def get_last_usage(self) -> Optional[dict]:
-        """Get token counts from the last tracked call."""
-        return self.last_usage
+    async def get_last_call_cost(self, task_id: Optional[str] = None) -> float:
+        """Get cost of the last API call for a task (or most recent if no task_id)."""
+        if task_id and task_id in self._call_info:
+            return self._call_info[task_id]["cost"]
+        # Fallback: most recently inserted entry
+        return next(reversed(self._call_info.values()), {}).get("cost", 0.0)
+
+    def get_last_model(self, task_id: Optional[str] = None) -> Optional[str]:
+        """Get the model used in the last tracked call for a task."""
+        if task_id and task_id in self._call_info:
+            return self._call_info[task_id]["model"]
+        return next(reversed(self._call_info.values()), {}).get("model")
+
+    def get_last_usage(self, task_id: Optional[str] = None) -> Optional[dict]:
+        """Get token counts from the last tracked call for a task."""
+        if task_id and task_id in self._call_info:
+            return self._call_info[task_id]["usage"]
+        return next(reversed(self._call_info.values()), {}).get("usage")
     
     def get_model_pricing(self, model: str) -> dict:
         """Get pricing for a specific model."""

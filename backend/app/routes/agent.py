@@ -86,9 +86,9 @@ async def run_agent(
         query=body.query,
         result=result,
         status="completed",
-        cost=await cost_tracker.get_last_call_cost(),
-        model_used=cost_tracker.get_last_model(),
-        tokens=cost_tracker.get_last_usage(),
+        cost=await cost_tracker.get_last_call_cost(task_id=None),
+        model_used=cost_tracker.get_last_model(task_id=None),
+        tokens=cost_tracker.get_last_usage(task_id=None),
         execution_time=round(elapsed, 3),
         conversation_id=conv_id,
     )
@@ -192,7 +192,7 @@ async def stream_agent(
                     status = "stopped"
                 if event.type.value == "done":
                     got_done = True
-                    final_cost = await cost_tracker.get_last_call_cost()
+                    final_cost = await cost_tracker.get_last_call_cost(task_id=task_id)
                     data["cost"] = final_cost
                     # Persist completed task
                     if _db.db_pool:

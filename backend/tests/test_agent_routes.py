@@ -16,13 +16,13 @@ class DummyCostTracker:
     async def get_spent_today(self) -> float:
         return self._spent
 
-    async def get_last_call_cost(self) -> float:
+    async def get_last_call_cost(self, task_id=None) -> float:
         return self._last_cost
 
-    def get_last_model(self) -> str | None:
+    def get_last_model(self, task_id=None) -> str | None:
         return 'test-model'
 
-    def get_last_usage(self) -> dict:
+    def get_last_usage(self, task_id=None) -> dict:
         return {'input': 10, 'output': 5}
 
 

@@ -1,8 +1,55 @@
 'use client'
 
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import { useAgentStream, StreamEvent } from '@/lib/hooks'
 import { formatCost } from '@/lib/utils'
+
+const MarkdownContent = dynamic(() => import('./MarkdownContent'), { ssr: false })
+
+function ToolCallEvent({ event }: { event: StreamEvent }) {
+  const [open, setOpen] = useState(false)
+  const hasInput = !!event.tool_input && Object.keys(event.tool_input).length > 0
+  return (
+    <div className="bg-gray-800 rounded p-2 text-xs">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 w-full text-left"
+      >
+        <span className="text-yellow-400 font-medium">⚙ {event.tool_name}</span>
+        {hasInput && (
+          <span className="text-gray-500 ml-auto">{open ? '▲ hide' : '▼ show'}</span>
+        )}
+      </button>
+      {open && hasInput && (
+        <pre className="mt-2 text-gray-400 overflow-x-auto whitespace-pre-wrap">
+          {JSON.stringify(event.tool_input, null, 2)}
+        </pre>
+      )}
+    </div>
+  )
+}
+
+function ToolResultEvent({ event }: { event: StreamEvent }) {
+  const text = String(event.tool_result ?? '')
+  const [open, setOpen] = useState(false)
+  const truncated = text.length > 300
+  const preview = truncated ? text.slice(0, 300) + '…' : text
+  return (
+    <div className="text-green-400 text-xs bg-gray-800 rounded p-2">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 w-full text-left"
+        disabled={!truncated}
+      >
+        <span>✓ {open ? text : preview}</span>
+        {truncated && (
+          <span className="text-gray-500 ml-auto shrink-0">{open ? '▲ less' : '▼ more'}</span>
+        )}
+      </button>
+    </div>
+  )
+}
 
 function EventLine({ event }: { event: StreamEvent }) {
   switch (event.type) {
@@ -11,25 +58,15 @@ function EventLine({ event }: { event: StreamEvent }) {
     case 'thinking':
       return <p className="text-purple-400 text-sm italic">💭 {event.content}</p>
     case 'tool_call':
+      return <ToolCallEvent event={event} />
+    case 'tool_result':
+      return <ToolResultEvent event={event} />
+    case 'text_delta':
       return (
-        <div className="bg-gray-800 rounded p-2 text-xs space-y-1">
-          <span className="text-yellow-400 font-medium">⚙ {event.tool_name}</span>
-          {event.tool_input && (
-            <pre className="text-gray-400 overflow-x-auto whitespace-pre-wrap">
-              {JSON.stringify(event.tool_input, null, 2)}
-            </pre>
-          )}
+        <div className="text-gray-100 text-sm">
+          <MarkdownContent content={event.content ?? ''} />
         </div>
       )
-    case 'tool_result':
-      return (
-        <p className="text-green-400 text-xs bg-gray-800 rounded p-2">
-          ✓ {String(event.tool_result ?? '').slice(0, 400)}
-          {(event.tool_result?.length ?? 0) > 400 ? '…' : ''}
-        </p>
-      )
-    case 'text_delta':
-      return <span className="text-gray-100 whitespace-pre-wrap">{event.content}</span>
     case 'done':
       return (
         <p className="text-green-400 text-sm border-t border-gray-800 pt-2 mt-1">
@@ -76,6 +113,7 @@ export default function AgentExecutor() {
   const [context, setContext] = useState('')
   const [copyLabel, setCopyLabel] = useState('Copy response')
   const { events, isRunning, error, conversationId, run, reset, stop, newConversation } = useAgentStream()
+
   // Merge consecutive text_delta events into a single node for cleaner rendering
   const merged: StreamEvent[] = []
   for (const ev of events) {
@@ -109,10 +147,12 @@ export default function AgentExecutor() {
 
   const isDone = merged.some(ev => ev.type === 'done')
 
-  // Auto-scroll page to bottom as new events arrive
+  const eventsEndRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll the events container to bottom as new events arrive
   useEffect(() => {
     requestAnimationFrame(() => {
-      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })
+      eventsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     })
   }, [events, isRunning])
 
@@ -125,7 +165,6 @@ export default function AgentExecutor() {
 
   const handleDownload = useCallback(() => {
     if (!responseText) return
-    // Use the written filename if there was exactly one file write, else a generic name
     const writes = merged.filter(ev => ev.type === 'tool_call' && ev.tool_name === 'file_operations' && ev.tool_input?.operation === 'write')
     const filename = writes.length === 1
       ? String(writes[0].tool_input?.path ?? '').split('/').pop() || `agent-response-${Date.now()}.txt`
@@ -154,115 +193,123 @@ export default function AgentExecutor() {
   }
 
   return (
-    <div className="space-y-4">
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">Query</label>
-          <textarea
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="What do you want the agent to do? (Ctrl+Enter to run)"
-            rows={3}
-            disabled={isRunning}
-            className="w-full bg-gray-900 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:outline-none focus:border-indigo-500 resize-none disabled:opacity-50"
-          />
-        </div>
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">Context (optional)</label>
-          <textarea
-            value={context}
-            onChange={e => setContext(e.target.value)}
-            placeholder="Additional context or constraints..."
-            rows={2}
-            disabled={isRunning}
-            className="w-full bg-gray-900 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:outline-none focus:border-indigo-500 resize-none disabled:opacity-50"
-          />
-        </div>
-        <div className="flex gap-3 items-center flex-wrap">
-          <button
-            type="submit"
-            disabled={isRunning || !query.trim()}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium disabled:opacity-50 transition-colors"
-          >
-            {isRunning ? 'Running…' : 'Run Agent'}
-          </button>
-          {isRunning && (
-            <button
-              type="button"
-              onClick={stop}
-              className="px-4 py-2 bg-red-900/60 hover:bg-red-800 text-red-300 rounded-lg text-sm transition-colors"
-            >
-              Stop
-            </button>
-          )}
-          {(merged.length > 0 || error) && !isRunning && (
-            <button
-              type="button"
-              onClick={reset}
-              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition-colors"
-            >
-              Clear
-            </button>
-          )}
-          {conversationId && !isRunning && (
-            <button
-              type="button"
-              onClick={newConversation}
-              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition-colors"
-            >
-              New Conversation
-            </button>
-          )}
-          {conversationId && (
-            <span className="text-xs text-gray-500 font-mono">
-              thread: {conversationId.slice(0, 8)}…
-            </span>
-          )}
-        </div>
-      </form>
+    <div className="flex flex-col h-full gap-3">
 
-      {error && (
-        <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 text-red-400 text-sm">
-          {error}
-        </div>
-      )}
-
-      <ContextBar events={events} />
-
-      {merged.length > 0 && (
-        <div className="space-y-2">
-          {/* Copy / Download toolbar — shown once agent finishes */}
-          {isDone && responseText && (
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={handleCopy}
-                className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300 transition-colors"
-              >
-                {copyLabel}
-              </button>
-              <button
-                onClick={handleDownload}
-                className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300 transition-colors"
-              >
-                Download .txt
-              </button>
+      {/* ── Events log — fills all available space ── */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        {merged.length > 0 ? (
+          <div className="flex flex-col h-full">
+            {/* Copy / Download toolbar */}
+            {isDone && responseText && (
+              <div className="flex gap-2 justify-end mb-2 shrink-0">
+                <button
+                  onClick={handleCopy}
+                  className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300 transition-colors"
+                >
+                  {copyLabel}
+                </button>
+                <button
+                  onClick={handleDownload}
+                  className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300 transition-colors"
+                >
+                  Download .txt
+                </button>
+              </div>
+            )}
+            <div className="flex-1 min-h-0 overflow-y-auto bg-gray-900 rounded-xl border border-gray-800 p-4 space-y-2 font-mono text-sm">
+              {merged.map((ev, i) => (
+                <EventLine key={i} event={ev} />
+              ))}
+              {isRunning && (
+                <span className="inline-block w-2 h-4 bg-indigo-400 animate-pulse align-middle" />
+              )}
+              <div ref={eventsEndRef} />
             </div>
-          )}
+          </div>
+        ) : (
+          <div className="flex-1 min-h-0 flex items-center justify-center text-gray-600 text-sm select-none">
+            Response will appear here
+          </div>
+        )}
+      </div>
 
-          {/* Events log */}
-          <div
-            className="bg-gray-900 rounded-xl border border-gray-800 p-4 space-y-2 font-mono text-sm"
-          >
-            {merged.map((ev, i) => (
-              <EventLine key={i} event={ev} />
-            ))}
+      {/* ── Bottom controls — pinned ── */}
+      <div className="shrink-0 space-y-3">
+        <ContextBar events={events} />
+
+        {error && (
+          <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 text-red-400 text-sm">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Context <span className="text-gray-600">(optional)</span></label>
+            <textarea
+              value={context}
+              onChange={e => setContext(e.target.value)}
+              placeholder="Additional context or constraints..."
+              rows={2}
+              disabled={isRunning}
+              className="w-full bg-gray-900 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:outline-none focus:border-indigo-500 resize-none disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Query</label>
+            <textarea
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="What do you want the agent to do? (Ctrl+Enter to run)"
+              rows={3}
+              disabled={isRunning}
+              className="w-full bg-gray-900 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:outline-none focus:border-indigo-500 resize-none disabled:opacity-50"
+            />
+          </div>
+          <div className="flex gap-3 items-center flex-wrap">
+            <button
+              type="submit"
+              disabled={isRunning || !query.trim()}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium disabled:opacity-50 transition-colors"
+            >
+              {isRunning ? 'Running…' : 'Run Agent'}
+            </button>
             {isRunning && (
-              <span className="inline-block w-2 h-4 bg-indigo-400 animate-pulse align-middle" />
+              <button
+                type="button"
+                onClick={stop}
+                className="px-4 py-2 bg-red-900/60 hover:bg-red-800 text-red-300 rounded-lg text-sm transition-colors"
+              >
+                Stop
+              </button>
+            )}
+            {(merged.length > 0 || error) && !isRunning && (
+              <button
+                type="button"
+                onClick={reset}
+                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition-colors"
+              >
+                Clear
+              </button>
+            )}
+            {conversationId && !isRunning && (
+              <button
+                type="button"
+                onClick={newConversation}
+                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition-colors"
+              >
+                New Conversation
+              </button>
+            )}
+            {conversationId && (
+              <span className="text-xs text-gray-500 font-mono">
+                thread: {conversationId.slice(0, 8)}…
+              </span>
             )}
           </div>
-        </div>
-      )}
+        </form>
+      </div>
     </div>
   )
 }
