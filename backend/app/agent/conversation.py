@@ -14,7 +14,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from app.database import db_pool
+from app import database as _db
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class ConversationManager:
         Return conversation_id.
         Creates a new conversation row if conversation_id is None or not found.
         """
-        if not db_pool:
+        if not _db.db_pool:
             return conversation_id or str(uuid.uuid4())
 
         user_id = user_id or DEFAULT_USER
@@ -49,7 +49,7 @@ class ConversationManager:
         new_id = str(uuid.uuid4())
         now = datetime.utcnow()
         try:
-            async with db_pool.acquire() as conn:
+            async with _db.db_pool.acquire() as conn:
                 await conn.execute(
                     """
                     INSERT INTO conversations (id, user_id, created_at, updated_at)
@@ -64,7 +64,7 @@ class ConversationManager:
 
     async def _exists(self, conversation_id: str) -> bool:
         try:
-            async with db_pool.acquire() as conn:
+            async with _db.db_pool.acquire() as conn:
                 row = await conn.fetchval(
                     "SELECT id FROM conversations WHERE id = $1",
                     conversation_id,
@@ -84,10 +84,10 @@ class ConversationManager:
         Return the last `max_turns` turn-pairs as OpenAI-format messages:
         [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}, ...]
         """
-        if not db_pool:
+        if not _db.db_pool:
             return []
         try:
-            async with db_pool.acquire() as conn:
+            async with _db.db_pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
                     SELECT role, content FROM (
@@ -118,11 +118,11 @@ class ConversationManager:
         assistant_tokens: int = 0,
     ) -> None:
         """Save one user+assistant turn and update the conversation timestamp."""
-        if not db_pool:
+        if not _db.db_pool:
             return
         now = datetime.utcnow()
         try:
-            async with db_pool.acquire() as conn:
+            async with _db.db_pool.acquire() as conn:
                 await conn.executemany(
                     """
                     INSERT INTO messages (id, conversation_id, role, content, tokens, created_at)
@@ -150,11 +150,11 @@ class ConversationManager:
         user_id: Optional[str] = None,
         limit: int = 20,
     ) -> list[dict]:
-        if not db_pool:
+        if not _db.db_pool:
             return []
         user_id = user_id or DEFAULT_USER
         try:
-            async with db_pool.acquire() as conn:
+            async with _db.db_pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
                     SELECT c.id, c.user_id, c.created_at, c.updated_at,
@@ -180,10 +180,10 @@ class ConversationManager:
         Estimate total tokens used in this conversation.
         Uses stored token counts where available, falls back to char/4.
         """
-        if not db_pool:
+        if not _db.db_pool:
             return 0
         try:
-            async with db_pool.acquire() as conn:
+            async with _db.db_pool.acquire() as conn:
                 rows = await conn.fetch(
                     "SELECT content, tokens FROM messages WHERE conversation_id = $1",
                     conversation_id,
@@ -211,12 +211,12 @@ class ConversationManager:
         Replace old messages with a summary, keeping the most recent `keep_recent` turns.
         Called automatically when context usage exceeds the trigger threshold.
         """
-        if not db_pool:
+        if not _db.db_pool:
             return
         keep_messages = keep_recent * 2   # user + assistant per turn
         now = datetime.utcnow()
         try:
-            async with db_pool.acquire() as conn:
+            async with _db.db_pool.acquire() as conn:
                 # Find the cutoff: IDs of messages to keep
                 recent_ids = await conn.fetch(
                     """
@@ -245,14 +245,15 @@ class ConversationManager:
                         conversation_id,
                     )
 
-                # Insert summary as the first message
+                # Insert summary as an assistant message — 'system' role mid-history
+                # confuses models; assistant role is standard for injected context.
                 await conn.execute(
                     """
                     INSERT INTO messages (id, conversation_id, role, content, tokens, created_at)
-                    VALUES ($1, $2, 'system', $3, $4, $5)
+                    VALUES ($1, $2, 'assistant', $3, $4, $5)
                     """,
                     str(uuid.uuid4()), conversation_id,
-                    f"[Conversation summary]\n{summary}",
+                    f"[Summary of earlier conversation]\n{summary}",
                     len(summary) // 4,
                     now,
                 )
@@ -261,10 +262,10 @@ class ConversationManager:
             logger.warning(f"Compaction failed: {e}")
 
     async def delete_conversation(self, conversation_id: str) -> bool:
-        if not db_pool:
+        if not _db.db_pool:
             return False
         try:
-            async with db_pool.acquire() as conn:
+            async with _db.db_pool.acquire() as conn:
                 await conn.execute(
                     "DELETE FROM conversations WHERE id = $1", conversation_id
                 )

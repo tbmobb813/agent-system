@@ -1,0 +1,10 @@
+{
+  "preferred_model": null,
+  "max_monthly_cost": 75.0,
+  "enable_notifications": false,
+  "auto_save_results": false,
+  "context_window_target_percent": 0.75,
+  "default_tools": null,
+  "timezone": "UTC",
+  "metadata": {}
+}

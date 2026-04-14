@@ -30,7 +30,7 @@ async def test_get_or_create_returns_provided_id_when_not_none_and_exists(monkey
 
 
 async def test_get_or_create_generates_new_uuid_when_none_and_no_db(monkeypatch):
-    monkeypatch.setattr('app.agent.conversation.db_pool', None)
+    monkeypatch.setattr('app.agent.conversation._db.db_pool', None)
     mgr = ConversationManager()
 
     result = await mgr.get_or_create(None, user_id='u1')
@@ -40,7 +40,7 @@ async def test_get_or_create_generates_new_uuid_when_none_and_no_db(monkeypatch)
 
 
 async def test_load_messages_returns_empty_when_no_db(monkeypatch):
-    monkeypatch.setattr('app.agent.conversation.db_pool', None)
+    monkeypatch.setattr('app.agent.conversation._db.db_pool', None)
     mgr = ConversationManager()
 
     messages = await mgr.load_messages('conv-id')
@@ -60,7 +60,7 @@ async def test_load_messages_shapes_db_rows_to_openai_format(monkeypatch):
     fake_pool = AsyncMock()
     fake_pool.acquire = lambda: AsyncContextManager(fake_conn)
 
-    monkeypatch.setattr('app.agent.conversation.db_pool', fake_pool)
+    monkeypatch.setattr('app.agent.conversation._db.db_pool', fake_pool)
     mgr = ConversationManager()
 
     messages = await mgr.load_messages('conv-id')
@@ -71,7 +71,7 @@ async def test_load_messages_shapes_db_rows_to_openai_format(monkeypatch):
 
 
 async def test_save_turn_is_noop_when_no_db(monkeypatch):
-    monkeypatch.setattr('app.agent.conversation.db_pool', None)
+    monkeypatch.setattr('app.agent.conversation._db.db_pool', None)
     mgr = ConversationManager()
 
     # Should not raise
@@ -94,7 +94,7 @@ async def test_estimate_tokens_counts_stored_tokens_and_falls_back_to_length(mon
     fake_pool = AsyncMock()
     fake_pool.acquire = lambda: AsyncContextManager(fake_conn)
 
-    monkeypatch.setattr('app.agent.conversation.db_pool', fake_pool)
+    monkeypatch.setattr('app.agent.conversation._db.db_pool', fake_pool)
     mgr = ConversationManager()
 
     total = await mgr.estimate_tokens('conv-id')
@@ -104,7 +104,7 @@ async def test_estimate_tokens_counts_stored_tokens_and_falls_back_to_length(mon
 
 
 async def test_estimate_tokens_returns_0_when_no_db(monkeypatch):
-    monkeypatch.setattr('app.agent.conversation.db_pool', None)
+    monkeypatch.setattr('app.agent.conversation._db.db_pool', None)
     mgr = ConversationManager()
 
     total = await mgr.estimate_tokens('conv-id')
@@ -113,7 +113,7 @@ async def test_estimate_tokens_returns_0_when_no_db(monkeypatch):
 
 
 async def test_delete_conversation_returns_false_when_no_db(monkeypatch):
-    monkeypatch.setattr('app.agent.conversation.db_pool', None)
+    monkeypatch.setattr('app.agent.conversation._db.db_pool', None)
     mgr = ConversationManager()
 
     success = await mgr.delete_conversation('conv-id')

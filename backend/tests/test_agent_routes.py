@@ -1,4 +1,5 @@
 from httpx import ASGITransport, AsyncClient
+from app.models import ExecutionEvent, EventType
 
 from app.main import app
 
@@ -22,6 +23,19 @@ class DummyCostTracker:
 class DummyOrchestrator:
     async def run(self, **kwargs):
         return "mocked result", kwargs.get("conversation_id") or "conv-test"
+
+
+class DummyStreamOrchestrator:
+    def __init__(self, stop_ok: bool = True):
+        self.stop_ok = stop_ok
+
+    async def stream(self, **kwargs):
+        yield ExecutionEvent(type=EventType.STATUS, content='thinking...')
+        yield ExecutionEvent(type=EventType.TEXT_DELTA, content='partial answer')
+        yield ExecutionEvent(type=EventType.DONE, content='done', conversation_id='conv-stream')
+
+    async def stop_task(self, task_id: str) -> bool:
+        return self.stop_ok
 
 
 async def test_run_agent_returns_completed_response():
@@ -75,3 +89,85 @@ async def test_run_agent_returns_402_when_estimate_exceeds_remaining_budget():
     finally:
         app.state.agent_orchestrator = original_orch
         app.state.cost_tracker = original_cost
+
+
+async def test_stream_agent_emits_budget_error_when_over_budget():
+    original_orch = getattr(app.state, "agent_orchestrator", None)
+    original_cost = getattr(app.state, "cost_tracker", None)
+
+    app.state.agent_orchestrator = DummyStreamOrchestrator()
+    app.state.cost_tracker = DummyCostTracker(estimate=50.0, spent=0.0)
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.post(
+                '/agent/stream',
+                headers={'Authorization': 'Bearer sk-agent-local-dev'},
+                json={'query': 'too expensive'},
+            )
+
+        assert response.status_code == 200
+        text = response.text
+        assert '"type": "error"' in text
+        assert 'Insufficient budget' in text
+    finally:
+        app.state.agent_orchestrator = original_orch
+        app.state.cost_tracker = original_cost
+
+
+async def test_stop_agent_returns_stopped_for_known_task():
+    original_orch = getattr(app.state, "agent_orchestrator", None)
+    app.state.agent_orchestrator = DummyStreamOrchestrator(stop_ok=True)
+
+    task_id = '11111111-1111-1111-1111-111111111111'
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.post(
+                f'/agent/stop?task_id={task_id}',
+                headers={'Authorization': 'Bearer sk-agent-local-dev'},
+            )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload['status'] == 'stopped'
+        assert payload['task_id'] == task_id
+    finally:
+        app.state.agent_orchestrator = original_orch
+
+
+async def test_stop_agent_returns_404_for_unknown_task():
+    original_orch = getattr(app.state, "agent_orchestrator", None)
+    app.state.agent_orchestrator = DummyStreamOrchestrator(stop_ok=False)
+
+    task_id = '22222222-2222-2222-2222-222222222222'
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.post(
+                f'/agent/stop?task_id={task_id}',
+                headers={'Authorization': 'Bearer sk-agent-local-dev'},
+            )
+
+        assert response.status_code == 404
+        assert 'not found' in response.json()['detail']
+    finally:
+        app.state.agent_orchestrator = original_orch
+
+
+async def test_stop_agent_rejects_invalid_task_id_format():
+    original_orch = getattr(app.state, "agent_orchestrator", None)
+    app.state.agent_orchestrator = DummyStreamOrchestrator(stop_ok=True)
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.post(
+                '/agent/stop?task_id=not-a-uuid',
+                headers={'Authorization': 'Bearer sk-agent-local-dev'},
+            )
+
+        assert response.status_code == 422
+    finally:
+        app.state.agent_orchestrator = original_orch

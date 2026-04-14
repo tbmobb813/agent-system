@@ -11,10 +11,11 @@ And store orchestrator/cost_tracker on app.state in lifespan:
 """
 
 import uuid
+import time
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 
 from app.config import settings
@@ -22,7 +23,8 @@ from app.models import AgentRequest, AgentResponse, TaskStatus
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.streaming import format_sse_event
-from app.database import execute, db_pool
+from app.database import execute
+from app import database as _db
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +70,7 @@ async def run_agent(
             },
         )
 
+    t0 = time.monotonic()
     result, conv_id = await orchestrator.run(
         query=body.query,
         context=body.context,
@@ -76,12 +79,16 @@ async def run_agent(
         max_iterations=body.max_iterations,
         conversation_id=body.conversation_id,
     )
+    elapsed = time.monotonic() - t0
 
     return AgentResponse(
         query=body.query,
         result=result,
         status="completed",
         cost=await cost_tracker.get_last_call_cost(),
+        model_used=cost_tracker.get_last_model(),
+        tokens=cost_tracker.get_last_usage(),
+        execution_time=round(elapsed, 3),
         conversation_id=conv_id,
     )
 
@@ -118,7 +125,7 @@ async def stream_agent(
             yield format_sse_event({"type": "status", "content": "initializing", "task_id": task_id})
 
             # Pre-insert task as running
-            if db_pool:
+            if _db.db_pool:
                 try:
                     await execute(
                         """
@@ -134,6 +141,7 @@ async def stream_agent(
             result_parts = []
             status = "completed"
             model_used = None
+            got_done = False
 
             async for event in orchestrator.stream(
                 query=body.query,
@@ -151,11 +159,14 @@ async def stream_agent(
                         model_used = event.model
                 if event.type.value == "error":
                     status = "failed"
+                if event.type.value == "status" and event.content == "stopped by user":
+                    status = "stopped"
                 if event.type.value == "done":
+                    got_done = True
                     final_cost = await cost_tracker.get_last_call_cost()
                     data["cost"] = final_cost
                     # Persist completed task
-                    if db_pool:
+                    if _db.db_pool:
                         try:
                             elapsed = (datetime.utcnow() - started_at).total_seconds()
                             await execute(
@@ -178,6 +189,16 @@ async def stream_agent(
                             logger.warning(f"Could not update task record: {e}")
                 yield format_sse_event(data)
 
+            # Stream ended without DONE (stopped or interrupted) — update DB
+            if not got_done and db_pool:
+                try:
+                    await execute(
+                        "UPDATE tasks SET status = $1, completed_at = $2 WHERE id = $3",
+                        status, datetime.utcnow(), task_id,
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not update stopped task: {e}")
+
         except Exception as e:
             logger.error(f"Stream error: {e}", exc_info=True)
             yield format_sse_event({"type": "error", "error": str(e)})
@@ -187,8 +208,8 @@ async def stream_agent(
 
 @router.post("/stop")
 async def stop_agent(
-    task_id: str,
     request: Request,
+    task_id: str = Query(..., min_length=36, max_length=36, pattern=r'^[0-9a-f-]{36}$'),
     api_key: str = Depends(verify_api_key),
 ):
     """Cancel a running agent task."""

@@ -183,7 +183,7 @@ class ToolRegistry:
                 "type": "function",
                 "function": {
                     "name": "file_operations",
-                    "description": "Read, write, list, or delete files in the agent workspace (/tmp/agent-workspace).",
+                    "description": "Read, write, list, or delete files in the agent workspace.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -419,7 +419,7 @@ class ToolRegistry:
                         return "\n---\n".join(texts) if texts else "No elements matched selector"
 
                     elif action == "screenshot":
-                        path = screenshot_path or "/tmp/agent-workspace/screenshot.png"
+                        path = screenshot_path or "/home/nixstation-remote/agent-system/workspace/screenshot.png"
                         import os
                         os.makedirs(os.path.dirname(path), exist_ok=True)
                         await page.screenshot(path=path, full_page=True)
@@ -452,7 +452,7 @@ class ToolRegistry:
         operation: str,
         path: str = "",
         content: str = "",
-        workspace: str = "/tmp/agent-workspace",
+        workspace: str = "/home/nixstation-remote/agent-system/workspace",
     ) -> str:
         """Read/write files within a sandboxed workspace directory."""
         import os

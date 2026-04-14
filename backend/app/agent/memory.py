@@ -70,7 +70,6 @@ Insight (or NOTHING):"""
 
 _CLASSIFY_KEYWORDS = {
     "prefer": "preference",
-    "prefer": "preference",
     "always": "pattern",
     "never": "pattern",
     "usually": "pattern",

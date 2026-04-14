@@ -6,6 +6,7 @@ Storage: Supabase document_chunks table with pgvector embeddings
 Search:  Semantic (cosine) if OPENAI_API_KEY set, else full-text
 """
 
+import asyncio
 import io
 import uuid
 import logging
@@ -171,13 +172,16 @@ async def ingest_document(
             doc_id, user_id, filename, file_type, len(data), len(chunks), datetime.utcnow(),
         )
 
-    # 4. Embed + store chunks
-    stored = 0
-    async with _db.db_pool.acquire() as conn:
-        for i, chunk_text in enumerate(chunks):
-            token_count = _count_tokens(chunk_text)
-            embedding = await _embed(chunk_text)
+    # 4. Embed all chunks in parallel, then store
+    token_counts = [_count_tokens(c) for c in chunks]
+    embeddings = await asyncio.gather(*[_embed(c) for c in chunks])
 
+    stored = 0
+    now = datetime.utcnow()
+    async with _db.db_pool.acquire() as conn:
+        for i, (chunk_text, token_count, embedding) in enumerate(
+            zip(chunks, token_counts, embeddings)
+        ):
             if embedding:
                 await conn.execute(
                     """
@@ -186,7 +190,7 @@ async def ingest_document(
                     VALUES ($1, $2, $3, $4, $5, $6::vector, $7)
                     """,
                     str(uuid.uuid4()), doc_id, i, chunk_text,
-                    token_count, str(embedding), datetime.utcnow(),
+                    token_count, str(embedding), now,
                 )
             else:
                 await conn.execute(
@@ -196,7 +200,7 @@ async def ingest_document(
                     VALUES ($1, $2, $3, $4, $5, $6)
                     """,
                     str(uuid.uuid4()), doc_id, i, chunk_text,
-                    token_count, datetime.utcnow(),
+                    token_count, now,
                 )
             stored += 1
 

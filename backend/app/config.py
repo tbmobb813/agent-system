@@ -125,6 +125,8 @@ class CostTracker:
         self.db_pool: Optional[asyncpg.Pool] = None
         self.spending_cache = {}
         self.last_call_cost = 0.0
+        self.last_model: Optional[str] = None
+        self.last_usage: Optional[dict] = None
     
     async def initialize(self, database_url: str):
         """Initialize database connection pool."""
@@ -184,7 +186,9 @@ class CostTracker:
         total_cost = input_cost + output_cost
         
         self.last_call_cost = total_cost
-        
+        self.last_model = model
+        self.last_usage = {"input": input_tokens, "output": output_tokens}
+
         # Store in database
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
@@ -264,6 +268,14 @@ class CostTracker:
     async def get_last_call_cost(self) -> float:
         """Get cost of the last API call."""
         return self.last_call_cost
+
+    def get_last_model(self) -> Optional[str]:
+        """Get the model used in the last tracked call."""
+        return self.last_model
+
+    def get_last_usage(self) -> Optional[dict]:
+        """Get token counts from the last tracked call."""
+        return self.last_usage
     
     def get_model_pricing(self, model: str) -> dict:
         """Get pricing for a specific model."""
