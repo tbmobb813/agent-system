@@ -132,7 +132,7 @@ export default function TaskHistory() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [offset, setOffset] = useState(0)
 
-  useEffect(() => { refresh(PAGE_SIZE, offset) }, [refresh, offset])
+  useEffect(() => { refresh(PAGE_SIZE, offset) }, [offset]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleDelete(id: string) {
     if (expanded === id) setExpanded(null)

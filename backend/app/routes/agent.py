@@ -20,6 +20,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from app.config import settings
 from app.models import AgentRequest, AgentResponse, TaskStatus
 from app.utils.auth import verify_api_key
+from app.utils.limiter import limiter
 from app.utils.streaming import format_sse_event
 from app.database import execute, db_pool
 
@@ -43,6 +44,7 @@ def _cost_tracker(request: Request):
 
 
 @router.post("/run")
+@limiter.limit("20/minute")
 async def run_agent(
     request: Request,
     body: AgentRequest,
@@ -85,6 +87,7 @@ async def run_agent(
 
 
 @router.post("/stream")
+@limiter.limit("20/minute")
 async def stream_agent(
     request: Request,
     body: AgentRequest,

@@ -23,6 +23,7 @@ async def init_db():
             min_size=2,
             max_size=10,
             command_timeout=60,
+            statement_cache_size=0,
         )
         logger.info("✓ Database pool initialized")
         
@@ -62,23 +63,31 @@ async def get_db() -> asyncpg.Pool:
 
 async def execute(query: str, *args):
     """Execute a query."""
+    if not db_pool:
+        raise RuntimeError("Database not connected")
     async with db_pool.acquire() as conn:
         return await conn.execute(query, *args)
 
 
 async def fetch(query: str, *args):
     """Fetch multiple rows."""
+    if not db_pool:
+        raise RuntimeError("Database not connected")
     async with db_pool.acquire() as conn:
         return await conn.fetch(query, *args)
 
 
 async def fetchval(query: str, *args):
     """Fetch a single value."""
+    if not db_pool:
+        raise RuntimeError("Database not connected")
     async with db_pool.acquire() as conn:
         return await conn.fetchval(query, *args)
 
 
 async def fetchrow(query: str, *args):
     """Fetch a single row."""
+    if not db_pool:
+        raise RuntimeError("Database not connected")
     async with db_pool.acquire() as conn:
         return await conn.fetchrow(query, *args)

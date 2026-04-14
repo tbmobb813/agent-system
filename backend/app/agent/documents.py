@@ -15,7 +15,7 @@ from typing import Optional
 import tiktoken
 
 from app.config import settings
-from app.database import db_pool
+from app import database as _db
 from app.agent.memory import _embed
 
 logger = logging.getLogger(__name__)
@@ -143,7 +143,7 @@ async def ingest_document(
     Full pipeline: parse → chunk → embed → store.
     Returns summary dict with document_id and chunk_count.
     """
-    if not db_pool:
+    if not _db.db_pool:
         raise RuntimeError("Database not connected")
 
     user_id = user_id or "default"
@@ -162,7 +162,7 @@ async def ingest_document(
 
     # 3. Create document record
     doc_id = str(uuid.uuid4())
-    async with db_pool.acquire() as conn:
+    async with _db.db_pool.acquire() as conn:
         await conn.execute(
             """
             INSERT INTO documents (id, user_id, filename, file_type, file_size, chunk_count, created_at)
@@ -173,7 +173,7 @@ async def ingest_document(
 
     # 4. Embed + store chunks
     stored = 0
-    async with db_pool.acquire() as conn:
+    async with _db.db_pool.acquire() as conn:
         for i, chunk_text in enumerate(chunks):
             token_count = _count_tokens(chunk_text)
             embedding = await _embed(chunk_text)
@@ -225,7 +225,7 @@ async def search_documents(
     Find relevant document chunks for a query.
     Uses vector search if embeddings available, else full-text.
     """
-    if not db_pool:
+    if not _db.db_pool:
         return []
 
     user_id = user_id or "default"
@@ -243,7 +243,7 @@ async def _vector_search_docs(
     document_id: Optional[str],
 ) -> list[dict]:
     try:
-        async with db_pool.acquire() as conn:
+        async with _db.db_pool.acquire() as conn:
             doc_filter = "AND dc.document_id = $4" if document_id else ""
             params = [str(embedding), user_id, limit]
             if document_id:
@@ -277,7 +277,7 @@ async def _fulltext_search_docs(
     document_id: Optional[str],
 ) -> list[dict]:
     try:
-        async with db_pool.acquire() as conn:
+        async with _db.db_pool.acquire() as conn:
             doc_filter = "AND dc.document_id = $3" if document_id else ""
             params = [user_id, query]
             if document_id:

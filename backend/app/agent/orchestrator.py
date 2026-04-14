@@ -31,7 +31,7 @@ def _openrouter_client() -> AsyncOpenAI:
         base_url=settings.OPENROUTER_BASE_URL,
         api_key=settings.OPENROUTER_API_KEY,
         default_headers={
-            "HTTP-Referer": "http://localhost:3003",
+            "HTTP-Referer": settings.SITE_URL,
             "X-Title": "Personal AI Agent",
         },
     )
@@ -188,6 +188,14 @@ class AgentOrchestrator:
             if context:
                 system += f"\n\nAdditional context: {context}"
 
+            # ── Plan-then-execute for complex multi-step queries ──────
+            plan_prefix = ""
+            if tool_schemas and self.router.is_complex(query):
+                yield ExecutionEvent(type=EventType.STATUS, content="planning...")
+                plan_prefix = await self._make_plan(query, context, agent_model)
+                if plan_prefix:
+                    yield ExecutionEvent(type=EventType.THINKING, content=f"Plan:\n{plan_prefix}")
+
             # System + history + new user message (with plan prepended if available)
             messages = [{"role": "system", "content": system}]
             messages.extend(history)
@@ -198,14 +206,6 @@ class AgentOrchestrator:
                 yield ExecutionEvent(type=EventType.STATUS, content=f"resuming conversation ({len(history) // 2} prior turns)...")
             if memory_context:
                 yield ExecutionEvent(type=EventType.STATUS, content="recalling relevant memories...")
-
-            # ── Plan-then-execute for complex multi-step queries ──────
-            plan_prefix = ""
-            if tool_schemas and self.router.is_complex(query):
-                yield ExecutionEvent(type=EventType.STATUS, content="planning...")
-                plan_prefix = await self._make_plan(query, context, agent_model)
-                if plan_prefix:
-                    yield ExecutionEvent(type=EventType.THINKING, content=f"Plan:\n{plan_prefix}")
 
             yield ExecutionEvent(type=EventType.STATUS, content="thinking...")
 

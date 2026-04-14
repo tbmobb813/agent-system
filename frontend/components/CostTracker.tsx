@@ -34,11 +34,10 @@ export default function CostTracker() {
   const [breakdown, setBreakdown] = useState<Record<string, ModelRow> | null>(null)
 
   useEffect(() => {
-    refresh()
     getCostBreakdown()
       .then(d => setBreakdown(d.breakdown))
       .catch(() => setBreakdown(null))
-  }, [refresh])
+  }, [])
 
   if (loading) return <p className="text-gray-400">Loading cost data…</p>
   if (error)   return <p className="text-red-400">Error: {error}</p>

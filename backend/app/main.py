@@ -7,10 +7,10 @@ from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from app.utils.limiter import limiter
 from contextlib import asynccontextmanager
 import logging
 import os
@@ -35,8 +35,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Rate limiter — 60 req/min per IP by default
-limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+# Rate limiter — 60 req/min per IP by default (see app/utils/limiter.py)
 
 
 @asynccontextmanager

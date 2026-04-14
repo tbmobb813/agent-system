@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     API_KEY_PREFIX: str = Field(default="sk-agent-")
     ALLOWED_HOSTS: list[str] = Field(default=["localhost", "127.0.0.1"])
     CORS_ORIGINS: list[str] = Field(default=["http://localhost:3003", "http://localhost:8000", "http://167.88.45.213:3003"])
+    SITE_URL: str = Field(default="http://localhost:3003")
     
     # Tools
     SEARXNG_URL: str = Field(default="http://localhost:8888")  # Your SearXNG instance URL
@@ -132,6 +133,7 @@ class CostTracker:
             min_size=2,
             max_size=10,
             command_timeout=60,
+            statement_cache_size=0,
         )
         logger.info("Cost tracker initialized")
     

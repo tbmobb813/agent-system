@@ -1,11 +1,7 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'sk-agent-local-dev'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api/backend'
 
 function headers(): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${API_KEY}`,
-  }
+  return { 'Content-Type': 'application/json' }
 }
 
 /** Fetch with a timeout. Throws if the server doesn't respond in time. */
@@ -116,7 +112,6 @@ export async function uploadDocument(file: File) {
   form.append('file', file)
   const res = await fetch(`${API_URL}/documents/upload`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${API_KEY}` },
     body: form,
   })
   if (!res.ok) {

@@ -17,7 +17,10 @@ from app.utils.auth import verify_api_key
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/settings", tags=["settings"])
 
-SETTINGS_FILE = os.environ.get("SETTINGS_FILE", "/tmp/agent-settings.json")
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_DATA_DIR = os.path.join(_BACKEND_DIR, "data")
+os.makedirs(_DATA_DIR, exist_ok=True)
+SETTINGS_FILE = os.environ.get("SETTINGS_FILE", os.path.join(_DATA_DIR, "agent-settings.json"))
 
 
 def _load() -> dict:
