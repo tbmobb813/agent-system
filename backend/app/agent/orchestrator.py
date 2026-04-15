@@ -20,10 +20,12 @@ from openai import AsyncOpenAI
 from app.config import settings
 from app import database as _db
 from app.models import ExecutionEvent, EventType, TaskStatus
+from app.utils.truncate import truncate_tail
 from app.agent.router import ModelRouter
 from app.agent.memory import memory_manager
 from app.agent.conversation import conversation_manager
 from app.agent.context_builder import context_builder
+from app.agent.error_classifier import classify, FailoverReason
 from app.tools.tool_registry import ToolRegistry
 
 
@@ -228,10 +230,12 @@ class AgentOrchestrator:
                 state.current_step = iteration + 1
                 state.last_update = datetime.utcnow()
 
-                # ── Ask the LLM with fallback on model errors ─────────────────
+                # ── Ask the LLM with classifier-based error recovery ──────────
                 client = _openrouter_client()
                 current_model = agent_model
                 response = None
+                retry_counts: dict[str, int] = {}   # reason → attempts used
+
                 while current_model:
                     try:
                         response = await client.chat.completions.create(
@@ -243,18 +247,69 @@ class AgentOrchestrator:
                         if current_model != agent_model:
                             yield ExecutionEvent(type=EventType.STATUS, content=f"using fallback model: {current_model}")
                         break
+
+                    except asyncio.CancelledError:
+                        raise
+
                     except Exception as e:
-                        err_str = str(e)
-                        # Only fall back on model-related errors (404, invalid model, tool use unsupported)
-                        if any(code in err_str for code in ["404", "400", "tool", "model"]):
+                        err = classify(e)
+                        reason_key = err.reason.value
+
+                        if err.is_fatal:
+                            # Auth / billing / bad request — surface immediately
+                            raise RuntimeError(f"{err.reason.value}: {err.message}") from e
+
+                        if err.should_compress:
+                            # Context too large — compact and retry this iteration
+                            yield ExecutionEvent(type=EventType.STATUS, content="context too large — compacting...")
+                            summary = await self._summarize_history(
+                                await conversation_manager.load_messages(conversation_id),
+                                current_model,
+                            )
+                            await conversation_manager.compact(conversation_id, summary=summary)
+                            history = await conversation_manager.load_messages(conversation_id)
+                            # Rebuild messages with compacted history
+                            messages = [{"role": "system", "content": system}]
+                            messages.extend(history)
+                            messages.append({"role": "user", "content": user_content})
+                            client = _openrouter_client()
+                            continue
+
+                        if err.should_rotate_model:
+                            # Model not found or tool use unsupported — rotate
                             next_model = self.router.get_next_fallback(current_model)
                             if next_model and next_model != current_model:
-                                logger.warning(f"Model {current_model} failed ({e}) — trying {next_model}")
+                                logger.warning(f"Model {current_model} failed ({err.reason.value}) — rotating to {next_model}")
+                                yield ExecutionEvent(type=EventType.STATUS, content=f"model unavailable — trying {next_model.split('/')[-1]}...")
                                 current_model = next_model
-                            else:
-                                raise
-                        else:
-                            raise
+                                continue
+                            raise RuntimeError(f"All models in fallback chain failed: {err.message}") from e
+
+                        if err.is_retriable:
+                            used = retry_counts.get(reason_key, 0)
+                            if used < len(err.retry_delays):
+                                delay = err.retry_delays[used]
+                                retry_counts[reason_key] = used + 1
+                                logger.warning(f"{err.reason.value} error (attempt {used+1}) — retrying in {delay:.0f}s")
+                                yield ExecutionEvent(
+                                    type=EventType.STATUS,
+                                    content=f"{err.reason.value.replace('_', ' ')} — retrying in {delay:.0f}s...",
+                                )
+                                if delay > 0:
+                                    await asyncio.sleep(delay)
+                                if err.reason == FailoverReason.timeout:
+                                    client = _openrouter_client()   # fresh client on timeout
+                                continue
+                            # Exhausted retries — rotate model as last resort
+                            next_model = self.router.get_next_fallback(current_model)
+                            if next_model and next_model != current_model:
+                                logger.warning(f"Retries exhausted for {current_model} — rotating to {next_model}")
+                                current_model = next_model
+                                retry_counts = {}
+                                continue
+
+                        raise
+
                 if response is None:
                     raise RuntimeError("All models in fallback chain failed")
 
@@ -356,9 +411,10 @@ class AgentOrchestrator:
                     try:
                         result = await self.tools.call(name, **args)
                         result_str = str(result)
-                        if len(result_str) > 4000:
-                            logger.warning(f"Tool '{name}' result truncated ({len(result_str)} → 4000 chars)")
-                            result_str = result_str[:4000] + "\n[...result truncated]"
+                        truncated_str = truncate_tail(result_str)
+                        if truncated_str != result_str:
+                            logger.warning(f"Tool '{name}' result truncated ({len(result_str)} chars → tail kept)")
+                            result_str = truncated_str
                             truncated = True
                     except Exception as e:
                         err_str = str(e)
@@ -471,29 +527,137 @@ class AgentOrchestrator:
             return ""
 
     async def _summarize_history(self, history: list[dict], model: str) -> str:
-        """Summarize a list of past messages into a compact paragraph."""
+        """
+        Summarize conversation history into a structured compact form.
+
+        - Prunes long tool outputs before sending to the summarizer
+        - Preserves prior compaction summaries across multiple cycles
+        - Tracks files referenced in tool calls (read vs modified)
+        - Uses a structured Goal/Progress/Key Decisions/Next Steps template
+        - Scales max_tokens proportionally to content size (clamped 400–1500)
+        """
+        import re as _re
+
         if not history:
             return ""
-        formatted = "\n".join(
-            f"{m['role'].upper()}: {m['content'][:300]}" for m in history
-        )
+
+        _TOOL_PLACEHOLDER = "[tool output cleared]"
+        _MAX_TOOL_CHARS   = 300
+        _MAX_MSG_CHARS    = 800
+
+        # ── Separate prior compaction summary ────────────────────────────────
+        prior_summary = ""
+        turns = []
+        for m in history:
+            content = m.get("content") or ""
+            if content.startswith("[CONTEXT COMPACTION"):
+                body = content.split("\n", 1)[-1].strip()
+                prior_summary = body
+            else:
+                turns.append(m)
+
+        # ── Extract file operations from tool call data ───────────────────────
+        # tool_calls in assistant messages carry {"function": {"name": ..., "arguments": ...}}
+        read_files: set[str] = set()
+        modified_files: set[str] = set()
+        _FILE_OP_TOOL = "file_operations"
+        _PATH_RE = _re.compile(r'"path"\s*:\s*"([^"]+)"')
+
+        for m in turns:
+            tool_calls = m.get("tool_calls") or []
+            for tc in tool_calls:
+                try:
+                    fn = tc.get("function", {})
+                    if fn.get("name") != _FILE_OP_TOOL:
+                        continue
+                    args_str = fn.get("arguments", "{}")
+                    args = json.loads(args_str) if isinstance(args_str, str) else args_str
+                    path = args.get("path", "")
+                    op   = args.get("operation", "")
+                    if not path:
+                        continue
+                    if op == "read":
+                        read_files.add(path)
+                    elif op in ("write", "delete"):
+                        modified_files.add(path)
+                        read_files.discard(path)
+                except Exception:
+                    pass
+            # Also scan content for path patterns (fallback for stored messages)
+            content = m.get("content") or ""
+            for match in _PATH_RE.finditer(content):
+                read_files.add(match.group(1))
+
+        # ── Prune tool outputs ────────────────────────────────────────────────
+        pruned = []
+        for m in turns:
+            role    = m.get("role", "")
+            content = m.get("content") or ""
+            if role == "tool" and len(content) > _MAX_TOOL_CHARS:
+                content = content[:_MAX_TOOL_CHARS] + f" {_TOOL_PLACEHOLDER}"
+            elif len(content) > _MAX_MSG_CHARS:
+                content = content[:_MAX_MSG_CHARS] + "…"
+            pruned.append({"role": role, "content": content})
+
+        # ── Format conversation for summarizer ────────────────────────────────
+        conv_lines = []
+        if prior_summary:
+            conv_lines.append(f"[Prior summary]\n{prior_summary}\n")
+        for m in pruned:
+            conv_lines.append(f"[{m['role'].capitalize()}]: {m['content']}")
+        formatted = "\n".join(conv_lines)
+
+        # ── Build file tracking appendix ──────────────────────────────────────
+        file_section = ""
+        read_only = sorted(read_files - modified_files)
+        modified  = sorted(modified_files)
+        if read_only:
+            file_section += "\n<read-files>\n" + "\n".join(read_only) + "\n</read-files>"
+        if modified:
+            file_section += "\n<modified-files>\n" + "\n".join(modified) + "\n</modified-files>"
+
+        # ── Scale token budget ────────────────────────────────────────────────
+        raw_chars = sum(len(m.get("content") or "") for m in history)
+        budget    = max(400, min(1500, int(raw_chars / 4 * 0.20)))
+
         prompt = (
-            "Summarize the following conversation history into a concise paragraph "
-            "that preserves all key facts, decisions, and context needed to continue "
-            "the conversation. Be brief but complete.\n\n"
+            "Summarize this conversation to free up context space. "
+            "Use exactly this structure (omit sections with nothing to say):\n\n"
+            "## Goal\n"
+            "[What the user is trying to accomplish]\n\n"
+            "## Progress\n"
+            "### Done\n"
+            "- [x] [Completed tasks with specific outcomes]\n\n"
+            "### In Progress\n"
+            "- [ ] [Current work]\n\n"
+            "### Blocked\n"
+            "- [Issues, if any]\n\n"
+            "## Key Decisions\n"
+            "- **[Decision]**: [Rationale]\n\n"
+            "## Next Steps\n"
+            "1. [What should happen next]\n\n"
+            "## Critical Context\n"
+            "- [Specific values, file names, API responses, or data needed to continue]\n\n"
+            "Rules:\n"
+            "- Be specific — include concrete values, paths, and decisions.\n"
+            "- Do NOT reproduce instructions or requests — only facts and outcomes.\n\n"
+            "Conversation:\n"
             f"{formatted}"
         )
+
         try:
             client = _openrouter_client()
             resp = await client.chat.completions.create(
-                model=settings.DEFAULT_MODEL_SIMPLE,   # use cheap model for summaries
+                model=settings.DEFAULT_MODEL_SIMPLE,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=300,
+                max_tokens=budget,
+                temperature=0,
             )
-            return resp.choices[0].message.content or ""
+            summary = (resp.choices[0].message.content or "").strip()
+            return summary + file_section if file_section else summary
         except Exception as e:
             logger.warning(f"History summarization failed: {e}")
-            return "Previous conversation context was compacted."
+            return prior_summary or "Previous conversation context was compacted."
 
     async def stop_task(self, task_id: str) -> bool:
         if task_id in self.active_tasks:

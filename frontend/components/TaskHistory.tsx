@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import { useHistory } from '@/lib/hooks'
 import { deleteTask, getTaskDetail } from '@/lib/api'
 import { formatCost, formatDate } from '@/lib/utils'
+import { exportElementToPdf } from '@/lib/pdf'
 
 const MarkdownContent = dynamic(() => import('./MarkdownContent'), { ssr: false })
 
@@ -43,6 +44,7 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const contentRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     getTaskDetail(taskId)
@@ -69,6 +71,11 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
     a.download = `task-${taskId.slice(0, 8)}.txt`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  async function handleExportPdf() {
+    if (!contentRef.current) return
+    await exportElementToPdf(contentRef.current, `task-${taskId.slice(0, 8)}.pdf`)
   }
 
   return (
@@ -98,13 +105,19 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                   Download
                 </button>
                 <button
+                  onClick={handleExportPdf}
+                  className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-300 transition-colors"
+                >
+                  PDF
+                </button>
+                <button
                   onClick={onClose}
                   className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-400 transition-colors"
                 >
                   Collapse
                 </button>
               </div>
-              <div className="text-sm text-gray-100 bg-gray-800 rounded-lg p-4 leading-relaxed">
+              <div ref={contentRef} className="text-sm text-gray-100 bg-gray-800 rounded-lg p-4 leading-relaxed">
                 <MarkdownContent content={detail.task.result} />
               </div>
             </>

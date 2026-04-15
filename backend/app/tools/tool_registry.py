@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, Optional
 from inspect import signature
 
 from app.config import settings
+from app.utils.truncate import truncate_head
 
 logger = logging.getLogger(__name__)
 
@@ -406,7 +407,7 @@ class ToolRegistry:
                             clone.querySelectorAll('script,style,nav,footer,header').forEach(e => e.remove());
                             return clone.innerText.replace(/\\s+/g, ' ').trim();
                         }""")
-                        return f"Title: {title}\n\n{body_text[:4000]}"
+                        return f"Title: {title}\n\n{truncate_head(body_text)}"
 
                     elif action in ("extract", "scrape"):
                         if not selector:
@@ -470,7 +471,7 @@ class ToolRegistry:
             try:
                 async with aiofiles.open(safe_path, "r") as f:
                     text = await f.read()
-                return text[:4000]  # Limit output
+                return truncate_head(text)
             except FileNotFoundError:
                 return f"Error: file not found: {path}"
             except Exception as e:

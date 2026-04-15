@@ -58,13 +58,13 @@ const mdComponents = {
     <h3 className="text-sm font-semibold mt-2 mb-1 text-gray-200">{children}</h3>
   ),
   ul: ({ children }: React.PropsWithChildren) => (
-    <ul className="list-disc space-y-0.5 mb-2 pl-5">{children}</ul>
+    <ul className="list-disc list-outside space-y-0.5 mb-2 pl-6 marker:text-gray-400">{children}</ul>
   ),
   ol: ({ children }: React.PropsWithChildren) => (
-    <ol className="list-decimal space-y-0.5 mb-2 pl-5">{children}</ol>
+    <ol className="list-decimal list-outside space-y-0.5 mb-2 pl-6 marker:text-gray-400">{children}</ol>
   ),
   li: ({ children }: React.PropsWithChildren) => (
-    <li className="text-gray-100 pl-1">{children}</li>
+    <li className="text-gray-100">{children}</li>
   ),
   code({ inline, className, children }: React.PropsWithChildren<{ inline?: boolean; className?: string }>) {
     const match = /language-(\w+)/.exec(className || '')

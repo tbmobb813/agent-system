@@ -284,7 +284,8 @@ async def test_stream_truncates_large_tool_results(monkeypatch):
         return ''
 
     async def _tool_call(name, **kwargs):
-        return 'x' * 5000
+        # 2001 lines — exceeds DEFAULT_MAX_LINES (2000)
+        return ('x' * 80 + '\n') * 2001
 
     monkeypatch.setattr('app.agent.orchestrator._openrouter_client', lambda: _FakeClient(responses))
     monkeypatch.setattr('app.agent.orchestrator.conversation_manager.get_or_create', _get_or_create)
@@ -304,4 +305,4 @@ async def test_stream_truncates_large_tool_results(monkeypatch):
 
     tool_results = [e.tool_result for e in events if e.type == EventType.TOOL_RESULT]
     assert len(tool_results) == 1
-    assert '[...result truncated]' in tool_results[0]
+    assert 'truncated' in tool_results[0]

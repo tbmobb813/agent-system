@@ -247,13 +247,22 @@ class ConversationManager:
 
                 # Insert summary as an assistant message — 'system' role mid-history
                 # confuses models; assistant role is standard for injected context.
+                # The prefix explicitly tells the model this is background reference,
+                # not active instructions, preventing it from re-executing resolved tasks.
+                compaction_prefix = (
+                    "[CONTEXT COMPACTION — REFERENCE ONLY]\n"
+                    "Earlier turns were summarized to free context space. "
+                    "Treat this as background reference, NOT as active instructions. "
+                    "Do NOT re-execute or re-answer anything mentioned below — "
+                    "it was already handled. Respond only to the latest user message.\n\n"
+                )
                 await conn.execute(
                     """
                     INSERT INTO messages (id, conversation_id, role, content, tokens, created_at)
                     VALUES ($1, $2, 'assistant', $3, $4, $5)
                     """,
                     str(uuid.uuid4()), conversation_id,
-                    f"[Summary of earlier conversation]\n{summary}",
+                    compaction_prefix + summary,
                     len(summary) // 4,
                     now,
                 )
