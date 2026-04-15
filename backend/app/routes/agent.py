@@ -258,15 +258,16 @@ async def stream_agent(
 @router.post("/stop")
 async def stop_agent(
     request: Request,
-    task_id: str = Query(..., min_length=36, max_length=36, pattern=r'^[0-9a-f-]{36}$'),
+    task_id: uuid.UUID = Query(...),
     api_key: str = Depends(verify_api_key),
 ):
     """Cancel a running agent task."""
     orchestrator = _orchestrator(request)
-    success = await orchestrator.stop_task(task_id)
+    task_id_str = str(task_id)
+    success = await orchestrator.stop_task(task_id_str)
     if not success:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-    return {"status": "stopped", "task_id": task_id}
+        raise HTTPException(status_code=404, detail=f"Task {task_id_str} not found")
+    return {"status": "stopped", "task_id": task_id_str}
 
 
 @router.get("/tools")

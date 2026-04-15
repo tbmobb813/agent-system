@@ -216,6 +216,23 @@ async def test_stop_agent_rejects_invalid_task_id_format():
         app.state.agent_orchestrator = original_orch
 
 
+async def test_stop_agent_rejects_non_uuid_36_char_value():
+    original_orch = getattr(app.state, "agent_orchestrator", None)
+    app.state.agent_orchestrator = DummyStreamOrchestrator(stop_ok=True)
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.post(
+                '/agent/stop?task_id=123456789012345678901234567890123456',
+                headers={'Authorization': 'Bearer sk-agent-local-dev'},
+            )
+
+        assert response.status_code == 422
+    finally:
+        app.state.agent_orchestrator = original_orch
+
+
 async def test_run_agent_returns_503_when_orchestrator_missing():
     original_orch = getattr(app.state, "agent_orchestrator", None)
     original_cost = getattr(app.state, "cost_tracker", None)
