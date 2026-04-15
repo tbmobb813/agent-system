@@ -168,11 +168,11 @@ export function useHistory() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const refresh = useCallback(async (limit = 20, offset = 0) => {
+  const refresh = useCallback(async (limit = 20, offset = 0, q?: string) => {
     setLoading(true)
     setError(null)
     try {
-      const result = await getHistory(limit, offset)
+      const result = await getHistory(limit, offset, q)
       setData(result)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load')

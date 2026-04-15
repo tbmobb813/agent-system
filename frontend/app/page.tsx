@@ -91,10 +91,10 @@ export default function DashboardPage() {
   }, [load])
 
   const budgetBarColor =
-    !stats.budget       ? 'accent-indigo-500' :
-    stats.budget.percent >= 90 ? 'accent-red-500' :
-    stats.budget.percent >= 70 ? 'accent-yellow-500' :
-    'accent-indigo-500'
+    !stats.budget                    ? 'bg-indigo-500' :
+    stats.budget.percent >= 90       ? 'bg-red-500' :
+    stats.budget.percent >= 70       ? 'bg-yellow-500' :
+    'bg-indigo-500'
 
   const budgetTextColor =
     !stats.budget       ? 'text-gray-400' :
@@ -150,11 +150,12 @@ export default function DashboardPage() {
               {loading ? '…' : stats.budget ? `${stats.budget.percent.toFixed(1)}%` : 'N/A'}
             </span>
           </div>
-          <progress
-            className={`w-full h-2 mb-3 ${budgetBarColor}`}
-            max={100}
-            value={loading || !stats.budget ? 0 : Math.min(stats.budget.percent, 100)}
-          />
+          <div className="h-2 bg-gray-800 rounded-full overflow-hidden mb-3">
+            <div
+              className={`h-full rounded-full transition-all ${budgetBarColor}`}
+              style={{ width: `${loading || !stats.budget ? 0 : Math.min(stats.budget.percent, 100)}%` }}
+            />
+          </div>
           <div className="flex justify-between text-xs text-gray-500">
             <span>spent today: <span className="text-gray-300">{loading || !stats.budget ? '…' : formatCost(stats.budget.spent_today)}</span></span>
             <span>remaining: <span className="text-gray-300">{loading || !stats.budget ? '…' : formatCost(stats.budget.remaining)}</span></span>

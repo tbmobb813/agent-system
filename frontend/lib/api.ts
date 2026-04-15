@@ -66,10 +66,10 @@ export async function getAnalyticsAlerts(days = 30) {
   return res.json()
 }
 
-export async function getHistory(limit = 20, offset = 0) {
-  const res = await fetchWithTimeout(`${API_URL}/history?limit=${limit}&offset=${offset}`, {
-    headers: headers(),
-  })
+export async function getHistory(limit = 20, offset = 0, q?: string) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (q && q.trim()) params.set('q', q.trim())
+  const res = await fetchWithTimeout(`${API_URL}/history?${params}`, { headers: headers() })
   if (!res.ok) throw new Error(`Failed to fetch history (${res.status})`)
   return res.json()
 }
