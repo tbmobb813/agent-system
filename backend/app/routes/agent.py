@@ -65,7 +65,7 @@ async def run_agent(
             status_code=402,
             content={
                 "error": "Insufficient budget",
-                "spent_today": await cost_tracker.get_spent_month(),
+                "spent_month": await cost_tracker.get_spent_month(),
                 "budget": settings.OPENROUTER_BUDGET_MONTHLY,
                 "estimated_cost": estimated_cost,
             },
