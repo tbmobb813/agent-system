@@ -1,4 +1,5 @@
 from httpx import ASGITransport, AsyncClient
+import uuid
 from app.models import ExecutionEvent, EventType
 
 from app.main import app
@@ -9,6 +10,7 @@ class DummyCostTracker:
         self._estimate = estimate
         self._spent = spent
         self._last_cost = last_cost
+        self.popped_task_ids = []
 
     async def estimate_cost(self, query: str) -> float:
         return self._estimate
@@ -27,6 +29,14 @@ class DummyCostTracker:
 
     def get_last_usage(self, task_id=None) -> dict:
         return {'input': 10, 'output': 5}
+
+    def _pop_call_info(self, task_id: str) -> dict:
+        self.popped_task_ids.append(task_id)
+        return {
+            'cost': self._last_cost,
+            'model': 'test-model',
+            'usage': {'input': 10, 'output': 5},
+        }
 
 
 class DummyOrchestrator:
@@ -122,6 +132,32 @@ async def test_stream_agent_emits_budget_error_when_over_budget():
         text = response.text
         assert '"type": "error"' in text
         assert 'Insufficient budget' in text
+    finally:
+        app.state.agent_orchestrator = original_orch
+        app.state.cost_tracker = original_cost
+
+
+async def test_stream_agent_cleans_cost_tracker_call_info_on_completion():
+    original_orch = getattr(app.state, "agent_orchestrator", None)
+    original_cost = getattr(app.state, "cost_tracker", None)
+
+    tracker = DummyCostTracker(estimate=0.01, spent=0.0, last_cost=0.003)
+    app.state.agent_orchestrator = DummyStreamOrchestrator()
+    app.state.cost_tracker = tracker
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.post(
+                '/agent/stream',
+                headers={'Authorization': 'Bearer sk-agent-local-dev'},
+                json={'query': 'stream and finish'},
+            )
+
+        assert response.status_code == 200
+        assert '"type": "done"' in response.text
+        assert len(tracker.popped_task_ids) == 1
+        uuid.UUID(tracker.popped_task_ids[0])
     finally:
         app.state.agent_orchestrator = original_orch
         app.state.cost_tracker = original_cost
