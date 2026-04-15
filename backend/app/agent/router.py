@@ -183,6 +183,25 @@ class ModelRouter:
 
         return "balanced"
 
+    def select_for_run(
+        self,
+        query: str,
+        has_tools: bool = False,
+        budget_remaining: float = 30.0,
+    ) -> str:
+        """
+        Single entry point for all model selection.
+        Orchestrator calls this once — no routing logic should live outside this class.
+        """
+        if has_tools:
+            # Tool/ReAct runs always use the agent tier (reliable function calling).
+            # Still respect budget floor — fall back to cheapest if nearly depleted.
+            if budget_remaining < 2.0:
+                logger.warning(f"Budget critical (${budget_remaining:.2f}) — forcing free model for tool run")
+                return self.MODELS["free"]["model"]
+            return self.MODELS["agent"]["model"]
+        return self.select_model(query, budget_remaining=budget_remaining)
+
     def is_complex(self, query: str) -> bool:
         """Return True if the query warrants a planning pass before execution."""
         return self._classify(query) in ("complex", "research")

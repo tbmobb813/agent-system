@@ -1,9 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { useHistory } from '@/lib/hooks'
 import { deleteTask, getTaskDetail } from '@/lib/api'
 import { formatCost, formatDate } from '@/lib/utils'
+
+const MarkdownContent = dynamic(() => import('./MarkdownContent'), { ssr: false })
 
 type Task = {
   id: string
@@ -101,9 +104,9 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                   Collapse
                 </button>
               </div>
-              <pre className="text-sm text-gray-100 whitespace-pre-wrap font-sans bg-gray-800 rounded-lg p-4 leading-relaxed">
-                {detail.task.result}
-              </pre>
+              <div className="text-sm text-gray-100 bg-gray-800 rounded-lg p-4 leading-relaxed">
+                <MarkdownContent content={detail.task.result} />
+              </div>
             </>
           ) : (
             <div className="flex justify-end">
@@ -131,15 +134,31 @@ export default function TaskHistory() {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [offset, setOffset] = useState(0)
+  const [search, setSearch] = useState('')
+  const [activeSearch, setActiveSearch] = useState('')
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => { refresh(PAGE_SIZE, offset) }, [refresh, offset])
+  // Debounce search input — fire after 350ms of no typing
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      setActiveSearch(search)
+      setOffset(0)
+      setExpanded(null)
+    }, 350)
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+  }, [search])
+
+  useEffect(() => {
+    refresh(PAGE_SIZE, offset, activeSearch || undefined)
+  }, [offset, activeSearch]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleDelete(id: string) {
     if (expanded === id) setExpanded(null)
     setDeleting(id)
     try {
       await deleteTask(id)
-      refresh()
+      refresh(PAGE_SIZE, offset, activeSearch || undefined)
     } finally {
       setDeleting(null)
     }
@@ -149,28 +168,56 @@ export default function TaskHistory() {
     setExpanded(prev => prev === id ? null : id)
   }
 
-  if (loading) return <p className="text-gray-400">Loading history…</p>
-  if (error)   return <p className="text-red-400">Error: {error}</p>
-  if (!data || data.tasks.length === 0) {
-    return <p className="text-gray-400">No tasks yet. Run your first agent query!</p>
-  }
-
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-400">
-          {data.total} total tasks
-          {data.total > PAGE_SIZE && ` — showing ${offset + 1}–${Math.min(offset + PAGE_SIZE, data.total)}`}
-        </p>
+    <div className="space-y-4">
+      {/* Search bar */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm select-none">⌕</span>
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search queries and results…"
+            className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:border-indigo-500 placeholder:text-gray-600"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs"
+            >
+              ✕
+            </button>
+          )}
+        </div>
         <button
-          onClick={() => refresh(PAGE_SIZE, offset)}
-          className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
+          onClick={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)}
+          className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors shrink-0"
         >
           Refresh
         </button>
       </div>
 
-      {(data.tasks as Task[]).map((task) => (
+      {/* Status line */}
+      {!loading && data && (
+        <p className="text-sm text-gray-400">
+          {activeSearch
+            ? `${data.total} result${data.total !== 1 ? 's' : ''} for "${activeSearch}"`
+            : `${data.total} total task${data.total !== 1 ? 's' : ''}`}
+          {data.total > PAGE_SIZE && ` — showing ${offset + 1}–${Math.min(offset + PAGE_SIZE, data.total)}`}
+        </p>
+      )}
+
+      {loading && <p className="text-gray-400 text-sm">Loading…</p>}
+      {error && <p className="text-red-400 text-sm">Error: {error}</p>}
+
+      {!loading && data && data.tasks.length === 0 && (
+        <p className="text-gray-400 text-sm">
+          {activeSearch ? `No tasks match "${activeSearch}".` : 'No tasks yet. Run your first agent query!'}
+        </p>
+      )}
+
+      {(data?.tasks as Task[] ?? []).map((task) => (
         <div key={task.id} className="bg-gray-900 rounded-xl border border-gray-800 p-4">
           <div
             className="flex items-start justify-between gap-4 cursor-pointer select-none"
@@ -208,7 +255,7 @@ export default function TaskHistory() {
         </div>
       ))}
 
-      {data.total > PAGE_SIZE && (
+      {data && data.total > PAGE_SIZE && (
         <div className="flex items-center justify-between pt-2">
           <button
             onClick={() => { setOffset(o => Math.max(0, o - PAGE_SIZE)); setExpanded(null) }}

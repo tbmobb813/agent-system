@@ -4,6 +4,7 @@ Authentication and authorization utilities.
 
 import asyncio
 import hashlib
+import hmac
 import logging
 from fastapi import HTTPException, Header
 from typing import Optional
@@ -41,8 +42,8 @@ async def verify_api_key(
     # Master key bypass — accepts BACKEND_API_KEY and any additional keys in
     # BACKEND_EXTRA_KEYS (comma-separated). Skips DB validation entirely.
     from app.config import settings as app_settings
-    allowed = {k.strip() for k in app_settings.BACKEND_API_KEY.split(",") if k.strip()}
-    if token in allowed:
+    allowed = [k.strip() for k in app_settings.BACKEND_API_KEY.split(",") if k.strip()]
+    if any(hmac.compare_digest(token, k) for k in allowed):
         logger.debug(f"API key accepted via master key bypass: {token[:20]}...")
         return token
 
@@ -66,10 +67,13 @@ async def verify_api_key(
                 raise HTTPException(status_code=401, detail="Invalid API key")
             if not row["is_active"]:
                 raise HTTPException(status_code=401, detail="API key is disabled")
-            # Fire-and-forget last_used update
-            asyncio.create_task(
-                execute("UPDATE api_keys SET last_used = NOW() WHERE key_hash = $1", key_hash)
-            )
+            # Fire-and-forget last_used update — log but don't fail auth on DB error
+            async def _update_last_used():
+                try:
+                    await execute("UPDATE api_keys SET last_used = NOW() WHERE key_hash = $1", key_hash)
+                except Exception as e:
+                    logger.debug(f"Could not update last_used for key: {e}")
+            asyncio.create_task(_update_last_used())
             logger.debug(f"API key authenticated (DB): {token[:20]}...")
             return token
 
@@ -79,18 +83,10 @@ async def verify_api_key(
 
 def get_user_id_from_key(api_key: str) -> str:
     """
-    Extract user ID from API key.
-    Format: sk-agent-{user_id}-{random}
+    Return a stable user ID from an API key.
+    For the personal agent we always use "default" — there's only one user.
     """
-    try:
-        parts = api_key.split("-")
-        if len(parts) >= 3:
-            return parts[2]
-    except:
-        pass
-    
-    # Fallback to first part of key
-    return api_key[:20]
+    return "default"
 
 
 class APIKeyManager:

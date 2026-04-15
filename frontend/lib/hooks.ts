@@ -142,7 +142,7 @@ export function useAgentStream() {
 
 export function useCostStatus() {
   const [data, setData] = useState<Record<string, unknown> | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
@@ -158,19 +158,21 @@ export function useCostStatus() {
     }
   }, [])
 
+  useEffect(() => { refresh() }, [refresh])
+
   return { data, loading, error, refresh }
 }
 
 export function useHistory() {
   const [data, setData] = useState<{ tasks: unknown[]; total: number } | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const refresh = useCallback(async (limit = 20, offset = 0) => {
+  const refresh = useCallback(async (limit = 20, offset = 0, q?: string) => {
     setLoading(true)
     setError(null)
     try {
-      const result = await getHistory(limit, offset)
+      const result = await getHistory(limit, offset, q)
       setData(result)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load')
@@ -178,6 +180,8 @@ export function useHistory() {
       setLoading(false)
     }
   }, [])
+
+  useEffect(() => { refresh() }, [refresh])
 
   return { data, loading, error, refresh }
 }

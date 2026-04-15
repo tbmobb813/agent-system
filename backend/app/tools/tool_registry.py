@@ -3,6 +3,7 @@ Tool Registry - Manages all available tools the agent can use.
 """
 
 import logging
+import os
 import httpx
 from typing import Any, Callable, Dict, Optional
 from inspect import signature
@@ -183,7 +184,7 @@ class ToolRegistry:
                 "type": "function",
                 "function": {
                     "name": "file_operations",
-                    "description": "Read, write, list, or delete files in the agent workspace (/tmp/agent-workspace).",
+                    "description": "Read, write, list, or delete files in the agent workspace.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -419,8 +420,7 @@ class ToolRegistry:
                         return "\n---\n".join(texts) if texts else "No elements matched selector"
 
                     elif action == "screenshot":
-                        path = screenshot_path or "/tmp/agent-workspace/screenshot.png"
-                        import os
+                        path = screenshot_path or os.path.join(settings.AGENT_WORKSPACE_DIR, "screenshot.png")
                         os.makedirs(os.path.dirname(path), exist_ok=True)
                         await page.screenshot(path=path, full_page=True)
                         return f"Screenshot saved to {path}"
@@ -452,10 +452,9 @@ class ToolRegistry:
         operation: str,
         path: str = "",
         content: str = "",
-        workspace: str = "/tmp/agent-workspace",
+        workspace: str = settings.AGENT_WORKSPACE_DIR,
     ) -> str:
         """Read/write files within a sandboxed workspace directory."""
-        import os
         import aiofiles
 
         logger.info(f"File operation: {operation} on {path}")

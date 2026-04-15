@@ -6,6 +6,7 @@ Storage: Supabase document_chunks table with pgvector embeddings
 Search:  Semantic (cosine) if OPENAI_API_KEY set, else full-text
 """
 
+import asyncio
 import io
 import uuid
 import logging
@@ -15,7 +16,7 @@ from typing import Optional
 import tiktoken
 
 from app.config import settings
-from app.database import db_pool
+from app import database as _db
 from app.agent.memory import _embed
 
 logger = logging.getLogger(__name__)
@@ -143,7 +144,7 @@ async def ingest_document(
     Full pipeline: parse → chunk → embed → store.
     Returns summary dict with document_id and chunk_count.
     """
-    if not db_pool:
+    if not _db.db_pool:
         raise RuntimeError("Database not connected")
 
     user_id = user_id or "default"
@@ -162,7 +163,7 @@ async def ingest_document(
 
     # 3. Create document record
     doc_id = str(uuid.uuid4())
-    async with db_pool.acquire() as conn:
+    async with _db.db_pool.acquire() as conn:
         await conn.execute(
             """
             INSERT INTO documents (id, user_id, filename, file_type, file_size, chunk_count, created_at)
@@ -171,13 +172,23 @@ async def ingest_document(
             doc_id, user_id, filename, file_type, len(data), len(chunks), datetime.utcnow(),
         )
 
-    # 4. Embed + store chunks
-    stored = 0
-    async with db_pool.acquire() as conn:
-        for i, chunk_text in enumerate(chunks):
-            token_count = _count_tokens(chunk_text)
-            embedding = await _embed(chunk_text)
+    # 4. Embed chunks with bounded concurrency, then store
+    token_counts = [_count_tokens(c) for c in chunks]
+    embed_concurrency = min(10, len(chunks)) or 1
+    embed_semaphore = asyncio.Semaphore(embed_concurrency)
 
+    async def _embed_limited(chunk_text: str):
+        async with embed_semaphore:
+            return await _embed(chunk_text)
+
+    embeddings = await asyncio.gather(*[_embed_limited(c) for c in chunks])
+
+    stored = 0
+    now = datetime.utcnow()
+    async with _db.db_pool.acquire() as conn:
+        for i, (chunk_text, token_count, embedding) in enumerate(
+            zip(chunks, token_counts, embeddings)
+        ):
             if embedding:
                 await conn.execute(
                     """
@@ -186,7 +197,7 @@ async def ingest_document(
                     VALUES ($1, $2, $3, $4, $5, $6::vector, $7)
                     """,
                     str(uuid.uuid4()), doc_id, i, chunk_text,
-                    token_count, str(embedding), datetime.utcnow(),
+                    token_count, str(embedding), now,
                 )
             else:
                 await conn.execute(
@@ -196,7 +207,7 @@ async def ingest_document(
                     VALUES ($1, $2, $3, $4, $5, $6)
                     """,
                     str(uuid.uuid4()), doc_id, i, chunk_text,
-                    token_count, datetime.utcnow(),
+                    token_count, now,
                 )
             stored += 1
 
@@ -225,7 +236,7 @@ async def search_documents(
     Find relevant document chunks for a query.
     Uses vector search if embeddings available, else full-text.
     """
-    if not db_pool:
+    if not _db.db_pool:
         return []
 
     user_id = user_id or "default"
@@ -243,7 +254,7 @@ async def _vector_search_docs(
     document_id: Optional[str],
 ) -> list[dict]:
     try:
-        async with db_pool.acquire() as conn:
+        async with _db.db_pool.acquire() as conn:
             doc_filter = "AND dc.document_id = $4" if document_id else ""
             params = [str(embedding), user_id, limit]
             if document_id:
@@ -277,7 +288,7 @@ async def _fulltext_search_docs(
     document_id: Optional[str],
 ) -> list[dict]:
     try:
-        async with db_pool.acquire() as conn:
+        async with _db.db_pool.acquire() as conn:
             doc_filter = "AND dc.document_id = $3" if document_id else ""
             params = [user_id, query]
             if document_id:

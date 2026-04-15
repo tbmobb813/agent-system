@@ -8,7 +8,8 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Query
 from fastapi.responses import JSONResponse
 
 from app.utils.auth import verify_api_key
-from app.database import fetch, fetchrow, fetchval, execute, db_pool
+from app.database import fetch, fetchrow, fetchval, execute
+from app import database as _db
 from app.agent.documents import ingest_document, search_documents
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ async def list_documents(
     api_key: str = Depends(verify_api_key),
 ):
     """List all ingested documents."""
-    if not db_pool:
+    if not _db.db_pool:
         return {"documents": [], "total": 0}
 
     rows = await fetch(

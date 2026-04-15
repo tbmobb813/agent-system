@@ -6,7 +6,8 @@ To wire into main.py:
     app.include_router(history_router)
 """
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
+from typing import Optional
 
 from app.database import fetch, fetchrow, fetchval, execute
 from app.utils.auth import verify_api_key
@@ -16,22 +17,39 @@ router = APIRouter(prefix="/history", tags=["history"])
 
 @router.get("")
 async def get_history(
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    q: Optional[str] = Query(None, max_length=500),
     api_key: str = Depends(verify_api_key),
 ):
-    """Get paginated execution history."""
-    tasks = await fetch(
-        """
-        SELECT id, query, status, created_at, cost, model_used
-        FROM tasks
-        ORDER BY created_at DESC
-        LIMIT $1 OFFSET $2
-        """,
-        limit,
-        offset,
-    )
-    total = await fetchval("SELECT COUNT(*) FROM tasks")
+    """Get paginated execution history, optionally filtered by search query."""
+    if q and q.strip():
+        pattern = f"%{q.strip()}%"
+        tasks = await fetch(
+            """
+            SELECT id, query, status, created_at, cost, model_used
+            FROM tasks
+            WHERE query ILIKE $3 OR result ILIKE $3
+            ORDER BY created_at DESC
+            LIMIT $1 OFFSET $2
+            """,
+            limit, offset, pattern,
+        )
+        total = await fetchval(
+            "SELECT COUNT(*) FROM tasks WHERE query ILIKE $1 OR result ILIKE $1",
+            pattern,
+        )
+    else:
+        tasks = await fetch(
+            """
+            SELECT id, query, status, created_at, cost, model_used
+            FROM tasks
+            ORDER BY created_at DESC
+            LIMIT $1 OFFSET $2
+            """,
+            limit, offset,
+        )
+        total = await fetchval("SELECT COUNT(*) FROM tasks")
     return {
         "tasks": [dict(t) for t in tasks],
         "total": total,

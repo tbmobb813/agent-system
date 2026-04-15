@@ -1,11 +1,8 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'sk-agent-local-dev'
+const configuredApiUrl = (process.env.NEXT_PUBLIC_API_URL || '').trim()
+const API_URL = configuredApiUrl.startsWith('/api/backend') ? configuredApiUrl : '/api/backend'
 
 function headers(): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${API_KEY}`,
-  }
+  return { 'Content-Type': 'application/json' }
 }
 
 /** Fetch with a timeout. Throws if the server doesn't respond in time. */
@@ -40,10 +37,40 @@ export async function getCostStatus() {
   return res.json()
 }
 
-export async function getHistory(limit = 20, offset = 0) {
-  const res = await fetchWithTimeout(`${API_URL}/history?limit=${limit}&offset=${offset}`, {
-    headers: headers(),
-  })
+export async function getAnalyticsOverview() {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/overview`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch analytics overview (${res.status})`)
+  return res.json()
+}
+
+export async function getAnalyticsDaily(days = 7) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/daily?days=${days}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch analytics daily (${res.status})`)
+  return res.json()
+}
+
+export async function getAnalyticsModels(days = 30) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/models?days=${days}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch analytics models (${res.status})`)
+  return res.json()
+}
+
+export async function getAnalyticsTools(days = 30) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/tools?days=${days}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch analytics tools (${res.status})`)
+  return res.json()
+}
+
+export async function getAnalyticsAlerts(days = 30) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/alerts?days=${days}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch analytics alerts (${res.status})`)
+  return res.json()
+}
+
+export async function getHistory(limit = 20, offset = 0, q?: string) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (q && q.trim()) params.set('q', q.trim())
+  const res = await fetchWithTimeout(`${API_URL}/history?${params}`, { headers: headers() })
   if (!res.ok) throw new Error(`Failed to fetch history (${res.status})`)
   return res.json()
 }
@@ -116,7 +143,6 @@ export async function uploadDocument(file: File) {
   form.append('file', file)
   const res = await fetch(`${API_URL}/documents/upload`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${API_KEY}` },
     body: form,
   })
   if (!res.ok) {

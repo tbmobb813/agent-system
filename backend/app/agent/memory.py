@@ -17,7 +17,7 @@ from typing import Optional
 from openai import AsyncOpenAI
 
 from app.config import settings
-from app.database import db_pool
+from app import database as _db
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,6 @@ Insight (or NOTHING):"""
 
 _CLASSIFY_KEYWORDS = {
     "prefer": "preference",
-    "prefer": "preference",
     "always": "pattern",
     "never": "pattern",
     "usually": "pattern",
@@ -104,7 +103,7 @@ async def _extract_insight(query: str, response: str) -> Optional[str]:
         client = AsyncOpenAI(
             base_url=settings.OPENROUTER_BASE_URL,
             api_key=settings.OPENROUTER_API_KEY,
-            default_headers={"HTTP-Referer": "http://localhost:3000", "X-Title": "Personal AI Agent"},
+            default_headers={"HTTP-Referer": settings.SITE_URL, "X-Title": "Personal AI Agent"},
         )
         resp = await client.chat.completions.create(
             model=settings.DEFAULT_MODEL_SIMPLE,   # cheapest tier
@@ -160,7 +159,7 @@ class MemoryManager:
           fact       — specific facts the user has told the agent
           pattern    — recurring patterns in user behaviour
         """
-        if not db_pool:
+        if not _db.db_pool:
             return None
 
         user_id = user_id or DEFAULT_USER
@@ -172,7 +171,7 @@ class MemoryManager:
         embedding = await _embed(content)
 
         try:
-            async with db_pool.acquire() as conn:
+            async with _db.db_pool.acquire() as conn:
                 if embedding:
                     await conn.execute(
                         """
@@ -214,7 +213,7 @@ class MemoryManager:
         Uses pgvector cosine similarity if embeddings are available,
         otherwise falls back to PostgreSQL full-text search.
         """
-        if not db_pool:
+        if not _db.db_pool:
             return []
 
         user_id = user_id or DEFAULT_USER
@@ -235,7 +234,7 @@ class MemoryManager:
         category: Optional[str],
     ) -> list[dict]:
         try:
-            async with db_pool.acquire() as conn:
+            async with _db.db_pool.acquire() as conn:
                 cat_filter = "AND category = $4" if category else ""
                 params = [str(embedding), user_id, limit]
                 if category:
@@ -267,7 +266,7 @@ class MemoryManager:
         category: Optional[str],
     ) -> list[dict]:
         try:
-            async with db_pool.acquire() as conn:
+            async with _db.db_pool.acquire() as conn:
                 cat_filter = "AND category = $3" if category else ""
                 params = [user_id, query]
                 if category:
@@ -301,15 +300,14 @@ class MemoryManager:
         category: Optional[str] = None,
     ) -> list[dict]:
         """Retrieve the most recent memories."""
-        if not db_pool:
+        if not _db.db_pool:
             return []
         user_id = user_id or DEFAULT_USER
         try:
-            async with db_pool.acquire() as conn:
-                cat_filter = "AND category = $3" if category else ""
+            async with _db.db_pool.acquire() as conn:
+                cat_filter = "AND category = $2" if category else ""
                 params = [user_id, limit]
                 if category:
-                    params.insert(1, category)
                     params = [user_id, category, limit]
 
                 rows = await conn.fetch(
@@ -377,10 +375,10 @@ class MemoryManager:
 
     async def delete(self, memory_id: str) -> bool:
         """Delete a specific memory by ID."""
-        if not db_pool:
+        if not _db.db_pool:
             return False
         try:
-            async with db_pool.acquire() as conn:
+            async with _db.db_pool.acquire() as conn:
                 await conn.execute("DELETE FROM memory WHERE id = $1", memory_id)
             return True
         except Exception as e:
