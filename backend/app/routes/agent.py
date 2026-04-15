@@ -58,14 +58,14 @@ async def run_agent(
     cost_tracker = _cost_tracker(request)
 
     estimated_cost = await cost_tracker.estimate_cost(body.query)
-    remaining = settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_today()
+    remaining = settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_month()
 
     if estimated_cost > remaining:
         return JSONResponse(
             status_code=402,
             content={
                 "error": "Insufficient budget",
-                "spent_today": await cost_tracker.get_spent_today(),
+                "spent_today": await cost_tracker.get_spent_month(),
                 "budget": settings.OPENROUTER_BUDGET_MONTHLY,
                 "estimated_cost": estimated_cost,
             },
@@ -121,15 +121,16 @@ async def stream_agent(
             logger.warning(f"Could not update task status: {e}")
 
     async def generate():
+        _stream = None
         try:
             estimated_cost = await cost_tracker.estimate_cost(body.query)
-            remaining = settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_today()
+            remaining = settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_month()
 
             if estimated_cost > remaining:
                 yield format_sse_event({
                     "type": "error",
                     "error": "Insufficient budget",
-                    "spent": await cost_tracker.get_spent_today(),
+                    "spent": await cost_tracker.get_spent_month(),
                     "budget": settings.OPENROUTER_BUDGET_MONTHLY,
                 })
                 return
@@ -154,6 +155,7 @@ async def stream_agent(
             status = "completed"
             model_used = None
             got_done = False
+            stream_started_at = time.monotonic()
 
             _stream = orchestrator.stream(
                 query=body.query,
@@ -166,15 +168,26 @@ async def stream_agent(
             )
             while True:
                 try:
+                    remaining_timeout = settings.MAX_STREAM_SECONDS - (
+                        time.monotonic() - stream_started_at
+                    )
+                    if remaining_timeout <= 0:
+                        raise asyncio.TimeoutError()
+
                     event = await asyncio.wait_for(
                         _stream.__anext__(),
-                        timeout=settings.MAX_STREAM_SECONDS,
+                        timeout=remaining_timeout,
                     )
                 except StopAsyncIteration:
                     break
                 except asyncio.TimeoutError:
                     status = "failed"
                     await _persist_terminal_status(status)
+                    if _stream is not None:
+                        try:
+                            await _stream.aclose()
+                        except Exception as close_error:
+                            logger.debug(f"Failed to close timed out stream: {close_error}")
                     yield format_sse_event({
                         "type": "error",
                         "error": f"Run timed out after {settings.MAX_STREAM_SECONDS}s",
@@ -222,9 +235,22 @@ async def stream_agent(
             if not got_done:
                 await _persist_terminal_status(status)
 
+        except asyncio.CancelledError:
+            if _stream is not None:
+                try:
+                    await _stream.aclose()
+                except Exception as close_error:
+                    logger.debug(f"Failed to close cancelled stream: {close_error}")
+            raise
         except Exception as e:
             logger.error(f"Stream error: {e}", exc_info=True)
             yield format_sse_event({"type": "error", "error": str(e)})
+        finally:
+            if await request.is_disconnected() and _stream is not None:
+                try:
+                    await _stream.aclose()
+                except Exception as close_error:
+                    logger.debug(f"Failed to close disconnected stream: {close_error}")
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

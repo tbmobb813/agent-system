@@ -172,9 +172,16 @@ async def ingest_document(
             doc_id, user_id, filename, file_type, len(data), len(chunks), datetime.utcnow(),
         )
 
-    # 4. Embed all chunks in parallel, then store
+    # 4. Embed chunks with bounded concurrency, then store
     token_counts = [_count_tokens(c) for c in chunks]
-    embeddings = await asyncio.gather(*[_embed(c) for c in chunks])
+    embed_concurrency = min(10, len(chunks)) or 1
+    embed_semaphore = asyncio.Semaphore(embed_concurrency)
+
+    async def _embed_limited(chunk_text: str):
+        async with embed_semaphore:
+            return await _embed(chunk_text)
+
+    embeddings = await asyncio.gather(*[_embed_limited(c) for c in chunks])
 
     stored = 0
     now = datetime.utcnow()

@@ -29,7 +29,20 @@ logger = logging.getLogger(__name__)
 
 BACKEND_URL = os.getenv("BACKEND_API_URL", "http://localhost:8000")
 API_KEY = os.getenv("TELEGRAM_BOT_API_KEY", "sk-agent-telegram-bot")
-_ALLOWED_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID", "0"))
+
+
+def _parse_chat_id(raw_value: str) -> int:
+    value = (raw_value or "").strip().strip('"\'')
+    if not value:
+        return 0
+    try:
+        return int(value)
+    except ValueError:
+        logger.error("Invalid TELEGRAM_CHAT_ID value: %r", raw_value)
+        return 0
+
+
+_ALLOWED_CHAT_ID = _parse_chat_id(os.getenv("TELEGRAM_CHAT_ID", "0"))
 
 HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 

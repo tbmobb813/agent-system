@@ -1,4 +1,5 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api/backend'
+const configuredApiUrl = (process.env.NEXT_PUBLIC_API_URL || '').trim()
+const API_URL = configuredApiUrl.startsWith('/api/backend') ? configuredApiUrl : '/api/backend'
 
 function headers(): Record<string, string> {
   return { 'Content-Type': 'application/json' }

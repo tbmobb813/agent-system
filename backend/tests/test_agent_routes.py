@@ -16,6 +16,9 @@ class DummyCostTracker:
     async def get_spent_today(self) -> float:
         return self._spent
 
+    async def get_spent_month(self) -> float:
+        return self._spent
+
     async def get_last_call_cost(self, task_id=None) -> float:
         return self._last_cost
 

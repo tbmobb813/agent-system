@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from openai import AsyncOpenAI
 
 from app.config import settings
+from app import database as _db
 from app.models import ExecutionEvent, EventType, TaskStatus
 from app.agent.router import ModelRouter
 from app.agent.memory import memory_manager
@@ -124,7 +125,7 @@ class AgentOrchestrator:
             budget_remaining = settings.OPENROUTER_BUDGET_MONTHLY
             if self.cost_tracker:
                 try:
-                    spent = await self.cost_tracker.get_spent_today()
+                    spent = await self.cost_tracker.get_spent_month()
                     budget_remaining = settings.OPENROUTER_BUDGET_MONTHLY - spent
                 except Exception:
                     pass
@@ -364,20 +365,21 @@ class AgentOrchestrator:
                         result_str = f"Tool error: {e}"
                     finally:
                         duration_ms = int((_time.monotonic() - t0) * 1000)
-                        try:
-                            await db_execute(
-                                """
-                                INSERT INTO tool_calls
-                                    (task_id, conversation_id, iteration, tool_name,
-                                     input_json, output_text, error, duration_ms, truncated)
-                                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-                                """,
-                                task_id, conversation_id, iteration + 1, name,
-                                json.dumps(args), result_str[:2000], err_str,
-                                duration_ms, truncated,
-                            )
-                        except Exception as log_err:
-                            logger.debug(f"Tool call logging failed: {log_err}")
+                        if _db.db_pool:
+                            try:
+                                await db_execute(
+                                    """
+                                    INSERT INTO tool_calls
+                                        (task_id, conversation_id, iteration, tool_name,
+                                         input_json, output_text, error, duration_ms, truncated)
+                                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                                    """,
+                                    task_id, conversation_id, iteration + 1, name,
+                                    json.dumps(args), result_str[:2000], err_str,
+                                    duration_ms, truncated,
+                                )
+                            except Exception as log_err:
+                                logger.debug(f"Tool call logging failed: {log_err}")
                     return call_id, name, result_str, err_str
 
                 tool_results = await asyncio.gather(

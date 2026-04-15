@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export function middleware(request: NextRequest) {
-  const apiKey = process.env.API_KEY
+  const apiKey = process.env.BACKEND_API_KEY || process.env.API_KEY
   if (!apiKey) return NextResponse.next()
 
   const requestHeaders = new Headers(request.headers)

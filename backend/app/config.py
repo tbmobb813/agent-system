@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     ALLOWED_HOSTS: list[str] = Field(default=["localhost", "127.0.0.1"])
     CORS_ORIGINS: list[str] = Field(default=["http://localhost:3003", "http://localhost:8000", "http://167.88.45.213:3003"])
     SITE_URL: str = Field(default="http://localhost:3003")
+    AGENT_WORKSPACE_DIR: str = Field(default="/tmp/agent-workspace")
     
     # Tools
     SEARXNG_URL: str = Field(default="http://localhost:8888")  # Your SearXNG instance URL
@@ -210,7 +211,7 @@ class CostTracker:
         self._spent_cache_ts = 0.0
 
         # Check budget and fire alerts
-        spent_month = await self.get_spent_today()
+        spent_month = await self.get_spent_month()
         try:
             from app.utils.alerts import alert_manager
             await alert_manager.check_and_notify(spent_month, settings.OPENROUTER_BUDGET_MONTHLY)
@@ -219,7 +220,7 @@ class CostTracker:
 
         return total_cost
     
-    async def get_spent_today(self) -> float:
+    async def get_spent_month(self) -> float:
         """Get total spending from the start of the month (cached for 15s)."""
         if not self.db_pool:
             return 0.0
@@ -237,6 +238,10 @@ class CostTracker:
         self._spent_cache = float(result or 0.0)
         self._spent_cache_ts = now
         return self._spent_cache
+
+    async def get_spent_today(self) -> float:
+        """Compatibility alias for month-to-date spend. Prefer get_spent_month()."""
+        return await self.get_spent_month()
     
     async def get_spent_today_date(self) -> float:
         """Get spending from today only (for daily alerts)."""
@@ -269,7 +274,7 @@ class CostTracker:
     
     async def get_status(self) -> dict:
         """Get current budget status."""
-        spent = await self.get_spent_today()
+        spent = await self.get_spent_month()
         spent_daily = await self.get_spent_today_date()
         remaining = settings.OPENROUTER_BUDGET_MONTHLY - spent
         percent = (spent / settings.OPENROUTER_BUDGET_MONTHLY) * 100
