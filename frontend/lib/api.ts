@@ -9,6 +9,12 @@ function headers(): Record<string, string> {
   return { 'Content-Type': 'application/json' }
 }
 
+/** Auth header for direct-to-backend calls that bypass the Next.js middleware. */
+function streamHeaders(): Record<string, string> {
+  const key = process.env.NEXT_PUBLIC_BACKEND_API_KEY
+  return key ? { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` } : headers()
+}
+
 /** Fetch with a timeout. Throws if the server doesn't respond in time. */
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 10000): Promise<Response> {
   const controller = new AbortController()
@@ -131,7 +137,7 @@ export async function stopAgent(taskId: string) {
 export function streamAgent(query: string, context?: string, tools?: string[], conversationId?: string) {
   return fetch(`${STREAM_URL}/agent/stream`, {
     method: 'POST',
-    headers: headers(),
+    headers: streamHeaders(),
     body: JSON.stringify({ query, context, tools, conversation_id: conversationId ?? null }),
   })
 }

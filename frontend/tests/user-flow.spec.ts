@@ -54,7 +54,7 @@ test('full user flow: dashboard to agent execution', async ({ page }) => {
     '',
   ].join('\n')
 
-  await page.route('**/api/backend/agent/stream', async route => {
+  await page.route('**/agent/stream', async route => {
     await route.fulfill({
       status: 200,
       contentType: 'text/event-stream',

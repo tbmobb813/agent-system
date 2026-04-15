@@ -35,7 +35,7 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_KEY}
-      - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:3000","http://localhost:8000"]}
+      - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:3000","http://localhost:3003","http://localhost:8000"]}
       - SEARXNG_URL=${SEARXNG_URL:-http://localhost:8888}
       - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY:-}
       - E2B_API_KEY=${E2B_API_KEY:-}
@@ -58,6 +58,8 @@ services:
       - "3003:3003"
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000}
+      - NEXT_PUBLIC_BACKEND_API_KEY=${BACKEND_API_KEY}
       - NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_KEY}
     depends_on:
