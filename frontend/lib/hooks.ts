@@ -3,6 +3,22 @@
 import { useState, useCallback, useEffect } from 'react'
 import { streamAgent, stopAgent, getCostStatus, getHistory } from './api'
 
+async function notifyTaskDone() {
+  if (typeof window === 'undefined' || !('__TAURI__' in window)) return
+  try {
+    const { isPermissionGranted, requestPermission, sendNotification } =
+      await import('@tauri-apps/plugin-notification')
+    let granted = await isPermissionGranted()
+    if (!granted) {
+      const perm = await requestPermission()
+      granted = perm === 'granted'
+    }
+    if (granted) sendNotification({ title: 'Agent System', body: 'Task completed.' })
+  } catch {
+    // not in Tauri context or plugin unavailable — ignore
+  }
+}
+
 export type StreamEvent = {
   type: string
   message?: string
@@ -96,6 +112,7 @@ export function useAgentStream() {
                 if (event.conversation_id) setConversationId(event.conversation_id)
                 setIsRunning(false)
                 setTaskId(null)
+                notifyTaskDone()
               }
               if (event.type === 'error') {
                 setIsRunning(false)

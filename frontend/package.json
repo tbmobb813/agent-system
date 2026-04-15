@@ -12,6 +12,8 @@
     "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
+    "@tauri-apps/plugin-autostart": "^2.5.1",
+    "@tauri-apps/plugin-notification": "^2.3.3",
     "@types/react-syntax-highlighter": "^15.5.13",
     "next": "^15.1.0",
     "react": "^19.0.0",
