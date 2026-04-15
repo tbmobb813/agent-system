@@ -1,5 +1,4 @@
 from httpx import ASGITransport, AsyncClient
-import uuid
 from app.models import ExecutionEvent, EventType
 
 from app.main import app
@@ -30,7 +29,7 @@ class DummyCostTracker:
     def get_last_usage(self, task_id=None) -> dict:
         return {'input': 10, 'output': 5}
 
-    def _pop_call_info(self, task_id: str) -> dict:
+    def pop_call_info(self, task_id: str) -> dict:
         self.popped_task_ids.append(task_id)
         return {
             'cost': self._last_cost,
@@ -138,6 +137,8 @@ async def test_stream_agent_emits_budget_error_when_over_budget():
 
 
 async def test_stream_agent_cleans_cost_tracker_call_info_on_completion():
+    from uuid import UUID
+
     original_orch = getattr(app.state, "agent_orchestrator", None)
     original_cost = getattr(app.state, "cost_tracker", None)
 
@@ -157,7 +158,9 @@ async def test_stream_agent_cleans_cost_tracker_call_info_on_completion():
         assert response.status_code == 200
         assert '"type": "done"' in response.text
         assert len(tracker.popped_task_ids) == 1
-        uuid.UUID(tracker.popped_task_ids[0])
+        parsed_task_uuid = UUID(tracker.popped_task_ids[0])
+        assert str(parsed_task_uuid) == tracker.popped_task_ids[0]
+        assert tracker.popped_task_ids[0] in response.text
     finally:
         app.state.agent_orchestrator = original_orch
         app.state.cost_tracker = original_cost

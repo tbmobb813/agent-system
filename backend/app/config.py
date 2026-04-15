@@ -293,9 +293,16 @@ class CostTracker:
             "reset_date": reset.isoformat(),
         }
 
-    def _pop_call_info(self, task_id: str) -> dict:
-        """Return and remove per-task call info. Falls back to zeros if missing."""
+    def pop_call_info(self, task_id: str) -> dict:
+        """Return and remove per-task call info as {cost, model, usage}.
+
+        Falls back to {"cost": 0.0, "model": None, "usage": None} when missing.
+        """
         return self._call_info.pop(task_id, {"cost": 0.0, "model": None, "usage": None})
+
+    def _pop_call_info(self, task_id: str) -> dict:
+        """Compatibility alias for legacy call sites."""
+        return self.pop_call_info(task_id)
 
     async def get_last_call_cost(self, task_id: Optional[str] = None) -> float:
         """Get cost of the last API call for a task (or most recent if no task_id)."""

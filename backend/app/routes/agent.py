@@ -251,7 +251,7 @@ async def stream_agent(
                     await _stream.aclose()
                 except Exception as close_error:
                     logger.debug(f"Failed to close disconnected stream: {close_error}")
-            pop_call_info = getattr(cost_tracker, "_pop_call_info", None)
+            pop_call_info = getattr(cost_tracker, "pop_call_info", None)
             if callable(pop_call_info):
                 try:
                     pop_call_info(task_id)
