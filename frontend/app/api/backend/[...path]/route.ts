@@ -9,7 +9,6 @@ import { type NextRequest } from 'next/server'
 
 const BACKEND =
   process.env.BACKEND_URL?.trim() ||
-  process.env.NEXT_PUBLIC_BACKEND_URL?.trim() ||
   'http://backend:8000'
 
 // Headers that must not be forwarded to the upstream or back to the client

@@ -72,6 +72,8 @@ export async function exportElementToPdf(
     // Paginate: slice the canvas image across pages
     while (remainingH > 0) {
       const sliceH = Math.min(remainingH, pageH - margin * 2)
+      // Canvas dimensions are integers: floor Y to avoid overlap, ceil height to avoid
+      // missing rows, and clamp to the source canvas so drawImage stays in bounds.
       const srcY = Math.floor(((imgH - remainingH) / imgH) * canvas.height)
       const srcH = Math.min(canvas.height - srcY, Math.ceil((sliceH / imgH) * canvas.height))
 
