@@ -210,6 +210,16 @@ class AgentOrchestrator:
                 plan_prefix = await self._make_plan(query, context, agent_model)
                 if plan_prefix:
                     yield ExecutionEvent(type=EventType.THINKING, content=f"Plan:\n{plan_prefix}")
+                    # Extract the "Done when:" line and add it to the system prompt
+                    # so the agent has an explicit, verifiable stopping condition.
+                    for line in plan_prefix.splitlines():
+                        if line.strip().lower().startswith("done when:"):
+                            system += (
+                                f"\n\n<success_criteria>\n{line.strip()}\n"
+                                "Stop using tools and write your final response as soon as "
+                                "this condition is met.\n</success_criteria>"
+                            )
+                            break
 
             # System + history + new user message (with plan prepended if available)
             messages = [{"role": "system", "content": system}]
@@ -468,14 +478,20 @@ class AgentOrchestrator:
                         logger.warning(f"Conversation save failed: {e}")
 
                     # ── Auto-save insight to long-term memory ──────────
-                    try:
-                        await memory_manager.save_interaction(
-                            query=query,
-                            response=final_text,
-                            user_id=user_id,
-                        )
-                    except Exception as e:
-                        logger.warning(f"Memory save failed: {e}")
+                    # Skip trivial exchanges (conversational/simple tier) —
+                    # they don't contain anything worth remembering and the
+                    # LLM extraction call would just waste tokens.
+                    if self.router.is_worth_remembering(query):
+                        try:
+                            await memory_manager.save_interaction(
+                                query=query,
+                                response=final_text,
+                                user_id=user_id,
+                            )
+                        except Exception as e:
+                            logger.warning(f"Memory save failed: {e}")
+                    else:
+                        logger.debug("Skipping memory extraction for low-complexity query")
 
                     break  # Done
 
@@ -613,13 +629,21 @@ class AgentOrchestrator:
 
     async def _make_plan(self, query: str, context: Optional[str], model: str) -> str:
         """
-        Ask the model to produce a concise numbered plan before executing.
+        Ask the model to produce a concise numbered plan with explicit success criteria.
         Uses the cheap model to keep cost low — plan is short and structured.
+
+        Output format (enforced by prompt):
+            1. Step one
+            2. Step two
+            ...
+            Done when: <verifiable completion condition>
         """
         plan_prompt = (
-            "You are a planning assistant. Given the following task, produce a short numbered "
-            "step-by-step plan (max 5 steps) of what needs to be done to complete it. "
-            "Be specific but concise. Do not execute anything — just plan.\n\n"
+            "You are a planning assistant. Given the task below, produce:\n"
+            "1. A short numbered step-by-step plan (max 5 steps) of what needs to be done.\n"
+            "2. A final line starting with exactly 'Done when:' that states a specific, "
+            "verifiable condition that signals the task is complete.\n\n"
+            "Be specific and concise. Do not execute anything — only plan.\n\n"
             f"Task: {query}"
         )
         if context:
@@ -630,7 +654,7 @@ class AgentOrchestrator:
             resp = await client.chat.completions.create(
                 model=settings.DEFAULT_MODEL_SIMPLE,
                 messages=[{"role": "user", "content": plan_prompt}],
-                max_tokens=200,
+                max_tokens=250,
                 temperature=0,
             )
             return (resp.choices[0].message.content or "").strip()
@@ -653,9 +677,10 @@ class AgentOrchestrator:
         if not history:
             return ""
 
-        _TOOL_PLACEHOLDER = "[tool output cleared]"
-        _MAX_TOOL_CHARS   = 300
+        _TOOL_PLACEHOLDER = "[tool output truncated]"
+        _MAX_TOOL_CHARS   = 800   # raised from 300 — summarizer needs raw detail to produce accurate context
         _MAX_MSG_CHARS    = 800
+        _KEEP_RECENT_FULL = 2     # preserve last N assistant+tool pairs in full (freshest signal)
 
         # ── Separate prior compaction summary ────────────────────────────────
         prior_summary = ""
@@ -701,10 +726,18 @@ class AgentOrchestrator:
                 read_files.add(match.group(1))
 
         # ── Prune tool outputs ────────────────────────────────────────────────
+        # Most recent turns are preserved in full — they carry the freshest signal
+        # and are most critical for the agent to continue accurately after compaction.
+        # Older turns are truncated to limit summarizer input size.
+        cutoff = max(0, len(turns) - (_KEEP_RECENT_FULL * 2))  # *2 for assistant+tool pairs
         pruned = []
-        for m in turns:
+        for i, m in enumerate(turns):
             role    = m.get("role", "")
             content = m.get("content") or ""
+            if i >= cutoff:
+                # Recent turn — keep in full
+                pruned.append({"role": role, "content": content})
+                continue
             if role == "tool" and len(content) > _MAX_TOOL_CHARS:
                 content = content[:_MAX_TOOL_CHARS] + f" {_TOOL_PLACEHOLDER}"
             elif len(content) > _MAX_MSG_CHARS:

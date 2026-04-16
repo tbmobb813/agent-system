@@ -79,13 +79,15 @@ class ToolRegistry:
             required_args=["operation"],
         )
         
-        # Code Execution
-        self.register(
-            name="code_execution",
-            func=self._code_execution,
-            description="Execute code in a sandboxed environment. Supports Python, JavaScript, and more.",
-            required_args=["code"],
-        )
+        # Code Execution — only register when E2B sandbox is configured.
+        # Without E2B_API_KEY the tool always fails, adding noise to the schema.
+        if settings.E2B_API_KEY:
+            self.register(
+                name="code_execution",
+                func=self._code_execution,
+                description="Execute code in a secure sandbox and return the output.",
+                required_args=["code"],
+            )
         
         # API Calling
         self.register(
@@ -220,7 +222,7 @@ class ToolRegistry:
                 "type": "function",
                 "function": {
                     "name": "api_call",
-                    "description": "Make an HTTP request to any external API or URL.",
+                    "description": "Make a raw HTTP request to a structured API endpoint that returns JSON or data (e.g. weather APIs, REST APIs, webhooks). Use web_search for general research and browser_automation for human-readable web pages — use this only when you have a specific API URL and need the raw response.",
                     "parameters": {
                         "type": "object",
                         "properties": {
