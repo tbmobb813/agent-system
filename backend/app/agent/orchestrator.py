@@ -688,7 +688,11 @@ class AgentOrchestrator:
         for m in history:
             content = m.get("content") or ""
             if content.startswith("[CONTEXT COMPACTION"):
-                body = content.split("\n", 1)[-1].strip()
+                normalized_content = content.replace("\r\n", "\n")
+                if "\n\n" in normalized_content:
+                    body = normalized_content.split("\n\n", 1)[1].strip()
+                else:
+                    body = normalized_content.split("\n", 1)[-1].strip()
                 prior_summary = body
             else:
                 turns.append(m)
