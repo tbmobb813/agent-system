@@ -6,5 +6,7 @@
   "context_window_target_percent": 0.75,
   "default_tools": null,
   "timezone": "UTC",
+  "agent_persona_enabled": true,
+  "agent_persona_path": "data/persona",
   "metadata": {}
 }

@@ -17,6 +17,8 @@ async def test_get_settings_returns_defaults_when_store_empty(monkeypatch):
     payload = response.json()
     assert payload['max_monthly_cost'] == 30.0
     assert payload['timezone'] == 'UTC'
+    assert payload['agent_persona_enabled'] is True
+    assert payload['agent_persona_path'] == 'data/persona'
 
 
 async def test_get_settings_returns_saved_values(monkeypatch):
@@ -28,6 +30,8 @@ async def test_get_settings_returns_saved_values(monkeypatch):
             'enable_notifications': False,
             'auto_save_results': False,
             'timezone': 'America/New_York',
+            'agent_persona_enabled': False,
+            'agent_persona_path': 'backend/data/persona',
             'metadata': {},
         },
     )
@@ -58,6 +62,8 @@ async def test_update_settings_persists_and_returns_updated(monkeypatch):
         'context_window_target_percent': 0.75,
         'default_tools': ['web_search'],
         'timezone': 'UTC',
+        'agent_persona_enabled': True,
+        'agent_persona_path': 'data/persona',
         'metadata': {'env': 'test'},
     }
 
@@ -73,6 +79,7 @@ async def test_update_settings_persists_and_returns_updated(monkeypatch):
     payload = response.json()
     assert payload['status'] == 'updated'
     assert captured['data']['max_monthly_cost'] == 45.0
+    assert captured['data']['agent_persona_enabled'] is True
     assert payload['settings']['preferred_model'] == 'deepseek/deepseek-chat'
 
 
