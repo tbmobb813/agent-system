@@ -275,6 +275,13 @@ class AgentOrchestrator:
                                 response = await asyncio.wait_for(asyncio.shield(llm_task), timeout=1.0)
                                 break
                             except asyncio.TimeoutError:
+                                if task_id in self._cancelled_tasks:
+                                    llm_task.cancel()
+                                    try:
+                                        await llm_task
+                                    except asyncio.CancelledError:
+                                        pass
+                                    raise asyncio.CancelledError()
                                 wait_seconds += 1
                                 if wait_seconds % 2 == 0:
                                     yield ExecutionEvent(
@@ -698,7 +705,11 @@ class AgentOrchestrator:
         for m in history:
             content = m.get("content") or ""
             if content.startswith("[CONTEXT COMPACTION"):
-                body = content.split("\n", 1)[-1].strip()
+                normalized_content = content.replace("\r\n", "\n")
+                if "\n\n" in normalized_content:
+                    body = normalized_content.split("\n\n", 1)[1].strip()
+                else:
+                    body = normalized_content.split("\n", 1)[-1].strip()
                 prior_summary = body
             else:
                 turns.append(m)

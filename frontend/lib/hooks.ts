@@ -97,7 +97,7 @@ export function useAgentStream() {
           detail = await response.text().catch(() => '')
         }
         if (response.status === 401) {
-          throw new Error(detail || 'Unauthorized (401): configure NEXT_PUBLIC_BACKEND_API_KEY or use the /api/backend proxy auth path.')
+          throw new Error(detail || 'Unauthorized (401): configure BACKEND_API_KEY for the /api/backend proxy.')
         }
         throw new Error(detail || `Stream request failed (${response.status})`)
       }

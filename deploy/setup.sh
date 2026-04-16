@@ -74,6 +74,6 @@ echo "  2. Add domain A record: agent.techtrendwire.com → $(curl -s ifconfig.m
 echo "  3. Once DNS propagates, run:"
 echo "       sudo certbot --nginx -d agent.techtrendwire.com"
 echo "  4. Update CORS_ORIGINS + SITE_URL in backend/.env"
-echo "  5. Update NEXT_PUBLIC_BACKEND_URL in frontend/.env.local"
+echo "  5. Update BACKEND_URL in frontend/.env.local"
 echo "  6. Run: pm2 restart all"
 echo "============================================================"

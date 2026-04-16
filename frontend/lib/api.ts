@@ -1,20 +1,8 @@
 const configuredApiUrl = (process.env.NEXT_PUBLIC_API_URL || '').trim()
 const API_URL = configuredApiUrl.startsWith('/api/backend') ? configuredApiUrl : '/api/backend'
 
-// SSE streaming must bypass the Next.js proxy (which buffers responses).
-// Connect directly to the backend — CORS is configured to allow this.
-const STREAM_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000').trim()
-// sk-agent-local-dev is always accepted by the backend (BACKEND_API_KEY default).
-// Override with NEXT_PUBLIC_BACKEND_API_KEY in .env.local if needed.
-const STREAM_API_KEY = (process.env.NEXT_PUBLIC_BACKEND_API_KEY || 'sk-agent-local-dev').trim()
-
 function headers(): Record<string, string> {
   return { 'Content-Type': 'application/json' }
-}
-
-/** Headers for direct-to-backend streaming calls (includes auth). */
-function streamHeaders(): Record<string, string> {
-  return { 'Content-Type': 'application/json', Authorization: `Bearer ${STREAM_API_KEY}` }
 }
 
 /** Fetch with a timeout. Throws if the server doesn't respond in time. */
@@ -133,13 +121,11 @@ export async function stopAgent(taskId: string) {
   return res.json()
 }
 
-/** Returns raw Response with SSE body for streaming.
- *  Goes directly to the backend to avoid Next.js dev-server response buffering.
- */
+/** Returns raw Response with SSE body for streaming. */
 export function streamAgent(query: string, context?: string, tools?: string[], conversationId?: string) {
-  return fetch(`${STREAM_URL}/agent/stream`, {
+  return fetch(`${API_URL}/agent/stream`, {
     method: 'POST',
-    headers: streamHeaders(),
+    headers: headers(),
     body: JSON.stringify({ query, context, tools, conversation_id: conversationId ?? null }),
   })
 }

@@ -57,7 +57,6 @@ export async function exportElementToPdf(
       logging: false,
     })
 
-    const imgData = canvas.toDataURL('image/png')
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
 
     const pageW = pdf.internal.pageSize.getWidth()
@@ -73,8 +72,10 @@ export async function exportElementToPdf(
     // Paginate: slice the canvas image across pages
     while (remainingH > 0) {
       const sliceH = Math.min(remainingH, pageH - margin * 2)
-      const srcY = (imgH - remainingH) / imgH * canvas.height
-      const srcH = sliceH / imgH * canvas.height
+      // Canvas dimensions are integers: floor Y to avoid overlap, ceil height to avoid
+      // missing rows, and clamp to the source canvas so drawImage stays in bounds.
+      const srcY = Math.floor(((imgH - remainingH) / imgH) * canvas.height)
+      const srcH = Math.min(canvas.height - srcY, Math.ceil((sliceH / imgH) * canvas.height))
 
       // Create a temporary canvas for this page slice
       const pageCanvas = document.createElement('canvas')
