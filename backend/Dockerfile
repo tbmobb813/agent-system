@@ -24,6 +24,7 @@ COPY --from=builder /install /usr/local
 
 WORKDIR /app
 COPY app/ ./app/
+COPY data/ ./data/
 
 # Install Playwright browser (Chromium only)
 RUN playwright install chromium

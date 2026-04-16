@@ -1,5 +1,18 @@
-const configuredApiUrl = (process.env.NEXT_PUBLIC_API_URL || '').trim()
-const API_URL = configuredApiUrl.startsWith('/api/backend') ? configuredApiUrl : '/api/backend'
+/**
+ * Browser API base URL.
+ * - Default: same-origin `/api/backend` (Next rewrites to BACKEND_URL — see next.config.ts).
+ * - `NEXT_PUBLIC_API_URL=/api/backend/...` — custom path prefix if needed.
+ * - `NEXT_PUBLIC_API_URL=https://api.example.com` — direct backend (must allow CORS for this origin).
+ */
+function resolveApiBaseUrl(): string {
+  const raw = (process.env.NEXT_PUBLIC_API_URL || '').trim()
+  if (!raw) return '/api/backend'
+  if (raw.startsWith('/')) return raw.replace(/\/$/, '') || '/api/backend'
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw.replace(/\/$/, '')
+  return '/api/backend'
+}
+
+const API_URL = resolveApiBaseUrl()
 
 function headers(): Record<string, string> {
   return { 'Content-Type': 'application/json' }
