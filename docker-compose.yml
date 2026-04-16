@@ -58,8 +58,7 @@ services:
       - "3003:3003"
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000}
-      - NEXT_PUBLIC_BACKEND_API_KEY=${BACKEND_API_KEY}
+      - BACKEND_URL=${BACKEND_URL:-http://backend:8000}
       - NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_KEY}
     depends_on:

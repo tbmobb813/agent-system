@@ -265,6 +265,13 @@ class AgentOrchestrator:
                                 response = await asyncio.wait_for(asyncio.shield(llm_task), timeout=1.0)
                                 break
                             except asyncio.TimeoutError:
+                                if task_id in self._cancelled_tasks:
+                                    llm_task.cancel()
+                                    try:
+                                        await llm_task
+                                    except asyncio.CancelledError:
+                                        pass
+                                    raise asyncio.CancelledError()
                                 wait_seconds += 1
                                 if wait_seconds % 2 == 0:
                                     yield ExecutionEvent(

@@ -21,7 +21,9 @@ pub fn run() {
         .on_window_event(|window, event| {
             // Intercept close → hide to tray instead
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                window.hide().unwrap();
+                if let Err(err) = window.hide() {
+                    eprintln!("Failed to hide window on close: {err}");
+                }
                 api.prevent_close();
             }
         })

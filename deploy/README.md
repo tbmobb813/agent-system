@@ -31,7 +31,7 @@ nano frontend/.env.local   # fill in keys (must match backend)
 ### 3. Generate a strong API key
 ```bash
 echo "sk-agent-$(openssl rand -hex 24)"
-# Use this value for BACKEND_API_KEY and NEXT_PUBLIC_BACKEND_API_KEY
+# Use this value for BACKEND_API_KEY
 ```
 
 ### 4. Run setup
@@ -70,7 +70,7 @@ SITE_URL=https://agent.techtrendwire.com
 
 In `frontend/.env.local`:
 ```
-NEXT_PUBLIC_BACKEND_URL=https://agent.techtrendwire.com/api/backend
+BACKEND_URL=http://127.0.0.1:8000
 ```
 
 ```bash
