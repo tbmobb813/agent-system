@@ -234,16 +234,38 @@ class AgentOrchestrator:
                 client = _openrouter_client()
                 current_model = agent_model
                 response = None
+                native_stream = None
                 retry_counts: dict[str, int] = {}   # reason → attempts used
 
                 while current_model:
                     try:
-                        response = await client.chat.completions.create(
-                            model=current_model,
-                            messages=messages,
-                            tools=tool_schemas if tool_schemas else None,
-                            tool_choice="auto" if tool_schemas else None,
+                        llm_task = asyncio.create_task(
+                            client.chat.completions.create(
+                                model=current_model,
+                                messages=messages,
+                                tools=tool_schemas if tool_schemas else None,
+                                tool_choice="auto" if tool_schemas else None,
+                                stream=True,
+                                stream_options={"include_usage": True},
+                            )
                         )
+                        wait_seconds = 0
+                        while True:
+                            try:
+                                response = await asyncio.wait_for(asyncio.shield(llm_task), timeout=1.0)
+                                break
+                            except asyncio.TimeoutError:
+                                wait_seconds += 1
+                                if wait_seconds % 2 == 0:
+                                    yield ExecutionEvent(
+                                        type=EventType.STATUS,
+                                        content=f"thinking... ({wait_seconds}s)",
+                                    )
+
+                        if hasattr(response, "__aiter__"):
+                            native_stream = response
+                            response = None
+                        
                         if current_model != agent_model:
                             yield ExecutionEvent(type=EventType.STATUS, content=f"using fallback model: {current_model}")
                         break
@@ -310,38 +332,128 @@ class AgentOrchestrator:
 
                         raise
 
-                if response is None:
+                if native_stream is None and response is None:
                     raise RuntimeError("All models in fallback chain failed")
 
                 agent_model = current_model  # update in case fallback was used
-                msg = response.choices[0].message
+                msg_content = ""
+                msg_tool_calls: list[dict] = []
+                prompt_tokens = 0
+                completion_tokens = 0
+
+                # ── Native provider streaming path (content + tool-call deltas) ──────
+                if native_stream is not None:
+                    yield ExecutionEvent(type=EventType.STATUS, content="responding...")
+
+                    final_parts: list[str] = []
+                    streamed_tool_calls: dict[int, dict[str, str]] = {}
+
+                    async for chunk in native_stream:
+                        # Usage may be present on the final chunk when include_usage=True.
+                        usage = getattr(chunk, "usage", None)
+                        if usage is not None:
+                            prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+                            completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+
+                        choices = getattr(chunk, "choices", None) or []
+                        if not choices:
+                            continue
+                        delta = getattr(choices[0], "delta", None)
+                        if delta is None:
+                            continue
+
+                        piece = getattr(delta, "content", None)
+                        if piece:
+                            if isinstance(piece, list):
+                                text_piece = "".join(
+                                    p.get("text", "")
+                                    for p in piece
+                                    if isinstance(p, dict)
+                                )
+                            else:
+                                text_piece = str(piece)
+
+                            if text_piece:
+                                final_parts.append(text_piece)
+                                yield ExecutionEvent(
+                                    type=EventType.TEXT_DELTA,
+                                    content=text_piece,
+                                    model=agent_model,
+                                )
+
+                        for tc in (getattr(delta, "tool_calls", None) or []):
+                            idx = int(getattr(tc, "index", 0) or 0)
+                            slot = streamed_tool_calls.setdefault(
+                                idx,
+                                {"id": "", "name": "", "arguments": ""},
+                            )
+                            tc_id = getattr(tc, "id", None)
+                            if tc_id:
+                                slot["id"] = tc_id
+                            fn = getattr(tc, "function", None)
+                            if fn is not None:
+                                fn_name = getattr(fn, "name", None)
+                                if fn_name:
+                                    slot["name"] += fn_name
+                                fn_args = getattr(fn, "arguments", None)
+                                if fn_args:
+                                    slot["arguments"] += fn_args
+
+                    msg_content = "".join(final_parts)
+                    for idx in sorted(streamed_tool_calls.keys()):
+                        tc = streamed_tool_calls[idx]
+                        if not tc["name"] and not tc["arguments"]:
+                            continue
+                        msg_tool_calls.append({
+                            "id": tc["id"] or f"call-{uuid.uuid4()}",
+                            "function": {
+                                "name": tc["name"],
+                                "arguments": tc["arguments"],
+                            },
+                        })
+
+                else:
+                    msg = response.choices[0].message
+                    msg_content = msg.content or ""
+                    for tc in (msg.tool_calls or []):
+                        msg_tool_calls.append({
+                            "id": tc.id,
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        })
+                    if response.usage:
+                        prompt_tokens = int(getattr(response.usage, "prompt_tokens", 0) or 0)
+                        completion_tokens = int(getattr(response.usage, "completion_tokens", 0) or 0)
 
                 # ── Track cost for every LLM call (tool-use and final) ───────
-                if response.usage and self.cost_tracker:
+                if (prompt_tokens or completion_tokens) and self.cost_tracker:
                     try:
                         await self.cost_tracker.track_cost(
                             model=agent_model,
-                            input_tokens=response.usage.prompt_tokens,
-                            output_tokens=response.usage.completion_tokens,
+                            input_tokens=prompt_tokens,
+                            output_tokens=completion_tokens,
                             task_id=task_id,
                         )
                     except Exception as e:
                         logger.warning(f"Cost tracking failed: {e}")
 
                 # ── No tool calls → stream final answer ──────────────────────
-                if not msg.tool_calls:
-                    final_text = msg.content or ""
+                if not msg_tool_calls:
+                    final_text = msg_content
 
-                    yield ExecutionEvent(type=EventType.STATUS, content="responding...")
-
-                    # Stream text in chunks for a live feel
-                    chunk_size = 40
-                    for i in range(0, len(final_text), chunk_size):
-                        yield ExecutionEvent(
-                            type=EventType.TEXT_DELTA,
-                            content=final_text[i:i + chunk_size],
-                            model=agent_model,
-                        )
+                    # Non-stream fallback path: still emit incremental chunks for UX.
+                    if native_stream is None:
+                        yield ExecutionEvent(type=EventType.STATUS, content="responding...")
+                        chunk_size = 12
+                        for i in range(0, len(final_text), chunk_size):
+                            yield ExecutionEvent(
+                                type=EventType.TEXT_DELTA,
+                                content=final_text[i:i + chunk_size],
+                                model=agent_model,
+                            )
+                            await asyncio.sleep(0.12)
 
                     # ── Save turn to conversation history ─────────────
                     try:
@@ -349,8 +461,8 @@ class AgentOrchestrator:
                             conversation_id=conversation_id,
                             user_message=query,
                             assistant_message=final_text,
-                            user_tokens=response.usage.prompt_tokens if response.usage else 0,
-                            assistant_tokens=response.usage.completion_tokens if response.usage else 0,
+                            user_tokens=prompt_tokens,
+                            assistant_tokens=completion_tokens,
                         )
                     except Exception as e:
                         logger.warning(f"Conversation save failed: {e}")
@@ -371,29 +483,29 @@ class AgentOrchestrator:
                 # Add the assistant's tool-calling message to history
                 messages.append({
                     "role": "assistant",
-                    "content": msg.content,
+                    "content": msg_content,
                     "tool_calls": [
                         {
-                            "id": tc.id,
+                            "id": tc["id"],
                             "type": "function",
                             "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments,
+                                "name": tc["function"]["name"],
+                                "arguments": tc["function"]["arguments"],
                             },
                         }
-                        for tc in msg.tool_calls
+                        for tc in msg_tool_calls
                     ],
                 })
 
                 # Parse all tool calls first
                 parsed_calls = []
-                for tool_call in msg.tool_calls:
-                    name = tool_call.function.name
+                for tool_call in msg_tool_calls:
+                    name = tool_call["function"]["name"]
                     try:
-                        args = json.loads(tool_call.function.arguments or "{}")
+                        args = json.loads(tool_call["function"]["arguments"] or "{}")
                     except json.JSONDecodeError:
                         args = {}
-                    parsed_calls.append((tool_call.id, name, args))
+                    parsed_calls.append((tool_call["id"], name, args))
                     yield ExecutionEvent(
                         type=EventType.TOOL_CALL,
                         tool_name=name,

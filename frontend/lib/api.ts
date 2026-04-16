@@ -4,15 +4,17 @@ const API_URL = configuredApiUrl.startsWith('/api/backend') ? configuredApiUrl :
 // SSE streaming must bypass the Next.js proxy (which buffers responses).
 // Connect directly to the backend — CORS is configured to allow this.
 const STREAM_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000').trim()
+// sk-agent-local-dev is always accepted by the backend (BACKEND_API_KEY default).
+// Override with NEXT_PUBLIC_BACKEND_API_KEY in .env.local if needed.
+const STREAM_API_KEY = (process.env.NEXT_PUBLIC_BACKEND_API_KEY || 'sk-agent-local-dev').trim()
 
 function headers(): Record<string, string> {
   return { 'Content-Type': 'application/json' }
 }
 
-/** Auth header for direct-to-backend calls that bypass the Next.js middleware. */
+/** Headers for direct-to-backend streaming calls (includes auth). */
 function streamHeaders(): Record<string, string> {
-  const key = process.env.NEXT_PUBLIC_BACKEND_API_KEY
-  return key ? { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` } : headers()
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${STREAM_API_KEY}` }
 }
 
 /** Fetch with a timeout. Throws if the server doesn't respond in time. */
