@@ -123,25 +123,30 @@ class AgentOrchestrator:
         try:
             tool_schemas = self.tools.get_tool_schemas(tools)
 
-            # Get remaining budget for cost-aware routing
-            budget_remaining = settings.OPENROUTER_BUDGET_MONTHLY
-            if self.cost_tracker:
+            # ── Round 1: fully independent startup work in parallel ───────────
+            # get_spent_month, get_or_create, and context retrieval have no
+            # dependencies on each other — run them concurrently to minimize
+            # time-to-first-token.
+            async def _get_budget() -> float:
+                if not self.cost_tracker:
+                    return settings.OPENROUTER_BUDGET_MONTHLY
                 try:
                     spent = await self.cost_tracker.get_spent_month()
-                    budget_remaining = settings.OPENROUTER_BUDGET_MONTHLY - spent
+                    return settings.OPENROUTER_BUDGET_MONTHLY - spent
                 except Exception:
-                    pass
+                    return settings.OPENROUTER_BUDGET_MONTHLY
+
+            budget_remaining, conversation_id, retrieved_context = await asyncio.gather(
+                _get_budget(),
+                conversation_manager.get_or_create(conversation_id, user_id=user_id),
+                context_builder.build(query, user_id=user_id),
+            )
 
             # All model selection goes through the router — single authority.
             agent_model = self.router.select_for_run(
                 query,
                 has_tools=bool(tool_schemas),
                 budget_remaining=budget_remaining,
-            )
-
-            # ── Get/create conversation ───────────────────────────────
-            conversation_id = await conversation_manager.get_or_create(
-                conversation_id, user_id=user_id
             )
 
             # ── Guard: reject duplicate streams on same conversation ──
@@ -154,11 +159,12 @@ class AgentOrchestrator:
                 return
             self._active_conversations[conversation_id] = task_id
 
-            # ── Load conversation history ─────────────────────────────
-            history = await conversation_manager.load_messages(conversation_id)
+            # ── Round 2: both need conversation_id, independent of each other ─
+            history, token_count = await asyncio.gather(
+                conversation_manager.load_messages(conversation_id),
+                conversation_manager.estimate_tokens(conversation_id),
+            )
 
-            # ── Context usage check + auto-compaction ─────────────────
-            token_count = await conversation_manager.estimate_tokens(conversation_id)
             # Add estimate for the current query
             token_count += len(query) // 4
             context_percent = (token_count / settings.MAX_CONTEXT_TOKENS) * 100
@@ -175,7 +181,7 @@ class AgentOrchestrator:
                     type=EventType.STATUS,
                     content=f"context at {context_percent:.0f}% — compacting conversation...",
                 )
-                summary = await self._summarize_history(history, agent_model)
+                summary = await self._summarize_history(history, agent_model, run_client)
                 await conversation_manager.compact(
                     conversation_id,
                     summary=summary,
@@ -183,9 +189,6 @@ class AgentOrchestrator:
                 )
                 # Reload the now-compacted history
                 history = await conversation_manager.load_messages(conversation_id)
-
-            # ── Fetch context from all sources (memory + docs) via ContextBuilder
-            retrieved_context = await context_builder.build(query, user_id=user_id)
 
             if retrieved_context:
                 yield ExecutionEvent(type=EventType.STATUS, content="searching memory and documents...")
@@ -203,11 +206,16 @@ class AgentOrchestrator:
             if context:
                 system += f"\n\nAdditional context: {context}"
 
+            # ── Create one client for the entire run ─────────────────
+            # Reusing a single AsyncOpenAI instance preserves the underlying
+            # httpx connection pool across plan, main loop, and summary calls.
+            run_client = _openrouter_client()
+
             # ── Plan-then-execute for complex multi-step queries ──────
             plan_prefix = ""
             if tool_schemas and self.router.is_complex(query):
                 yield ExecutionEvent(type=EventType.STATUS, content="planning...")
-                plan_prefix = await self._make_plan(query, context, agent_model)
+                plan_prefix = await self._make_plan(query, context, agent_model, run_client)
                 if plan_prefix:
                     yield ExecutionEvent(type=EventType.THINKING, content=f"Plan:\n{plan_prefix}")
                     # Extract the "Done when:" line and add it to the system prompt
@@ -241,7 +249,9 @@ class AgentOrchestrator:
                 state.last_update = datetime.utcnow()
 
                 # ── Ask the LLM with classifier-based error recovery ──────────
-                client = _openrouter_client()
+                # Use the run-level client on the first call; error/timeout paths
+                # below create fresh clients intentionally to reset connections.
+                client = run_client
                 current_model = agent_model
                 response = None
                 native_stream = None
@@ -627,7 +637,7 @@ class AgentOrchestrator:
             if conversation_id and self._active_conversations.get(conversation_id) == task_id:
                 del self._active_conversations[conversation_id]
 
-    async def _make_plan(self, query: str, context: Optional[str], model: str) -> str:
+    async def _make_plan(self, query: str, context: Optional[str], model: str, client: Optional[AsyncOpenAI] = None) -> str:
         """
         Ask the model to produce a concise numbered plan with explicit success criteria.
         Uses the cheap model to keep cost low — plan is short and structured.
@@ -650,8 +660,8 @@ class AgentOrchestrator:
             plan_prompt += f"\nContext: {context}"
 
         try:
-            client = _openrouter_client()
-            resp = await client.chat.completions.create(
+            c = client or _openrouter_client()
+            resp = await c.chat.completions.create(
                 model=settings.DEFAULT_MODEL_SIMPLE,
                 messages=[{"role": "user", "content": plan_prompt}],
                 max_tokens=250,
@@ -662,7 +672,7 @@ class AgentOrchestrator:
             logger.warning(f"Planning step failed: {e}")
             return ""
 
-    async def _summarize_history(self, history: list[dict], model: str) -> str:
+    async def _summarize_history(self, history: list[dict], model: str, client: Optional[AsyncOpenAI] = None) -> str:
         """
         Summarize conversation history into a structured compact form.
 
@@ -791,8 +801,8 @@ class AgentOrchestrator:
         )
 
         try:
-            client = _openrouter_client()
-            resp = await client.chat.completions.create(
+            c = client or _openrouter_client()
+            resp = await c.chat.completions.create(
                 model=settings.DEFAULT_MODEL_SIMPLE,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=budget,

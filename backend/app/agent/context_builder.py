@@ -36,8 +36,12 @@ class ContextBuilder:
     """
 
     def __init__(self, max_tokens: Optional[int] = None):
-        self.max_chars = int(
-            (max_tokens or settings.MAX_CONTEXT_TOKENS)
+        self._max_tokens = max_tokens
+
+    @property
+    def max_chars(self) -> int:
+        return int(
+            (self._max_tokens or settings.MAX_CONTEXT_TOKENS)
             * _CONTEXT_BUDGET_FRACTION
             * _CHARS_PER_TOKEN
         )

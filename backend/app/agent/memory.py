@@ -9,6 +9,7 @@ Auto-save: after each agent run, the query+response is stored as a
            'context' memory so future queries can reference past work.
 """
 
+import hashlib
 import logging
 import uuid
 from datetime import datetime
@@ -27,6 +28,35 @@ MAX_CONTEXT_CHARS  = 1500   # chars injected into system prompt
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Module-level client singletons
+# ─────────────────────────────────────────────────────────────────────────────
+
+_embed_client: Optional[AsyncOpenAI] = None
+_insight_client: Optional[AsyncOpenAI] = None
+
+
+def _get_embed_client() -> AsyncOpenAI:
+    global _embed_client
+    if _embed_client is None:
+        _embed_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    return _embed_client
+
+
+def _get_insight_client() -> AsyncOpenAI:
+    global _insight_client
+    if _insight_client is None:
+        _insight_client = AsyncOpenAI(
+            base_url=settings.OPENROUTER_BASE_URL,
+            api_key=settings.OPENROUTER_API_KEY,
+            default_headers={
+                "HTTP-Referer": settings.SITE_URL,
+                "X-Title": "Personal AI Agent",
+            },
+        )
+    return _insight_client
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Embedding helper
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -35,8 +65,7 @@ async def _embed(text: str) -> Optional[list[float]]:
     if not settings.OPENAI_API_KEY:
         return None
     try:
-        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-        resp = await client.embeddings.create(
+        resp = await _get_embed_client().embeddings.create(
             model="text-embedding-3-small",
             input=text[:8000],   # model limit
         )
@@ -49,6 +78,14 @@ async def _embed(text: str) -> Optional[list[float]]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Insight extraction
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Simple LRU-style cache: key → insight (or None sentinel "")
+_insight_cache: dict[str, Optional[str]] = {}
+_INSIGHT_CACHE_MAX = 256
+
+
+def _insight_key(query: str, response: str) -> str:
+    return hashlib.md5(f"{query[:300]}|{response[:600]}".encode()).hexdigest()
 
 _INSIGHT_PROMPT = """\
 You are a memory filter for an AI assistant. Your job is to extract only what \
@@ -88,10 +125,15 @@ _CLASSIFY_KEYWORDS = {
 async def _extract_insight(query: str, response: str) -> Optional[str]:
     """
     Call the cheap model to extract a single memorable insight.
-    Returns None if nothing worth saving.
+    Returns None if nothing worth saving. Results are cached to avoid
+    re-extracting identical exchanges.
     """
     if not settings.OPENROUTER_API_KEY:
         return None
+
+    cache_key = _insight_key(query, response)
+    if cache_key in _insight_cache:
+        return _insight_cache[cache_key]
 
     prompt = _INSIGHT_PROMPT.format(
         query=query[:300],
@@ -99,25 +141,23 @@ async def _extract_insight(query: str, response: str) -> Optional[str]:
     )
 
     try:
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(
-            base_url=settings.OPENROUTER_BASE_URL,
-            api_key=settings.OPENROUTER_API_KEY,
-            default_headers={"HTTP-Referer": settings.SITE_URL, "X-Title": "Personal AI Agent"},
-        )
-        resp = await client.chat.completions.create(
+        resp = await _get_insight_client().chat.completions.create(
             model=settings.DEFAULT_MODEL_SIMPLE,   # cheapest tier
             messages=[{"role": "user", "content": prompt}],
             max_tokens=80,
             temperature=0,
         )
         result = (resp.choices[0].message.content or "").strip()
-        if not result or result.upper() == "NOTHING" or len(result) < 8:
-            return None
-        return result
+        insight = None if (not result or result.upper() == "NOTHING" or len(result) < 8) else result
     except Exception as e:
         logger.debug(f"Insight extraction failed: {e}")
-        return None
+        insight = None
+
+    # Evict oldest entry if cache is full
+    if len(_insight_cache) >= _INSIGHT_CACHE_MAX:
+        _insight_cache.pop(next(iter(_insight_cache)))
+    _insight_cache[cache_key] = insight
+    return insight
 
 
 def _classify_insight(insight: str) -> str:
