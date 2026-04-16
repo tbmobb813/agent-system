@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { getSettings, updateSettings } from '@/lib/api'
+import { getSettings, updateSettings, getPersonaPreview } from '@/lib/api'
 
 async function getAutostartEnabled(): Promise<boolean | null> {
   if (typeof window === 'undefined' || !('__TAURI__' in window)) return null
@@ -37,6 +37,8 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [autostart, setAutostartState] = useState<boolean | null>(null)
+  const [personaPreview, setPersonaPreview] = useState('')
+  const [previewLoading, setPreviewLoading] = useState(false)
 
   useEffect(() => {
     getAutostartEnabled().then(setAutostartState)
@@ -48,6 +50,19 @@ export default function SettingsPage() {
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
   }, [])
+
+  async function refreshPersonaPreview() {
+    setPreviewLoading(true)
+    setError(null)
+    try {
+      const payload = await getPersonaPreview()
+      setPersonaPreview(payload.preview || '')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Preview failed')
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -136,6 +151,27 @@ export default function SettingsPage() {
           <p className="text-xs text-gray-500 mt-1">
             Relative example: data/persona. Absolute paths are also supported.
           </p>
+
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={refreshPersonaPreview}
+              disabled={previewLoading}
+              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium disabled:opacity-50 transition-colors"
+            >
+              {previewLoading ? 'Loading preview…' : 'Preview resolved persona block'}
+            </button>
+          </div>
+
+          <label htmlFor="persona-preview" className="block text-sm text-gray-400 mt-3 mb-1">Persona Preview</label>
+          <textarea
+            id="persona-preview"
+            value={personaPreview}
+            readOnly
+            rows={8}
+            className="w-full bg-gray-900 rounded-lg px-3 py-2 text-xs border border-gray-700 focus:outline-none"
+            placeholder="Click preview to load the resolved persona prompt block"
+          />
         </div>
 
         <div className="flex items-center gap-3">

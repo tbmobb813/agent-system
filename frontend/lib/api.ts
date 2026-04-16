@@ -106,6 +106,12 @@ export async function updateSettings(data: object) {
   return res.json()
 }
 
+export async function getPersonaPreview() {
+  const res = await fetchWithTimeout(`${API_URL}/settings/persona/preview`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch persona preview (${res.status})`)
+  return res.json()
+}
+
 export async function getTools() {
   const res = await fetchWithTimeout(`${API_URL}/tools`, { headers: headers() })
   if (!res.ok) throw new Error(`Failed to fetch tools (${res.status})`)

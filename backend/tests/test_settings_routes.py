@@ -83,6 +83,42 @@ async def test_update_settings_persists_and_returns_updated(monkeypatch):
     assert payload['settings']['preferred_model'] == 'deepseek/deepseek-chat'
 
 
+async def test_get_persona_preview_uses_defaults_when_settings_missing(monkeypatch):
+    monkeypatch.setattr('app.routes.settings._load', lambda: {})
+    monkeypatch.setattr('app.routes.settings.build_persona_prompt', lambda data: '<soul>default</soul>')
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url='http://test') as client:
+        response = await client.get('/settings/persona/preview', headers={'Authorization': 'Bearer sk-agent-local-dev'})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['enabled'] is True
+    assert payload['path'] == 'data/persona'
+    assert payload['preview'] == '<soul>default</soul>'
+
+
+async def test_get_persona_preview_uses_saved_settings(monkeypatch):
+    monkeypatch.setattr(
+        'app.routes.settings._load',
+        lambda: {
+            'agent_persona_enabled': False,
+            'agent_persona_path': '/tmp/persona',
+        },
+    )
+    monkeypatch.setattr('app.routes.settings.build_persona_prompt', lambda data: '')
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url='http://test') as client:
+        response = await client.get('/settings/persona/preview', headers={'Authorization': 'Bearer sk-agent-local-dev'})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['enabled'] is False
+    assert payload['path'] == '/tmp/persona'
+    assert payload['preview'] == ''
+
+
 def test_load_returns_empty_dict_when_file_missing(monkeypatch):
     def raise_missing(*args, **kwargs):
         raise FileNotFoundError()
