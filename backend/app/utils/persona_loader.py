@@ -53,7 +53,8 @@ def _read_file(path: str) -> str:
             return text.strip()[:_MAX_FILE_CHARS]
     except FileNotFoundError:
         return ""
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to read persona file %s: %s", path, exc)
         return ""
 
 
