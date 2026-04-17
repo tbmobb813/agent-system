@@ -86,14 +86,15 @@ class ToolRegistry:
             required_args=["operation"],
         )
         
-        # Code Execution
-        self.register(
-            name="code_execution",
-            func=self._code_execution,
-            description="Execute code in a secure sandbox and return the output.",
-            required_args=["code"],
-        )
-        
+        # Code execution — register only when E2B is configured (avoids dead tool in LLM schema).
+        if settings.E2B_API_KEY:
+            self.register(
+                name="code_execution",
+                func=self._code_execution,
+                description="Execute code in a secure sandbox and return the output.",
+                required_args=["code"],
+            )
+
         # API Calling
         self.register(
             name="api_call",
@@ -545,23 +546,19 @@ class ToolRegistry:
                 f"Code received ({language}):\n{code}"
             )
 
-        # E2B sandbox execution (requires e2b package)
+        # E2B code interpreter (optional dependency). Official pattern: async context manager.
         try:
             from e2b_code_interpreter import Sandbox
-            sandbox = Sandbox()
-            if hasattr(sandbox, "__aenter__"):
-                async with sandbox as sbx:
-                    result = sbx.run_code(code)
-            else:
-                with sandbox as sbx:
-                    result = sbx.run_code(code)
+        except ImportError:
+            return "Code execution not available — install e2b-code-interpreter package"
 
+        try:
+            async with Sandbox() as sbx:
+                result = sbx.run_code(code)
             output = "\n".join(str(r) for r in result.results)
             if result.error:
                 output += f"\nError: {result.error}"
             return output or "(no output)"
-        except ImportError:
-            return "Code execution not available — install e2b-code-interpreter package"
         except Exception as e:
             return f"Code execution failed: {e}"
 

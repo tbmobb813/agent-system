@@ -45,8 +45,8 @@ async def verify_api_key(
     if not token.startswith("sk-agent-"):
         raise HTTPException(status_code=401, detail="Invalid API key format")
 
-    # Master key bypass — accepts BACKEND_API_KEY and any additional keys in
-    # BACKEND_EXTRA_KEYS (comma-separated). Skips DB validation entirely.
+    # Master key bypass — accepts any comma-separated key in BACKEND_API_KEY.
+    # Skips DB validation entirely.
     from app.config import settings as app_settings
     allowed = [k.strip() for k in app_settings.BACKEND_API_KEY.split(",") if k.strip()]
     for k in allowed:

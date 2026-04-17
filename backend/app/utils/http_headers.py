@@ -35,5 +35,8 @@ def redact_response_headers(headers: Mapping[str, str]) -> dict[str, str]:
         if key.lower() in _SENSITIVE_HEADER_NAMES:
             out[key] = "[redacted]"
         else:
-            out[key] = value
+            if isinstance(value, bytes):
+                out[key] = str(value, "utf-8", errors="replace")
+            else:
+                out[key] = str(value)
     return out

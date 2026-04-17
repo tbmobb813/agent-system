@@ -1,6 +1,11 @@
 from app.utils.http_headers import redact_response_headers
 
 
+def test_redact_response_headers_coerces_bytes_values():
+    out = redact_response_headers({'X-Bytes': b'hello'})
+    assert out['X-Bytes'] == 'hello'
+
+
 def test_redact_response_headers_strips_sensitive_names():
     raw = {
         'Content-Type': 'application/json',
