@@ -20,10 +20,12 @@ from openai import AsyncOpenAI
 from app.config import settings
 from app import database as _db
 from app.models import ExecutionEvent, EventType, TaskStatus
+from app.utils.truncate import truncate_tail
 from app.agent.router import ModelRouter
 from app.agent.memory import memory_manager
 from app.agent.conversation import conversation_manager
 from app.agent.context_builder import context_builder
+from app.agent.error_classifier import classify, FailoverReason
 from app.tools.tool_registry import ToolRegistry
 
 
@@ -121,25 +123,30 @@ class AgentOrchestrator:
         try:
             tool_schemas = self.tools.get_tool_schemas(tools)
 
-            # Get remaining budget for cost-aware routing
-            budget_remaining = settings.OPENROUTER_BUDGET_MONTHLY
-            if self.cost_tracker:
+            # ── Round 1: fully independent startup work in parallel ───────────
+            # get_spent_month, get_or_create, and context retrieval have no
+            # dependencies on each other — run them concurrently to minimize
+            # time-to-first-token.
+            async def _get_budget() -> float:
+                if not self.cost_tracker:
+                    return settings.OPENROUTER_BUDGET_MONTHLY
                 try:
                     spent = await self.cost_tracker.get_spent_month()
-                    budget_remaining = settings.OPENROUTER_BUDGET_MONTHLY - spent
+                    return settings.OPENROUTER_BUDGET_MONTHLY - spent
                 except Exception:
-                    pass
+                    return settings.OPENROUTER_BUDGET_MONTHLY
+
+            budget_remaining, conversation_id, retrieved_context = await asyncio.gather(
+                _get_budget(),
+                conversation_manager.get_or_create(conversation_id, user_id=user_id),
+                context_builder.build(query, user_id=user_id),
+            )
 
             # All model selection goes through the router — single authority.
             agent_model = self.router.select_for_run(
                 query,
                 has_tools=bool(tool_schemas),
                 budget_remaining=budget_remaining,
-            )
-
-            # ── Get/create conversation ───────────────────────────────
-            conversation_id = await conversation_manager.get_or_create(
-                conversation_id, user_id=user_id
             )
 
             # ── Guard: reject duplicate streams on same conversation ──
@@ -152,11 +159,12 @@ class AgentOrchestrator:
                 return
             self._active_conversations[conversation_id] = task_id
 
-            # ── Load conversation history ─────────────────────────────
-            history = await conversation_manager.load_messages(conversation_id)
+            # ── Round 2: both need conversation_id, independent of each other ─
+            history, token_count = await asyncio.gather(
+                conversation_manager.load_messages(conversation_id),
+                conversation_manager.estimate_tokens(conversation_id),
+            )
 
-            # ── Context usage check + auto-compaction ─────────────────
-            token_count = await conversation_manager.estimate_tokens(conversation_id)
             # Add estimate for the current query
             token_count += len(query) // 4
             context_percent = (token_count / settings.MAX_CONTEXT_TOKENS) * 100
@@ -173,7 +181,7 @@ class AgentOrchestrator:
                     type=EventType.STATUS,
                     content=f"context at {context_percent:.0f}% — compacting conversation...",
                 )
-                summary = await self._summarize_history(history, agent_model)
+                summary = await self._summarize_history(history, agent_model, run_client)
                 await conversation_manager.compact(
                     conversation_id,
                     summary=summary,
@@ -181,9 +189,6 @@ class AgentOrchestrator:
                 )
                 # Reload the now-compacted history
                 history = await conversation_manager.load_messages(conversation_id)
-
-            # ── Fetch context from all sources (memory + docs) via ContextBuilder
-            retrieved_context = await context_builder.build(query, user_id=user_id)
 
             if retrieved_context:
                 yield ExecutionEvent(type=EventType.STATUS, content="searching memory and documents...")
@@ -201,13 +206,28 @@ class AgentOrchestrator:
             if context:
                 system += f"\n\nAdditional context: {context}"
 
+            # ── Create one client for the entire run ─────────────────
+            # Reusing a single AsyncOpenAI instance preserves the underlying
+            # httpx connection pool across plan, main loop, and summary calls.
+            run_client = _openrouter_client()
+
             # ── Plan-then-execute for complex multi-step queries ──────
             plan_prefix = ""
             if tool_schemas and self.router.is_complex(query):
                 yield ExecutionEvent(type=EventType.STATUS, content="planning...")
-                plan_prefix = await self._make_plan(query, context, agent_model)
+                plan_prefix = await self._make_plan(query, context, agent_model, run_client)
                 if plan_prefix:
                     yield ExecutionEvent(type=EventType.THINKING, content=f"Plan:\n{plan_prefix}")
+                    # Extract the "Done when:" line and add it to the system prompt
+                    # so the agent has an explicit, verifiable stopping condition.
+                    for line in plan_prefix.splitlines():
+                        if line.strip().lower().startswith("done when:"):
+                            system += (
+                                f"\n\n<success_criteria>\n{line.strip()}\n"
+                                "Stop using tools and write your final response as soon as "
+                                "this condition is met.\n</success_criteria>"
+                            )
+                            break
 
             # System + history + new user message (with plan prepended if available)
             messages = [{"role": "system", "content": system}]
@@ -228,65 +248,239 @@ class AgentOrchestrator:
                 state.current_step = iteration + 1
                 state.last_update = datetime.utcnow()
 
-                # ── Ask the LLM with fallback on model errors ─────────────────
-                client = _openrouter_client()
+                # ── Ask the LLM with classifier-based error recovery ──────────
+                # Use the run-level client on the first call; error/timeout paths
+                # below create fresh clients intentionally to reset connections.
+                client = run_client
                 current_model = agent_model
                 response = None
+                native_stream = None
+                retry_counts: dict[str, int] = {}   # reason → attempts used
+
                 while current_model:
                     try:
-                        response = await client.chat.completions.create(
-                            model=current_model,
-                            messages=messages,
-                            tools=tool_schemas if tool_schemas else None,
-                            tool_choice="auto" if tool_schemas else None,
+                        llm_task = asyncio.create_task(
+                            client.chat.completions.create(
+                                model=current_model,
+                                messages=messages,
+                                tools=tool_schemas if tool_schemas else None,
+                                tool_choice="auto" if tool_schemas else None,
+                                stream=True,
+                                stream_options={"include_usage": True},
+                            )
                         )
+                        wait_seconds = 0
+                        while True:
+                            try:
+                                response = await asyncio.wait_for(asyncio.shield(llm_task), timeout=1.0)
+                                break
+                            except asyncio.TimeoutError:
+                                if task_id in self._cancelled_tasks:
+                                    llm_task.cancel()
+                                    try:
+                                        await llm_task
+                                    except asyncio.CancelledError:
+                                        pass
+                                    raise asyncio.CancelledError()
+                                wait_seconds += 1
+                                if wait_seconds % 2 == 0:
+                                    yield ExecutionEvent(
+                                        type=EventType.STATUS,
+                                        content=f"thinking... ({wait_seconds}s)",
+                                    )
+
+                        if hasattr(response, "__aiter__"):
+                            native_stream = response
+                            response = None
+                        
                         if current_model != agent_model:
                             yield ExecutionEvent(type=EventType.STATUS, content=f"using fallback model: {current_model}")
                         break
+
+                    except asyncio.CancelledError:
+                        raise
+
                     except Exception as e:
-                        err_str = str(e)
-                        # Only fall back on model-related errors (404, invalid model, tool use unsupported)
-                        if any(code in err_str for code in ["404", "400", "tool", "model"]):
+                        err = classify(e)
+                        reason_key = err.reason.value
+
+                        if err.is_fatal:
+                            # Auth / billing / bad request — surface immediately
+                            raise RuntimeError(f"{err.reason.value}: {err.message}") from e
+
+                        if err.should_compress:
+                            # Context too large — compact and retry this iteration
+                            yield ExecutionEvent(type=EventType.STATUS, content="context too large — compacting...")
+                            summary = await self._summarize_history(
+                                await conversation_manager.load_messages(conversation_id),
+                                current_model,
+                            )
+                            await conversation_manager.compact(conversation_id, summary=summary)
+                            history = await conversation_manager.load_messages(conversation_id)
+                            # Rebuild messages with compacted history
+                            messages = [{"role": "system", "content": system}]
+                            messages.extend(history)
+                            messages.append({"role": "user", "content": user_content})
+                            client = _openrouter_client()
+                            continue
+
+                        if err.should_rotate_model:
+                            # Model not found or tool use unsupported — rotate
                             next_model = self.router.get_next_fallback(current_model)
                             if next_model and next_model != current_model:
-                                logger.warning(f"Model {current_model} failed ({e}) — trying {next_model}")
+                                logger.warning(f"Model {current_model} failed ({err.reason.value}) — rotating to {next_model}")
+                                yield ExecutionEvent(type=EventType.STATUS, content=f"model unavailable — trying {next_model.split('/')[-1]}...")
                                 current_model = next_model
-                            else:
-                                raise
-                        else:
-                            raise
-                if response is None:
+                                continue
+                            raise RuntimeError(f"All models in fallback chain failed: {err.message}") from e
+
+                        if err.is_retriable:
+                            used = retry_counts.get(reason_key, 0)
+                            if used < len(err.retry_delays):
+                                delay = err.retry_delays[used]
+                                retry_counts[reason_key] = used + 1
+                                logger.warning(f"{err.reason.value} error (attempt {used+1}) — retrying in {delay:.0f}s")
+                                yield ExecutionEvent(
+                                    type=EventType.STATUS,
+                                    content=f"{err.reason.value.replace('_', ' ')} — retrying in {delay:.0f}s...",
+                                )
+                                if delay > 0:
+                                    await asyncio.sleep(delay)
+                                if err.reason == FailoverReason.timeout:
+                                    client = _openrouter_client()   # fresh client on timeout
+                                continue
+                            # Exhausted retries — rotate model as last resort
+                            next_model = self.router.get_next_fallback(current_model)
+                            if next_model and next_model != current_model:
+                                logger.warning(f"Retries exhausted for {current_model} — rotating to {next_model}")
+                                current_model = next_model
+                                retry_counts = {}
+                                continue
+
+                        raise
+
+                if native_stream is None and response is None:
                     raise RuntimeError("All models in fallback chain failed")
 
                 agent_model = current_model  # update in case fallback was used
-                msg = response.choices[0].message
+                msg_content = ""
+                msg_tool_calls: list[dict] = []
+                prompt_tokens = 0
+                completion_tokens = 0
+
+                # ── Native provider streaming path (content + tool-call deltas) ──────
+                if native_stream is not None:
+                    yield ExecutionEvent(type=EventType.STATUS, content="responding...")
+
+                    final_parts: list[str] = []
+                    streamed_tool_calls: dict[int, dict[str, str]] = {}
+
+                    async for chunk in native_stream:
+                        # Usage may be present on the final chunk when include_usage=True.
+                        usage = getattr(chunk, "usage", None)
+                        if usage is not None:
+                            prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+                            completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+
+                        choices = getattr(chunk, "choices", None) or []
+                        if not choices:
+                            continue
+                        delta = getattr(choices[0], "delta", None)
+                        if delta is None:
+                            continue
+
+                        piece = getattr(delta, "content", None)
+                        if piece:
+                            if isinstance(piece, list):
+                                text_piece = "".join(
+                                    p.get("text", "")
+                                    for p in piece
+                                    if isinstance(p, dict)
+                                )
+                            else:
+                                text_piece = str(piece)
+
+                            if text_piece:
+                                final_parts.append(text_piece)
+                                yield ExecutionEvent(
+                                    type=EventType.TEXT_DELTA,
+                                    content=text_piece,
+                                    model=agent_model,
+                                )
+
+                        for tc in (getattr(delta, "tool_calls", None) or []):
+                            idx = int(getattr(tc, "index", 0) or 0)
+                            slot = streamed_tool_calls.setdefault(
+                                idx,
+                                {"id": "", "name": "", "arguments": ""},
+                            )
+                            tc_id = getattr(tc, "id", None)
+                            if tc_id:
+                                slot["id"] = tc_id
+                            fn = getattr(tc, "function", None)
+                            if fn is not None:
+                                fn_name = getattr(fn, "name", None)
+                                if fn_name:
+                                    slot["name"] += fn_name
+                                fn_args = getattr(fn, "arguments", None)
+                                if fn_args:
+                                    slot["arguments"] += fn_args
+
+                    msg_content = "".join(final_parts)
+                    for idx in sorted(streamed_tool_calls.keys()):
+                        tc = streamed_tool_calls[idx]
+                        if not tc["name"] and not tc["arguments"]:
+                            continue
+                        msg_tool_calls.append({
+                            "id": tc["id"] or f"call-{uuid.uuid4()}",
+                            "function": {
+                                "name": tc["name"],
+                                "arguments": tc["arguments"],
+                            },
+                        })
+
+                else:
+                    msg = response.choices[0].message
+                    msg_content = msg.content or ""
+                    for tc in (msg.tool_calls or []):
+                        msg_tool_calls.append({
+                            "id": tc.id,
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        })
+                    if response.usage:
+                        prompt_tokens = int(getattr(response.usage, "prompt_tokens", 0) or 0)
+                        completion_tokens = int(getattr(response.usage, "completion_tokens", 0) or 0)
 
                 # ── Track cost for every LLM call (tool-use and final) ───────
-                if response.usage and self.cost_tracker:
+                if (prompt_tokens or completion_tokens) and self.cost_tracker:
                     try:
                         await self.cost_tracker.track_cost(
                             model=agent_model,
-                            input_tokens=response.usage.prompt_tokens,
-                            output_tokens=response.usage.completion_tokens,
+                            input_tokens=prompt_tokens,
+                            output_tokens=completion_tokens,
                             task_id=task_id,
                         )
                     except Exception as e:
                         logger.warning(f"Cost tracking failed: {e}")
 
                 # ── No tool calls → stream final answer ──────────────────────
-                if not msg.tool_calls:
-                    final_text = msg.content or ""
+                if not msg_tool_calls:
+                    final_text = msg_content
 
-                    yield ExecutionEvent(type=EventType.STATUS, content="responding...")
-
-                    # Stream text in chunks for a live feel
-                    chunk_size = 40
-                    for i in range(0, len(final_text), chunk_size):
-                        yield ExecutionEvent(
-                            type=EventType.TEXT_DELTA,
-                            content=final_text[i:i + chunk_size],
-                            model=agent_model,
-                        )
+                    # Non-stream fallback path: still emit incremental chunks for UX.
+                    if native_stream is None:
+                        yield ExecutionEvent(type=EventType.STATUS, content="responding...")
+                        chunk_size = 12
+                        for i in range(0, len(final_text), chunk_size):
+                            yield ExecutionEvent(
+                                type=EventType.TEXT_DELTA,
+                                content=final_text[i:i + chunk_size],
+                                model=agent_model,
+                            )
+                            await asyncio.sleep(0.12)
 
                     # ── Save turn to conversation history ─────────────
                     try:
@@ -294,21 +488,27 @@ class AgentOrchestrator:
                             conversation_id=conversation_id,
                             user_message=query,
                             assistant_message=final_text,
-                            user_tokens=response.usage.prompt_tokens if response.usage else 0,
-                            assistant_tokens=response.usage.completion_tokens if response.usage else 0,
+                            user_tokens=prompt_tokens,
+                            assistant_tokens=completion_tokens,
                         )
                     except Exception as e:
                         logger.warning(f"Conversation save failed: {e}")
 
                     # ── Auto-save insight to long-term memory ──────────
-                    try:
-                        await memory_manager.save_interaction(
-                            query=query,
-                            response=final_text,
-                            user_id=user_id,
-                        )
-                    except Exception as e:
-                        logger.warning(f"Memory save failed: {e}")
+                    # Skip trivial exchanges (conversational/simple tier) —
+                    # they don't contain anything worth remembering and the
+                    # LLM extraction call would just waste tokens.
+                    if self.router.is_worth_remembering(query):
+                        try:
+                            await memory_manager.save_interaction(
+                                query=query,
+                                response=final_text,
+                                user_id=user_id,
+                            )
+                        except Exception as e:
+                            logger.warning(f"Memory save failed: {e}")
+                    else:
+                        logger.debug("Skipping memory extraction for low-complexity query")
 
                     break  # Done
 
@@ -316,29 +516,29 @@ class AgentOrchestrator:
                 # Add the assistant's tool-calling message to history
                 messages.append({
                     "role": "assistant",
-                    "content": msg.content,
+                    "content": msg_content,
                     "tool_calls": [
                         {
-                            "id": tc.id,
+                            "id": tc["id"],
                             "type": "function",
                             "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments,
+                                "name": tc["function"]["name"],
+                                "arguments": tc["function"]["arguments"],
                             },
                         }
-                        for tc in msg.tool_calls
+                        for tc in msg_tool_calls
                     ],
                 })
 
                 # Parse all tool calls first
                 parsed_calls = []
-                for tool_call in msg.tool_calls:
-                    name = tool_call.function.name
+                for tool_call in msg_tool_calls:
+                    name = tool_call["function"]["name"]
                     try:
-                        args = json.loads(tool_call.function.arguments or "{}")
+                        args = json.loads(tool_call["function"]["arguments"] or "{}")
                     except json.JSONDecodeError:
                         args = {}
-                    parsed_calls.append((tool_call.id, name, args))
+                    parsed_calls.append((tool_call["id"], name, args))
                     yield ExecutionEvent(
                         type=EventType.TOOL_CALL,
                         tool_name=name,
@@ -356,9 +556,10 @@ class AgentOrchestrator:
                     try:
                         result = await self.tools.call(name, **args)
                         result_str = str(result)
-                        if len(result_str) > 4000:
-                            logger.warning(f"Tool '{name}' result truncated ({len(result_str)} → 4000 chars)")
-                            result_str = result_str[:4000] + "\n[...result truncated]"
+                        truncated_str = truncate_tail(result_str)
+                        if truncated_str != result_str:
+                            logger.warning(f"Tool '{name}' result truncated ({len(result_str)} chars → tail kept)")
+                            result_str = truncated_str
                             truncated = True
                     except Exception as e:
                         err_str = str(e)
@@ -443,26 +644,34 @@ class AgentOrchestrator:
             if conversation_id and self._active_conversations.get(conversation_id) == task_id:
                 del self._active_conversations[conversation_id]
 
-    async def _make_plan(self, query: str, context: Optional[str], model: str) -> str:
+    async def _make_plan(self, query: str, context: Optional[str], model: str, client: Optional[AsyncOpenAI] = None) -> str:
         """
-        Ask the model to produce a concise numbered plan before executing.
+        Ask the model to produce a concise numbered plan with explicit success criteria.
         Uses the cheap model to keep cost low — plan is short and structured.
+
+        Output format (enforced by prompt):
+            1. Step one
+            2. Step two
+            ...
+            Done when: <verifiable completion condition>
         """
         plan_prompt = (
-            "You are a planning assistant. Given the following task, produce a short numbered "
-            "step-by-step plan (max 5 steps) of what needs to be done to complete it. "
-            "Be specific but concise. Do not execute anything — just plan.\n\n"
+            "You are a planning assistant. Given the task below, produce:\n"
+            "1. A short numbered step-by-step plan (max 5 steps) of what needs to be done.\n"
+            "2. A final line starting with exactly 'Done when:' that states a specific, "
+            "verifiable condition that signals the task is complete.\n\n"
+            "Be specific and concise. Do not execute anything — only plan.\n\n"
             f"Task: {query}"
         )
         if context:
             plan_prompt += f"\nContext: {context}"
 
         try:
-            client = _openrouter_client()
-            resp = await client.chat.completions.create(
+            c = client or _openrouter_client()
+            resp = await c.chat.completions.create(
                 model=settings.DEFAULT_MODEL_SIMPLE,
                 messages=[{"role": "user", "content": plan_prompt}],
-                max_tokens=200,
+                max_tokens=250,
                 temperature=0,
             )
             return (resp.choices[0].message.content or "").strip()
@@ -470,30 +679,151 @@ class AgentOrchestrator:
             logger.warning(f"Planning step failed: {e}")
             return ""
 
-    async def _summarize_history(self, history: list[dict], model: str) -> str:
-        """Summarize a list of past messages into a compact paragraph."""
+    async def _summarize_history(self, history: list[dict], model: str, client: Optional[AsyncOpenAI] = None) -> str:
+        """
+        Summarize conversation history into a structured compact form.
+
+        - Prunes long tool outputs before sending to the summarizer
+        - Preserves prior compaction summaries across multiple cycles
+        - Tracks files referenced in tool calls (read vs modified)
+        - Uses a structured Goal/Progress/Key Decisions/Next Steps template
+        - Scales max_tokens proportionally to content size (clamped 400–1500)
+        """
+        import re as _re
+
         if not history:
             return ""
-        formatted = "\n".join(
-            f"{m['role'].upper()}: {m['content'][:300]}" for m in history
-        )
+
+        _TOOL_PLACEHOLDER = "[tool output truncated]"
+        _MAX_TOOL_CHARS   = 800   # raised from 300 — summarizer needs raw detail to produce accurate context
+        _MAX_MSG_CHARS    = 800
+        _KEEP_RECENT_FULL = 2     # preserve last N assistant+tool pairs in full (freshest signal)
+
+        # ── Separate prior compaction summary ────────────────────────────────
+        prior_summary = ""
+        turns = []
+        for m in history:
+            content = m.get("content") or ""
+            if content.startswith("[CONTEXT COMPACTION"):
+                normalized_content = content.replace("\r\n", "\n")
+                if "\n\n" in normalized_content:
+                    body = normalized_content.split("\n\n", 1)[1].strip()
+                else:
+                    body = normalized_content.split("\n", 1)[-1].strip()
+                prior_summary = body
+            else:
+                turns.append(m)
+
+        # ── Extract file operations from tool call data ───────────────────────
+        # tool_calls in assistant messages carry {"function": {"name": ..., "arguments": ...}}
+        read_files: set[str] = set()
+        modified_files: set[str] = set()
+        _FILE_OP_TOOL = "file_operations"
+        _PATH_RE = _re.compile(r'"path"\s*:\s*"([^"]+)"')
+
+        for m in turns:
+            tool_calls = m.get("tool_calls") or []
+            for tc in tool_calls:
+                try:
+                    fn = tc.get("function", {})
+                    if fn.get("name") != _FILE_OP_TOOL:
+                        continue
+                    args_str = fn.get("arguments", "{}")
+                    args = json.loads(args_str) if isinstance(args_str, str) else args_str
+                    path = args.get("path", "")
+                    op   = args.get("operation", "")
+                    if not path:
+                        continue
+                    if op == "read":
+                        read_files.add(path)
+                    elif op in ("write", "delete"):
+                        modified_files.add(path)
+                        read_files.discard(path)
+                except Exception:
+                    pass
+            # Also scan content for path patterns (fallback for stored messages)
+            content = m.get("content") or ""
+            for match in _PATH_RE.finditer(content):
+                read_files.add(match.group(1))
+
+        # ── Prune tool outputs ────────────────────────────────────────────────
+        # Most recent turns are preserved in full — they carry the freshest signal
+        # and are most critical for the agent to continue accurately after compaction.
+        # Older turns are truncated to limit summarizer input size.
+        cutoff = max(0, len(turns) - (_KEEP_RECENT_FULL * 2))  # *2 for assistant+tool pairs
+        pruned = []
+        for i, m in enumerate(turns):
+            role    = m.get("role", "")
+            content = m.get("content") or ""
+            if i >= cutoff:
+                # Recent turn — keep in full
+                pruned.append({"role": role, "content": content})
+                continue
+            if role == "tool" and len(content) > _MAX_TOOL_CHARS:
+                content = content[:_MAX_TOOL_CHARS] + f" {_TOOL_PLACEHOLDER}"
+            elif len(content) > _MAX_MSG_CHARS:
+                content = content[:_MAX_MSG_CHARS] + "…"
+            pruned.append({"role": role, "content": content})
+
+        # ── Format conversation for summarizer ────────────────────────────────
+        conv_lines = []
+        if prior_summary:
+            conv_lines.append(f"[Prior summary]\n{prior_summary}\n")
+        for m in pruned:
+            conv_lines.append(f"[{m['role'].capitalize()}]: {m['content']}")
+        formatted = "\n".join(conv_lines)
+
+        # ── Build file tracking appendix ──────────────────────────────────────
+        file_section = ""
+        read_only = sorted(read_files - modified_files)
+        modified  = sorted(modified_files)
+        if read_only:
+            file_section += "\n<read-files>\n" + "\n".join(read_only) + "\n</read-files>"
+        if modified:
+            file_section += "\n<modified-files>\n" + "\n".join(modified) + "\n</modified-files>"
+
+        # ── Scale token budget ────────────────────────────────────────────────
+        raw_chars = sum(len(m.get("content") or "") for m in history)
+        budget    = max(400, min(1500, int(raw_chars / 4 * 0.20)))
+
         prompt = (
-            "Summarize the following conversation history into a concise paragraph "
-            "that preserves all key facts, decisions, and context needed to continue "
-            "the conversation. Be brief but complete.\n\n"
+            "Summarize this conversation to free up context space. "
+            "Use exactly this structure (omit sections with nothing to say):\n\n"
+            "## Goal\n"
+            "[What the user is trying to accomplish]\n\n"
+            "## Progress\n"
+            "### Done\n"
+            "- [x] [Completed tasks with specific outcomes]\n\n"
+            "### In Progress\n"
+            "- [ ] [Current work]\n\n"
+            "### Blocked\n"
+            "- [Issues, if any]\n\n"
+            "## Key Decisions\n"
+            "- **[Decision]**: [Rationale]\n\n"
+            "## Next Steps\n"
+            "1. [What should happen next]\n\n"
+            "## Critical Context\n"
+            "- [Specific values, file names, API responses, or data needed to continue]\n\n"
+            "Rules:\n"
+            "- Be specific — include concrete values, paths, and decisions.\n"
+            "- Do NOT reproduce instructions or requests — only facts and outcomes.\n\n"
+            "Conversation:\n"
             f"{formatted}"
         )
+
         try:
-            client = _openrouter_client()
-            resp = await client.chat.completions.create(
-                model=settings.DEFAULT_MODEL_SIMPLE,   # use cheap model for summaries
+            c = client or _openrouter_client()
+            resp = await c.chat.completions.create(
+                model=settings.DEFAULT_MODEL_SIMPLE,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=300,
+                max_tokens=budget,
+                temperature=0,
             )
-            return resp.choices[0].message.content or ""
+            summary = (resp.choices[0].message.content or "").strip()
+            return summary + file_section if file_section else summary
         except Exception as e:
             logger.warning(f"History summarization failed: {e}")
-            return "Previous conversation context was compacted."
+            return prior_summary or "Previous conversation context was compacted."
 
     async def stop_task(self, task_id: str) -> bool:
         if task_id in self.active_tasks:

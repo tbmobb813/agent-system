@@ -206,6 +206,13 @@ class ModelRouter:
         """Return True if the query warrants a planning pass before execution."""
         return self._classify(query) in ("complex", "research")
 
+    def is_worth_remembering(self, query: str) -> bool:
+        """Return True if the query is substantive enough to warrant memory extraction.
+        Skips free/cheap tiers (conversational, simple) to avoid wasting tokens on
+        throwaway exchanges like greetings or one-line factual lookups.
+        """
+        return self._classify(query) not in ("conversational", "simple")
+
     def get_available_models(self) -> dict:
         return self.MODELS
 

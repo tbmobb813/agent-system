@@ -3,6 +3,22 @@
 import { useState, useCallback, useEffect } from 'react'
 import { streamAgent, stopAgent, getCostStatus, getHistory } from './api'
 
+async function notifyTaskDone() {
+  if (typeof window === 'undefined' || !('__TAURI__' in window)) return
+  try {
+    const { isPermissionGranted, requestPermission, sendNotification } =
+      await import('@tauri-apps/plugin-notification')
+    let granted = await isPermissionGranted()
+    if (!granted) {
+      const perm = await requestPermission()
+      granted = perm === 'granted'
+    }
+    if (granted) sendNotification({ title: 'Agent System', body: 'Task completed.' })
+  } catch {
+    // not in Tauri context or plugin unavailable — ignore
+  }
+}
+
 export type StreamEvent = {
   type: string
   message?: string
@@ -72,40 +88,68 @@ export function useAgentStream() {
 
     try {
       const response = await streamAgent(query, context, undefined, convId ?? undefined)
+      if (!response.ok) {
+        let detail = ''
+        try {
+          const payload = await response.json()
+          detail = payload?.detail || payload?.error || ''
+        } catch {
+          detail = await response.text().catch(() => '')
+        }
+        if (response.status === 401) {
+          throw new Error(detail || 'Unauthorized (401): configure BACKEND_API_KEY for the /api/backend proxy.')
+        }
+        throw new Error(detail || `Stream request failed (${response.status})`)
+      }
       if (!response.body) throw new Error('No response body')
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
 
+      const processEventBlock = (block: string) => {
+        const dataLines: string[] = []
+        for (const rawLine of block.split(/\r?\n/)) {
+          if (rawLine.startsWith('data:')) {
+            dataLines.push(rawLine.slice(5).trimStart())
+          }
+        }
+        if (dataLines.length === 0) return
+
+        try {
+          const event: StreamEvent = JSON.parse(dataLines.join('\n'))
+          setEvents(prev => [...prev, event])
+          if (event.task_id) setTaskId(event.task_id)
+          if (event.type === 'done') {
+            if (event.conversation_id) setConversationId(event.conversation_id)
+            setIsRunning(false)
+            setTaskId(null)
+            notifyTaskDone()
+          }
+          if (event.type === 'error') {
+            setIsRunning(false)
+            setTaskId(null)
+          }
+        } catch {
+          // skip malformed data payloads
+        }
+      }
+
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
 
         buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
+        const blocks = buffer.split(/\r?\n\r?\n/)
+        buffer = blocks.pop() ?? ''
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const event: StreamEvent = JSON.parse(line.slice(6))
-              setEvents(prev => [...prev, event])
-              if (event.task_id) setTaskId(event.task_id)
-              if (event.type === 'done') {
-                if (event.conversation_id) setConversationId(event.conversation_id)
-                setIsRunning(false)
-                setTaskId(null)
-              }
-              if (event.type === 'error') {
-                setIsRunning(false)
-                setTaskId(null)
-              }
-            } catch {
-              // skip malformed lines
-            }
-          }
+        for (const block of blocks) {
+          processEventBlock(block)
         }
+      }
+
+      if (buffer.trim()) {
+        processEventBlock(buffer)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')

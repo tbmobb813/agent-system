@@ -41,3 +41,4 @@ credentials.json
 
 # Generated test artifacts
 frontend/test-results/
+logs/

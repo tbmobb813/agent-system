@@ -99,16 +99,18 @@ async def test_stream_without_tool_calls_emits_text_and_done(monkeypatch):
 
     orch = AgentOrchestrator(cost_tracker=None)
     monkeypatch.setattr(orch.tools, 'get_tool_schemas', lambda selected=None: [])
+    monkeypatch.setattr(orch.router, 'is_worth_remembering', lambda query: True)
 
     events = [
         event async for event in orch.stream(query='Say hello', user_id='u1', max_iterations=2)
     ]
     event_types = [event.type for event in events]
+    full_text = ''.join((event.content or '') for event in events if event.type == EventType.TEXT_DELTA)
 
     assert EventType.STATUS in event_types
     assert EventType.TEXT_DELTA in event_types
     assert event_types[-1] == EventType.DONE
-    assert any((event.content or '').find('Hello orchestrator test') >= 0 for event in events)
+    assert 'Hello orchestrator test' in full_text
     assert saved['turn'] is True
     assert saved['memory'] is True
 
@@ -254,9 +256,10 @@ async def test_stream_uses_fallback_model_on_model_error(monkeypatch):
     events = [
         event async for event in orch.stream(query='Fallback please', user_id='u1', max_iterations=2)
     ]
+    full_text = ''.join((e.content or '') for e in events if e.type == EventType.TEXT_DELTA)
 
     assert any(e.type == EventType.STATUS and (e.content or '').startswith('using fallback model') for e in events)
-    assert any(e.type == EventType.TEXT_DELTA and 'Recovered with fallback' in (e.content or '') for e in events)
+    assert 'Recovered with fallback' in full_text
 
 
 async def test_stream_truncates_large_tool_results(monkeypatch):
@@ -284,7 +287,8 @@ async def test_stream_truncates_large_tool_results(monkeypatch):
         return ''
 
     async def _tool_call(name, **kwargs):
-        return 'x' * 5000
+        # 2001 lines — exceeds DEFAULT_MAX_LINES (2000)
+        return ('x' * 80 + '\n') * 2001
 
     monkeypatch.setattr('app.agent.orchestrator._openrouter_client', lambda: _FakeClient(responses))
     monkeypatch.setattr('app.agent.orchestrator.conversation_manager.get_or_create', _get_or_create)
@@ -304,4 +308,4 @@ async def test_stream_truncates_large_tool_results(monkeypatch):
 
     tool_results = [e.tool_result for e in events if e.type == EventType.TOOL_RESULT]
     assert len(tool_results) == 1
-    assert '[...result truncated]' in tool_results[0]
+    assert 'truncated' in tool_results[0]

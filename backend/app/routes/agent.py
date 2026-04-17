@@ -258,7 +258,15 @@ async def stream_agent(
                 except Exception as pop_error:
                     logger.debug(f"Failed to cleanup call info for task {task_id}: {pop_error}")
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/stop")

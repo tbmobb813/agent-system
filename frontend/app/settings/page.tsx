@@ -3,6 +3,23 @@
 import { useState, useEffect } from 'react'
 import { getSettings, updateSettings } from '@/lib/api'
 
+async function getAutostartEnabled(): Promise<boolean | null> {
+  if (typeof window === 'undefined' || !('__TAURI__' in window)) return null
+  try {
+    const { isEnabled } = await import('@tauri-apps/plugin-autostart')
+    return isEnabled()
+  } catch { return null }
+}
+
+async function setAutostart(enabled: boolean) {
+  if (typeof window === 'undefined' || !('__TAURI__' in window)) return
+  try {
+    const { enable, disable } = await import('@tauri-apps/plugin-autostart')
+    if (enabled) await enable()
+    else await disable()
+  } catch { /* not in Tauri */ }
+}
+
 type SettingsData = {
   preferred_model: string | null
   max_monthly_cost: number
@@ -17,6 +34,11 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [autostart, setAutostartState] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    getAutostartEnabled().then(setAutostartState)
+  }, [])
 
   useEffect(() => {
     getSettings()
@@ -109,6 +131,24 @@ export default function SettingsPage() {
             Auto-save results
           </label>
         </div>
+
+        {autostart !== null && (
+          <div className="flex items-center gap-3 pt-2 border-t border-gray-800">
+            <input
+              type="checkbox"
+              id="autostart"
+              checked={autostart}
+              onChange={async e => {
+                setAutostartState(e.target.checked)
+                await setAutostart(e.target.checked)
+              }}
+              className="w-4 h-4 accent-indigo-500"
+            />
+            <label htmlFor="autostart" className="text-sm text-gray-300">
+              Launch on login <span className="text-xs text-gray-500">(desktop only)</span>
+            </label>
+          </div>
+        )}
 
         <div className="flex items-center gap-3 pt-2">
           <button
