@@ -68,15 +68,13 @@ async def test_file_operations_blocks_path_traversal(tmp_path):
 
 def test_list_tools_contains_expected_builtin_tools(monkeypatch):
     """Builtin tools; code_execution only when E2B is configured (see _register_builtin_tools)."""
-    # tool_registry does `from app.config import settings` at import time; patch that module
-    # binding too so CI cannot see a stale truthy E2B_API_KEY when constructing ToolRegistry().
-    from app.config import settings as app_settings
+    # tool_registry does `from app.config import settings` at module load.
+    # Patch the *attribute* on that already-bound settings object so _register_builtin_tools
+    # sees the patched value when `if settings.E2B_API_KEY:` runs.
     import app.tools.tool_registry as tool_registry_mod
 
     monkeypatch.delenv('E2B_API_KEY', raising=False)
-    cleared = app_settings.model_copy(update={'E2B_API_KEY': ''})
-    monkeypatch.setattr('app.config.settings', cleared)
-    monkeypatch.setattr(tool_registry_mod, 'settings', cleared)
+    monkeypatch.setattr(tool_registry_mod.settings, 'E2B_API_KEY', '')
 
     registry = ToolRegistry()
     names = registry.list_tools()
@@ -88,7 +86,7 @@ def test_list_tools_contains_expected_builtin_tools(monkeypatch):
     assert 'api_call' in names
     assert 'search_documents' in names
 
-    monkeypatch.setattr(cleared, 'E2B_API_KEY', 'configured')
+    monkeypatch.setattr(tool_registry_mod.settings, 'E2B_API_KEY', 'configured')
     assert 'code_execution' in ToolRegistry().list_tools()
 
 
