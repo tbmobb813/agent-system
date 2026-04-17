@@ -66,9 +66,41 @@ async def test_file_operations_blocks_path_traversal(tmp_path):
     assert result == 'Error: path traversal not allowed'
 
 
-def test_list_tools_contains_expected_builtin_tools():
+async def test_file_operations_blocks_sibling_directory_prefix_escape(tmp_path):
+    """Regression: startswith(realpath(ws)) wrongly allowed /ws_evil when workspace was /ws."""
+    sandbox = tmp_path / 'sandbox'
+    sandbox.mkdir()
+    evil = tmp_path / 'sandbox_evil'
+    evil.mkdir()
+    (evil / 'secret.txt').write_text('nope')
+
+    registry = ToolRegistry()
+    result = await registry._file_operations(
+        operation='read',
+        path='../sandbox_evil/secret.txt',
+        workspace=str(sandbox),
+    )
+
+    assert result == 'Error: path traversal not allowed'
+
+
+async def test_api_call_blocks_loopback_url():
     registry = ToolRegistry()
 
+    result = await registry._api_call(url='http://127.0.0.1/', method='GET')
+
+    assert 'error' in result
+    assert 'non-public' in result['error'].lower() or 'not allowed' in result['error'].lower()
+
+
+def test_list_tools_contains_expected_builtin_tools(monkeypatch):
+    """Builtin tools include code_execution even when E2B is not configured."""
+    import app.tools.tool_registry as tool_registry_mod
+
+    monkeypatch.delenv('E2B_API_KEY', raising=False)
+    monkeypatch.setattr(tool_registry_mod.settings, 'E2B_API_KEY', '')
+
+    registry = ToolRegistry()
     names = registry.list_tools()
 
     assert 'web_search' in names
@@ -77,6 +109,9 @@ def test_list_tools_contains_expected_builtin_tools():
     assert 'code_execution' in names
     assert 'api_call' in names
     assert 'search_documents' in names
+
+    monkeypatch.setattr(tool_registry_mod.settings, 'E2B_API_KEY', 'configured')
+    assert 'code_execution' in ToolRegistry().list_tools()
 
 
 async def test_registry_call_raises_for_unknown_tool():
@@ -269,8 +304,17 @@ async def test_brave_search_handles_generic_exception(monkeypatch):
     assert result['error'] == 'brave down'
 
 
+def _stub_outbound_url_checks(monkeypatch):
+    """Tests mock httpx/Playwright; skip live DNS for hostname SSRF checks."""
+    monkeypatch.setattr(
+        'app.tools.tool_registry.validate_agent_outbound_url',
+        lambda _url: (True, ''),
+    )
+
+
 async def test_api_call_handles_timeout(monkeypatch):
     registry = ToolRegistry()
+    _stub_outbound_url_checks(monkeypatch)
 
     class _TimeoutClient:
         async def __aenter__(self):
@@ -291,6 +335,7 @@ async def test_api_call_handles_timeout(monkeypatch):
 
 async def test_api_call_handles_non_json_response(monkeypatch):
     registry = ToolRegistry()
+    _stub_outbound_url_checks(monkeypatch)
 
     class _Resp:
         status_code = 200
@@ -316,6 +361,46 @@ async def test_api_call_handles_non_json_response(monkeypatch):
 
     assert result['status'] == 200
     assert result['data'] == 'plain text body'
+
+
+async def test_api_call_redacts_sensitive_response_headers(monkeypatch):
+    registry = ToolRegistry()
+    _stub_outbound_url_checks(monkeypatch)
+
+    class _Resp:
+        status_code = 200
+        headers = httpx.Headers(
+            {
+                'Content-Type': 'application/json',
+                'Set-Cookie': 'sid=supersecret',
+                'Authorization': 'Bearer upstream-token',
+                'X-Trace': 'abc',
+            }
+        )
+        text = '{}'
+
+        def json(self):
+            return {}
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def request(self, *args, **kwargs):
+            return _Resp()
+
+    monkeypatch.setattr('app.tools.tool_registry.httpx.AsyncClient', lambda timeout=15.0: _Client())
+
+    result = await registry._api_call(url='https://example.com')
+
+    assert result['status'] == 200
+    h = {k.lower(): v for k, v in result['headers'].items()}
+    assert h['set-cookie'] == '[redacted]'
+    assert h['authorization'] == '[redacted]'
+    assert h['x-trace'] == 'abc'
 
 
 async def test_file_operations_read_missing_and_unknown_op(tmp_path):
@@ -522,8 +607,35 @@ def _install_fake_playwright(monkeypatch, *, fail_on_goto: bool = False):
     monkeypatch.setitem(sys.modules, 'playwright.async_api', fake_module)
 
 
+async def test_browser_automation_blocks_host_not_in_allowlist(monkeypatch):
+    registry = ToolRegistry()
+    monkeypatch.setattr(
+        'app.config.settings.BROWSER_AUTOMATION_ALLOWED_HOST_SUFFIXES',
+        'wikipedia.org',
+    )
+    _stub_outbound_url_checks(monkeypatch)
+    _install_fake_playwright(monkeypatch)
+
+    nav = await registry._browser_automation(action='navigate', url='https://example.com')
+    assert 'BROWSER_AUTOMATION_ALLOWED_HOST_SUFFIXES' in nav
+
+
+async def test_browser_automation_allowlist_allows_matching_host(monkeypatch, tmp_path):
+    registry = ToolRegistry()
+    monkeypatch.setattr(
+        'app.config.settings.BROWSER_AUTOMATION_ALLOWED_HOST_SUFFIXES',
+        'example.com',
+    )
+    _stub_outbound_url_checks(monkeypatch)
+    _install_fake_playwright(monkeypatch)
+
+    nav = await registry._browser_automation(action='navigate', url='https://example.com')
+    assert 'Title: Fake Title' in nav
+
+
 async def test_browser_automation_success_actions(monkeypatch, tmp_path):
     registry = ToolRegistry()
+    _stub_outbound_url_checks(monkeypatch)
     _install_fake_playwright(monkeypatch)
 
     nav = await registry._browser_automation(action='navigate', url='https://example.com')
@@ -545,6 +657,7 @@ async def test_browser_automation_success_actions(monkeypatch, tmp_path):
 
 async def test_browser_automation_validation_and_error_paths(monkeypatch):
     registry = ToolRegistry()
+    _stub_outbound_url_checks(monkeypatch)
     _install_fake_playwright(monkeypatch)
 
     missing_url = await registry._browser_automation(action='navigate', url='')

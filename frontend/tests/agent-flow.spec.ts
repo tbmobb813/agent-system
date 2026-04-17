@@ -6,7 +6,7 @@ test('agent full flow: submit query, receive stream, and show completion control
     'data: {"type":"text_delta","content":"Hello from mocked agent."}',
     'data: {"type":"done","cost":0.0012,"conversation_id":"conv-123"}',
     '',
-  ].join('\n')
+  ].join('\n\n')
 
   await page.route('**/api/backend/agent/stream', async route => {
     await route.fulfill({
@@ -22,7 +22,7 @@ test('agent full flow: submit query, receive stream, and show completion control
   await page.goto('/agent')
 
   await page
-    .getByPlaceholder('What do you want the agent to do? (Ctrl+Enter to run)')
+    .getByPlaceholder('Message the agent (Enter to send, Shift+Enter for newline)')
     .fill('Write a short greeting')
 
   await page.getByRole('button', { name: 'Run Agent' }).click()
@@ -47,7 +47,7 @@ test('agent flow shows an error when stream request fails', async ({ page }) => 
   await page.goto('/agent')
 
   await page
-    .getByPlaceholder('What do you want the agent to do? (Ctrl+Enter to run)')
+    .getByPlaceholder('Message the agent (Enter to send, Shift+Enter for newline)')
     .fill('Trigger stream error')
 
   await page.getByRole('button', { name: 'Run Agent' }).click()

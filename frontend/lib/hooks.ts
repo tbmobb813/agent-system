@@ -33,9 +33,24 @@ export type StreamEvent = {
   context_tokens_used?: number
   context_tokens_max?: number
   context_percent?: number
+  client_ts?: number
 }
 
 const STORAGE_KEY = 'agent_session'
+const MAX_STORED_EVENTS = 200
+const MAX_STORED_TOOL_RESULT_CHARS = 2000
+
+function compactEventsForStorage(events: StreamEvent[]): StreamEvent[] {
+  return events
+    .slice(-MAX_STORED_EVENTS)
+    .map((event) => {
+      if (!event.tool_result || event.tool_result.length <= MAX_STORED_TOOL_RESULT_CHARS) return event
+      return {
+        ...event,
+        tool_result: `${event.tool_result.slice(0, MAX_STORED_TOOL_RESULT_CHARS)}…`,
+      }
+    })
+}
 
 function loadSession(): { events: StreamEvent[]; conversationId: string | null } {
   if (typeof window === 'undefined') return { events: [], conversationId: null }
@@ -51,7 +66,13 @@ function loadSession(): { events: StreamEvent[]; conversationId: string | null }
 function saveSession(events: StreamEvent[], conversationId: string | null) {
   if (typeof window === 'undefined') return
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ events, conversationId }))
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        events: compactEventsForStorage(events),
+        conversationId,
+      }),
+    )
   } catch {
     // storage full — ignore
   }
@@ -82,7 +103,23 @@ export function useAgentStream() {
   }, [events, conversationId, hydrated])
 
   const run = useCallback(async (query: string, context?: string, convId?: string | null) => {
-    setEvents([])
+    setTaskId(null)
+    setEvents(prev => {
+      const next = [...prev]
+      if (next.length > 0) {
+        next.push({
+          type: 'turn_divider',
+          content: 'Follow-up run',
+          client_ts: Date.now(),
+        })
+      }
+      next.push({
+        type: 'user_message',
+        content: query,
+        client_ts: Date.now(),
+      })
+      return next
+    })
     setError(null)
     setIsRunning(true)
 
@@ -117,7 +154,10 @@ export function useAgentStream() {
         if (dataLines.length === 0) return
 
         try {
-          const event: StreamEvent = JSON.parse(dataLines.join('\n'))
+          const event: StreamEvent = {
+            ...JSON.parse(dataLines.join('\n')),
+            client_ts: Date.now(),
+          }
           setEvents(prev => [...prev, event])
           if (event.task_id) setTaskId(event.task_id)
           if (event.type === 'done') {
@@ -153,6 +193,7 @@ export function useAgentStream() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
+      setTaskId(null)
     } finally {
       setIsRunning(false)
     }

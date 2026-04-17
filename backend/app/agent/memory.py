@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_USER = "default"
 MAX_MEMORY_CONTENT = 2000   # chars stored per memory
-MAX_CONTEXT_CHARS  = 1500   # chars injected into system prompt
+MAX_CONTEXT_CHARS = 1500   # chars injected into system prompt
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -412,6 +412,38 @@ class MemoryManager:
         category = _classify_insight(insight)
         await self.save(insight, category=category, user_id=user_id)
         logger.info(f"Saved insight [{category}]: {insight[:80]}")
+
+    async def save_feedback_learning(
+        self,
+        task_query: str,
+        signal: str,
+        notes: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[str]:
+        """Promote explicit user feedback into durable memory when it contains signal."""
+        cleaned_notes = (notes or "").strip()
+        if not cleaned_notes:
+            return None
+
+        compact_query = (task_query or "").strip().replace("\n", " ")[:160]
+        if signal == "up":
+            category = "preference"
+            content = f"User confirmed a helpful response for '{compact_query}': {cleaned_notes}"
+            relevance_score = 1.2
+        elif signal == "down":
+            category = "pattern"
+            content = f"User correction or dissatisfaction for '{compact_query}': {cleaned_notes}"
+            relevance_score = 1.3
+        else:
+            logger.warning(f"Ignoring unknown feedback signal: {signal!r}")
+            return None
+
+        return await self.save(
+            content,
+            category=category,
+            user_id=user_id,
+            relevance_score=relevance_score,
+        )
 
     async def delete(self, memory_id: str) -> bool:
         """Delete a specific memory by ID."""

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { getSettings, updateSettings } from '@/lib/api'
+import { getSettings, updateSettings, getPersonaPreview } from '@/lib/api'
 
 async function getAutostartEnabled(): Promise<boolean | null> {
   if (typeof window === 'undefined' || !('__TAURI__' in window)) return null
@@ -26,6 +26,8 @@ type SettingsData = {
   enable_notifications: boolean
   auto_save_results: boolean
   timezone: string
+  agent_persona_enabled: boolean
+  agent_persona_path: string
 }
 
 export default function SettingsPage() {
@@ -35,6 +37,8 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [autostart, setAutostartState] = useState<boolean | null>(null)
+  const [personaPreview, setPersonaPreview] = useState('')
+  const [previewLoading, setPreviewLoading] = useState(false)
 
   useEffect(() => {
     getAutostartEnabled().then(setAutostartState)
@@ -46,6 +50,19 @@ export default function SettingsPage() {
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
   }, [])
+
+  async function refreshPersonaPreview() {
+    setPreviewLoading(true)
+    setError(null)
+    try {
+      const payload = await getPersonaPreview()
+      setPersonaPreview(payload.preview || '')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Preview failed')
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -73,8 +90,9 @@ export default function SettingsPage() {
       <form onSubmit={handleSave} className="max-w-xl space-y-5">
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Monthly Budget (USD)</label>
+          <label htmlFor="max-monthly-cost" className="block text-sm text-gray-400 mb-1">Monthly Budget (USD)</label>
           <input
+            id="max-monthly-cost"
             type="number"
             step="0.01"
             min="0"
@@ -85,8 +103,9 @@ export default function SettingsPage() {
         </div>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Preferred Model</label>
+          <label htmlFor="preferred-model" className="block text-sm text-gray-400 mb-1">Preferred Model</label>
           <input
+            id="preferred-model"
             type="text"
             placeholder="e.g. deepseek/deepseek-chat"
             value={settings.preferred_model ?? ''}
@@ -97,12 +116,61 @@ export default function SettingsPage() {
         </div>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Timezone</label>
+          <label htmlFor="timezone" className="block text-sm text-gray-400 mb-1">Timezone</label>
           <input
+            id="timezone"
             type="text"
             value={settings.timezone}
             onChange={e => setSettings({ ...settings, timezone: e.target.value })}
             className="w-full bg-gray-800 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:outline-none focus:border-indigo-500"
+          />
+        </div>
+
+        <div className="pt-2 border-t border-gray-800">
+          <div className="flex items-center gap-3 mb-3">
+            <input
+              type="checkbox"
+              id="persona-enabled"
+              checked={settings.agent_persona_enabled}
+              onChange={e => setSettings({ ...settings, agent_persona_enabled: e.target.checked })}
+              className="w-4 h-4 accent-indigo-500"
+            />
+            <label htmlFor="persona-enabled" className="text-sm text-gray-300">
+              Enable persona profile injection
+            </label>
+          </div>
+
+          <label htmlFor="persona-path" className="block text-sm text-gray-400 mb-1">Persona Folder</label>
+          <input
+            id="persona-path"
+            type="text"
+            value={settings.agent_persona_path}
+            onChange={e => setSettings({ ...settings, agent_persona_path: e.target.value })}
+            className="w-full bg-gray-800 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:outline-none focus:border-indigo-500"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Relative example: data/persona. Absolute paths are also supported.
+          </p>
+
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={refreshPersonaPreview}
+              disabled={previewLoading}
+              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium disabled:opacity-50 transition-colors"
+            >
+              {previewLoading ? 'Loading preview…' : 'Preview resolved persona block'}
+            </button>
+          </div>
+
+          <label htmlFor="persona-preview" className="block text-sm text-gray-400 mt-3 mb-1">Persona Preview</label>
+          <textarea
+            id="persona-preview"
+            value={personaPreview}
+            readOnly
+            rows={8}
+            className="w-full bg-gray-900 rounded-lg px-3 py-2 text-xs border border-gray-700 focus:outline-none"
+            placeholder="Click preview to load the resolved persona prompt block"
           />
         </div>
 

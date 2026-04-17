@@ -1,5 +1,18 @@
-const configuredApiUrl = (process.env.NEXT_PUBLIC_API_URL || '').trim()
-const API_URL = configuredApiUrl.startsWith('/api/backend') ? configuredApiUrl : '/api/backend'
+/**
+ * Browser API base URL.
+ * - Default: same-origin `/api/backend` (Next rewrites to BACKEND_URL — see next.config.ts).
+ * - `NEXT_PUBLIC_API_URL=/api/backend/...` — custom path prefix if needed.
+ * - `NEXT_PUBLIC_API_URL=https://api.example.com` — direct backend (must allow CORS for this origin).
+ */
+function resolveApiBaseUrl(): string {
+  const raw = (process.env.NEXT_PUBLIC_API_URL || '').trim()
+  if (!raw) return '/api/backend'
+  if (raw.startsWith('/')) return raw.replace(/\/$/, '') || '/api/backend'
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw.replace(/\/$/, '')
+  return '/api/backend'
+}
+
+const API_URL = resolveApiBaseUrl()
 
 function headers(): Record<string, string> {
   return { 'Content-Type': 'application/json' }
@@ -81,6 +94,19 @@ export async function getTaskDetail(taskId: string) {
   return res.json()
 }
 
+export async function submitTaskFeedback(
+  taskId: string,
+  data: { signal: 'up' | 'down'; notes?: string },
+): Promise<{ status: string; task_id: string; signal: 'up' | 'down'; notes: string | null; created_at: string }> {
+  const res = await fetchWithTimeout(`${API_URL}/history/${taskId}/feedback`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(`Failed to submit feedback (${res.status})`)
+  return res.json()
+}
+
 export async function deleteTask(taskId: string) {
   const res = await fetchWithTimeout(`${API_URL}/history/${taskId}`, {
     method: 'DELETE',
@@ -103,6 +129,12 @@ export async function updateSettings(data: object) {
     body: JSON.stringify(data),
   })
   if (!res.ok) throw new Error(`Failed to update settings (${res.status})`)
+  return res.json()
+}
+
+export async function getPersonaPreview() {
+  const res = await fetchWithTimeout(`${API_URL}/settings/persona/preview`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch persona preview (${res.status})`)
   return res.json()
 }
 

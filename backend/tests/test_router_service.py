@@ -39,6 +39,56 @@ def test_is_complex_for_research_queries():
     assert router.is_complex('Provide a comprehensive overview and deep dive') is True
 
 
+def test_should_plan_true_for_complex_query_with_tools_and_no_history():
+    router = ModelRouter()
+
+    assert router.should_plan(
+        query='Compare two architectures with pros and cons',
+        has_tools=True,
+        has_history=False,
+    ) is True
+
+
+def test_should_plan_false_when_no_tools_available():
+    router = ModelRouter()
+
+    assert router.should_plan(
+        query='Compare two architectures with pros and cons',
+        has_tools=False,
+        has_history=False,
+    ) is False
+
+
+def test_should_plan_false_for_follow_up_with_history():
+    router = ModelRouter()
+
+    assert router.should_plan(
+        query='Compare two architectures with pros and cons',
+        has_tools=True,
+        has_history=True,
+    ) is False
+
+
+def test_should_remember_false_for_followup_transactional_edit():
+    router = ModelRouter()
+
+    assert router.should_remember(
+        query='Can you make that shorter?',
+        has_history=True,
+        response='Updated.',
+    ) is False
+
+
+def test_should_remember_true_for_substantive_followup_question():
+    router = ModelRouter()
+
+    assert router.should_remember(
+        query='What are the security implications of this architecture change?',
+        has_history=True,
+        response='The main implications are in auth boundaries and data exposure.',
+    ) is True
+
+
 def test_get_next_fallback_returns_next_model_in_chain():
     router = ModelRouter()
 

@@ -44,6 +44,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/app:/app/app
+      - ./backend/data:/app/data
     command: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
     networks:
       - agent-network
@@ -57,8 +58,11 @@ services:
     ports:
       - "3003:3003"
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      # Browser uses same-origin /api/backend unless NEXT_PUBLIC_API_URL is set (see frontend/lib/api.ts).
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-}
       - BACKEND_URL=${BACKEND_URL:-http://backend:8000}
+      # Injected by middleware for /api/backend/* → FastAPI (must match backend BACKEND_API_KEY).
+      - BACKEND_API_KEY=${BACKEND_API_KEY:-sk-agent-local-dev}
       - NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_KEY}
     depends_on:
@@ -124,7 +128,7 @@ networks:
 #   docker-compose up
 #
 # Access:
-#   Frontend: http://localhost:3000
+#   Frontend: http://localhost:3003
 #   Backend API: http://localhost:8000
 #   API Docs: http://localhost:8000/docs
 #   Database: postgres://postgres:postgres_dev_password@localhost:5432/agent_db

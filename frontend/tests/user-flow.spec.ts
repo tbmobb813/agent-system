@@ -52,9 +52,9 @@ test('full user flow: dashboard to agent execution', async ({ page }) => {
     'data: {"type":"text_delta","content":"Flow completed."}',
     'data: {"type":"done","cost":0.002,"conversation_id":"conv-999"}',
     '',
-  ].join('\n')
+  ].join('\n\n')
 
-  await page.route('**/agent/stream', async route => {
+  await page.route('**/api/backend/agent/stream', async route => {
     await route.fulfill({
       status: 200,
       contentType: 'text/event-stream',
@@ -72,7 +72,7 @@ test('full user flow: dashboard to agent execution', async ({ page }) => {
 
   await expect(page).toHaveURL(/\/agent$/)
   await page
-    .getByPlaceholder('What do you want the agent to do? (Ctrl+Enter to run)')
+    .getByPlaceholder('Message the agent (Enter to send, Shift+Enter for newline)')
     .fill('Run a full flow test')
   await page.getByRole('button', { name: 'Run Agent' }).click()
 

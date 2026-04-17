@@ -34,6 +34,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # Must match docker network hostname so /api/backend rewrites resolve in the Next server.
+        BACKEND_URL: http://backend:8000
     container_name: agent-frontend
     restart: unless-stopped
     ports:
@@ -42,6 +45,7 @@ services:
       - .env
     environment:
       - NODE_ENV=production
+      - BACKEND_API_KEY=${BACKEND_API_KEY:-sk-agent-local-dev}
     depends_on:
       backend:
         condition: service_healthy

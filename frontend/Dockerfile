@@ -11,6 +11,9 @@ COPY package*.json ./
 RUN npm ci
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# Used by next.config.ts rewrites at build time (Docker: backend service hostname).
+ARG BACKEND_URL=http://127.0.0.1:8000
+ENV BACKEND_URL=$BACKEND_URL
 RUN npm run build
 
 # ── Stage 3: Runtime ──────────────────────────────────────────────────────────
@@ -35,6 +38,6 @@ ENV PORT=3003
 ENV HOSTNAME="0.0.0.0"
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD wget -qO- http://localhost:3000/ || exit 1
+  CMD wget -qO- http://localhost:3003/ || exit 1
 
 CMD ["node", "server.js"]

@@ -96,6 +96,8 @@ class Settings(BaseModel):
     context_window_target_percent: float = Field(default=0.75)
     default_tools: Optional[list[str]] = None
     timezone: str = Field(default="UTC")
+    agent_persona_enabled: bool = Field(default=True)
+    agent_persona_path: str = Field(default="data/persona")
     metadata: dict = Field(default_factory=dict)
 
 
