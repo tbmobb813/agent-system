@@ -66,28 +66,17 @@ async def test_file_operations_blocks_path_traversal(tmp_path):
     assert result == 'Error: path traversal not allowed'
 
 
-def test_list_tools_contains_expected_builtin_tools(monkeypatch):
-    """Builtin tools; code_execution only when E2B is configured (see _register_builtin_tools)."""
-    # tool_registry does `from app.config import settings` at module load.
-    # Patch the *attribute* on that already-bound settings object so _register_builtin_tools
-    # sees the patched value when `if settings.E2B_API_KEY:` runs.
-    import app.tools.tool_registry as tool_registry_mod
-
-    monkeypatch.delenv('E2B_API_KEY', raising=False)
-    monkeypatch.setattr(tool_registry_mod.settings, 'E2B_API_KEY', '')
-
+def test_list_tools_contains_expected_builtin_tools():
+    """Builtin tools are always available to the orchestrator."""
     registry = ToolRegistry()
     names = registry.list_tools()
 
     assert 'web_search' in names
     assert 'browser_automation' in names
     assert 'file_operations' in names
-    assert 'code_execution' not in names
+    assert 'code_execution' in names
     assert 'api_call' in names
     assert 'search_documents' in names
-
-    monkeypatch.setattr(tool_registry_mod.settings, 'E2B_API_KEY', 'configured')
-    assert 'code_execution' in ToolRegistry().list_tools()
 
 
 async def test_registry_call_raises_for_unknown_tool():
