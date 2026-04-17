@@ -99,6 +99,7 @@ async def test_stream_without_tool_calls_emits_text_and_done(monkeypatch):
 
     orch = AgentOrchestrator(cost_tracker=None)
     monkeypatch.setattr(orch.tools, 'get_tool_schemas', lambda selected=None: [])
+    monkeypatch.setattr(orch.router, 'is_worth_remembering', lambda query: True)
 
     events = [
         event async for event in orch.stream(query='Say hello', user_id='u1', max_iterations=2)

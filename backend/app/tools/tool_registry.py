@@ -79,15 +79,13 @@ class ToolRegistry:
             required_args=["operation"],
         )
         
-        # Code Execution — only register when E2B sandbox is configured.
-        # Without E2B_API_KEY the tool always fails, adding noise to the schema.
-        if settings.E2B_API_KEY:
-            self.register(
-                name="code_execution",
-                func=self._code_execution,
-                description="Execute code in a secure sandbox and return the output.",
-                required_args=["code"],
-            )
+        # Code Execution
+        self.register(
+            name="code_execution",
+            func=self._code_execution,
+            description="Execute code in a secure sandbox and return the output.",
+            required_args=["code"],
+        )
         
         # API Calling
         self.register(
