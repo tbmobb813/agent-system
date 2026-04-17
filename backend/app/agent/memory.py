@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_USER = "default"
 MAX_MEMORY_CONTENT = 2000   # chars stored per memory
-MAX_CONTEXT_CHARS  = 1500   # chars injected into system prompt
+MAX_CONTEXT_CHARS = 1500   # chars injected into system prompt
 
 
 # ─────────────────────────────────────────────────────────────────────────────

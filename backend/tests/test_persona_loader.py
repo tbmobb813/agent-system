@@ -72,3 +72,9 @@ def test_build_persona_prompt_returns_empty_for_missing_directory(tmp_path):
     )
 
     assert prompt == ''
+
+
+def test_relative_persona_path_outside_repo_falls_back_to_default():
+    """Regression: relative paths must not escape the repo via ../ segments."""
+    resolved = persona_loader._resolve_persona_dir('../../../../../../tmp')
+    assert resolved == persona_loader._DEFAULT_DIR
