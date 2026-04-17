@@ -47,6 +47,21 @@ class _FakeClientWithErrors:
         self.chat = _FakeChatWithErrors(responses_or_errors)
 
 
+class _RecordingCompletions:
+    def __init__(self, response):
+        self.response = response
+        self.calls = []
+
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.response
+
+
+class _RecordingClient:
+    def __init__(self, response):
+        self.chat = SimpleNamespace(completions=_RecordingCompletions(response))
+
+
 def _response_with_text(text: str, prompt_tokens: int = 10, completion_tokens: int = 5):
     message = SimpleNamespace(content=text, tool_calls=[])
     usage = SimpleNamespace(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
@@ -313,3 +328,156 @@ async def test_stream_truncates_large_tool_results(monkeypatch):
     tool_results = [e.tool_result for e in events if e.type == EventType.TOOL_RESULT]
     assert len(tool_results) == 1
     assert 'truncated' in tool_results[0]
+
+
+async def test_stream_includes_plan_and_success_criteria_for_first_complex_tool_run(monkeypatch):
+    fake_response = _response_with_text('Planned answer')
+    recording_client = _RecordingClient(fake_response)
+
+    async def _get_or_create(conversation_id, user_id=None):
+        return 'conv-plan'
+
+    async def _load_messages(conversation_id):
+        return []
+
+    async def _estimate_tokens(conversation_id):
+        return 0
+
+    async def _save_turn(**kwargs):
+        return None
+
+    async def _save_interaction(**kwargs):
+        return None
+
+    async def _build_context(query, user_id=None):
+        return ''
+
+    async def _plan(*args, **kwargs):
+        return '1. Read docs\n2. Call tools\nDone when: user gets a clear final answer with cited results'
+
+    monkeypatch.setattr('app.agent.orchestrator._openrouter_client', lambda: recording_client)
+    monkeypatch.setattr('app.agent.orchestrator.conversation_manager.get_or_create', _get_or_create)
+    monkeypatch.setattr('app.agent.orchestrator.conversation_manager.load_messages', _load_messages)
+    monkeypatch.setattr('app.agent.orchestrator.conversation_manager.estimate_tokens', _estimate_tokens)
+    monkeypatch.setattr('app.agent.orchestrator.conversation_manager.save_turn', _save_turn)
+    monkeypatch.setattr('app.agent.orchestrator.memory_manager.save_interaction', _save_interaction)
+    monkeypatch.setattr('app.agent.orchestrator.context_builder.build', _build_context)
+
+    orch = AgentOrchestrator(cost_tracker=None)
+    monkeypatch.setattr(orch.tools, 'get_tool_schemas', lambda selected=None: [{'type': 'function'}])
+    monkeypatch.setattr(orch, '_make_plan', _plan)
+
+    events = [
+        event async for event in orch.stream(
+            query='Compare two cloud architectures and recommend one',
+            user_id='u1',
+            max_iterations=2,
+        )
+    ]
+
+    assert any(e.type == EventType.STATUS and e.content == 'planning...' for e in events)
+
+    assert len(recording_client.chat.completions.calls) == 1
+    call = recording_client.chat.completions.calls[0]
+    messages = call['messages']
+    assert messages[0]['role'] == 'system'
+    assert '<success_criteria>' in messages[0]['content']
+    assert 'Done when: user gets a clear final answer with cited results' in messages[0]['content']
+    assert messages[-1]['role'] == 'user'
+    assert messages[-1]['content'].startswith('[Plan]')
+
+
+async def test_stream_skips_planning_for_followup_with_history(monkeypatch):
+    fake_response = _response_with_text('Follow-up answer')
+
+    async def _get_or_create(conversation_id, user_id=None):
+        return 'conv-follow-up'
+
+    async def _load_messages(conversation_id):
+        return [{'role': 'assistant', 'content': 'previous answer'}]
+
+    async def _estimate_tokens(conversation_id):
+        return 0
+
+    async def _save_turn(**kwargs):
+        return None
+
+    async def _save_interaction(**kwargs):
+        return None
+
+    async def _build_context(query, user_id=None):
+        return ''
+
+    plan_calls = {'count': 0}
+
+    async def _plan(*args, **kwargs):
+        plan_calls['count'] += 1
+        return '1. This should not run\nDone when: never'
+
+    monkeypatch.setattr('app.agent.orchestrator._openrouter_client', lambda: _FakeClient([fake_response]))
+    monkeypatch.setattr('app.agent.orchestrator.conversation_manager.get_or_create', _get_or_create)
+    monkeypatch.setattr('app.agent.orchestrator.conversation_manager.load_messages', _load_messages)
+    monkeypatch.setattr('app.agent.orchestrator.conversation_manager.estimate_tokens', _estimate_tokens)
+    monkeypatch.setattr('app.agent.orchestrator.conversation_manager.save_turn', _save_turn)
+    monkeypatch.setattr('app.agent.orchestrator.memory_manager.save_interaction', _save_interaction)
+    monkeypatch.setattr('app.agent.orchestrator.context_builder.build', _build_context)
+
+    orch = AgentOrchestrator(cost_tracker=None)
+    monkeypatch.setattr(orch.tools, 'get_tool_schemas', lambda selected=None: [{'type': 'function'}])
+    monkeypatch.setattr(orch, '_make_plan', _plan)
+
+    events = [
+        event async for event in orch.stream(
+            query='Compare two cloud architectures and recommend one',
+            user_id='u1',
+            max_iterations=2,
+        )
+    ]
+
+    assert plan_calls['count'] == 0
+    assert all(not (e.type == EventType.STATUS and e.content == 'planning...') for e in events)
+
+
+async def test_stream_skips_memory_extraction_for_transactional_followup(monkeypatch):
+    fake_response = _response_with_text('Updated.')
+    saved = {'memory': 0}
+
+    async def _get_or_create(conversation_id, user_id=None):
+        return 'conv-follow-up-memory'
+
+    async def _load_messages(conversation_id):
+        return [{'role': 'assistant', 'content': 'prior long answer'}]
+
+    async def _estimate_tokens(conversation_id):
+        return 0
+
+    async def _save_turn(**kwargs):
+        return None
+
+    async def _save_interaction(**kwargs):
+        saved['memory'] += 1
+
+    async def _build_context(query, user_id=None):
+        return ''
+
+    monkeypatch.setattr('app.agent.orchestrator._openrouter_client', lambda: _FakeClient([fake_response]))
+    monkeypatch.setattr('app.agent.orchestrator.conversation_manager.get_or_create', _get_or_create)
+    monkeypatch.setattr('app.agent.orchestrator.conversation_manager.load_messages', _load_messages)
+    monkeypatch.setattr('app.agent.orchestrator.conversation_manager.estimate_tokens', _estimate_tokens)
+    monkeypatch.setattr('app.agent.orchestrator.conversation_manager.save_turn', _save_turn)
+    monkeypatch.setattr('app.agent.orchestrator.memory_manager.save_interaction', _save_interaction)
+    monkeypatch.setattr('app.agent.orchestrator.context_builder.build', _build_context)
+
+    orch = AgentOrchestrator(cost_tracker=None)
+    monkeypatch.setattr(orch.tools, 'get_tool_schemas', lambda selected=None: [])
+
+    events = [
+        event async for event in orch.stream(
+            query='Can you make that shorter?',
+            user_id='u1',
+            max_iterations=2,
+        )
+    ]
+
+    assert events[-1].type == EventType.DONE
+    assert saved['memory'] == 0

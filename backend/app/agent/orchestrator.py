@@ -234,9 +234,9 @@ class AgentOrchestrator:
             # Build initial system prompt with optional persona and retrieved context.
             system = _build_system_prompt(retrieved_context, context, persona_prompt)
 
-            # ── Plan-then-execute for complex multi-step queries ──────
+            # ── Plan-then-execute for qualifying multi-step queries ───
             plan_prefix = ""
-            if tool_schemas and self.router.is_complex(query):
+            if self.router.should_plan(query, has_tools=bool(tool_schemas), has_history=bool(history)):
                 yield ExecutionEvent(type=EventType.STATUS, content="planning...")
                 plan_prefix = await self._make_plan(query, context, agent_model, run_client)
                 if plan_prefix:
@@ -518,10 +518,13 @@ class AgentOrchestrator:
                         logger.warning(f"Conversation save failed: {e}")
 
                     # ── Auto-save insight to long-term memory ──────────
-                    # Skip trivial exchanges (conversational/simple tier) —
-                    # they don't contain anything worth remembering and the
-                    # LLM extraction call would just waste tokens.
-                    if self.router.is_worth_remembering(query):
+                    # Skip trivial turns and low-value follow-up edits in
+                    # existing conversations to reduce token spend.
+                    if self.router.should_remember(
+                        query,
+                        has_history=bool(history),
+                        response=final_text,
+                    ):
                         try:
                             await memory_manager.save_interaction(
                                 query=query,
@@ -531,7 +534,7 @@ class AgentOrchestrator:
                         except Exception as e:
                             logger.warning(f"Memory save failed: {e}")
                     else:
-                        logger.debug("Skipping memory extraction for low-complexity query")
+                        logger.debug("Skipping memory extraction for low-value turn")
 
                     break  # Done
 

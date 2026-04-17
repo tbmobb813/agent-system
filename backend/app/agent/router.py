@@ -206,12 +206,109 @@ class ModelRouter:
         """Return True if the query warrants a planning pass before execution."""
         return self._classify(query) in ("complex", "research")
 
+    def should_plan(self, query: str, has_tools: bool, has_history: bool = False) -> bool:
+        """
+        Decide whether the orchestrator should run a planning pass.
+
+        Planning is useful for multi-step work where tools are available.
+        Skip planning for conversation follow-ups to avoid repeated overhead.
+        """
+        if not has_tools or has_history:
+            return False
+        return self.is_complex(query)
+
     def is_worth_remembering(self, query: str) -> bool:
         """Return True if the query is substantive enough to warrant memory extraction.
         Skips free/cheap tiers (conversational, simple) to avoid wasting tokens on
         throwaway exchanges like greetings or one-line factual lookups.
         """
         return self._classify(query) not in ("conversational", "simple")
+
+    def should_remember(
+        self,
+        query: str,
+        has_history: bool = False,
+        response: Optional[str] = None,
+    ) -> bool:
+        """
+        Decide whether to run memory extraction for a completed turn.
+
+        Keep extraction for substantive prompts, but skip low-value follow-up
+        edits in existing conversations (for example: "make that shorter").
+        """
+        if not self.is_worth_remembering(query):
+            return False
+
+        if not has_history:
+            return True
+
+        q = query.lower().strip()
+        followup_prefixes = (
+            "can you ",
+            "could you ",
+            "please ",
+            "make it ",
+            "make that ",
+            "shorten ",
+            "reword ",
+            "rewrite ",
+            "tweak ",
+            "adjust ",
+            "fix that",
+            "change that",
+            "update that",
+            "same for ",
+            "now ",
+            "also ",
+        )
+        followup_refs = (
+            " that",
+            " this",
+            " it",
+            " above",
+            " previous",
+            " earlier",
+        )
+        transactional_edits = (
+            "make it shorter",
+            "make that shorter",
+            "shorten that",
+            "shorten this",
+            "reword that",
+            "rewrite that",
+            "tweak that",
+            "adjust that",
+            "fix that",
+            "change that",
+            "update that",
+            "same for that",
+            "same for this",
+        )
+
+        if len(q.split()) <= 12 and (
+            any(q.startswith(prefix) for prefix in followup_prefixes)
+            or any(phrase in q for phrase in transactional_edits)
+            or (q.startswith("can you") and any(ref in q for ref in followup_refs) and len(q.split()) <= 8)
+        ):
+            return False
+
+        if response:
+            r = response.lower().strip()
+            brief_ack_prefixes = (
+                "updated",
+                "revised",
+                "done",
+                "sure",
+                "here you go",
+            )
+            if (
+                len(q.split()) <= 10
+                and len(r.split()) <= 20
+                and any(r.startswith(prefix) for prefix in brief_ack_prefixes)
+            ):
+                return False
+
+        return True
 
     def get_available_models(self) -> dict:
         return self.MODELS

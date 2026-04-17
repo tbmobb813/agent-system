@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _PROJECT_DIR = os.path.dirname(_BACKEND_DIR)
@@ -14,6 +17,7 @@ _FILE_ORDER = [
     ("soul", "soul.md"),
     ("style", "style.md"),
     ("skill", "skill.md"),
+    ("memory", "memory.md"),
 ]
 
 _MAX_FILE_CHARS = 8000
@@ -60,12 +64,25 @@ def build_persona_prompt(settings_data: Optional[dict] = None) -> str:
         return ""
 
     persona_dir = _resolve_persona_dir(settings_data.get("agent_persona_path"))
+    if not os.path.isdir(persona_dir):
+        logger.warning("Persona directory does not exist: %s", persona_dir)
+        return ""
 
     sections: list[str] = []
+    missing_files: list[str] = []
     for label, filename in _FILE_ORDER:
-        content = _read_file(os.path.join(persona_dir, filename))
+        file_path = os.path.join(persona_dir, filename)
+        content = _read_file(file_path)
         if not content:
+            missing_files.append(filename)
             continue
         sections.append(f"<{label}>\n{content}\n</{label}>")
+
+    if missing_files:
+        logger.warning(
+            "Persona files missing or empty in %s: %s",
+            persona_dir,
+            ", ".join(missing_files),
+        )
 
     return "\n\n".join(sections)
