@@ -94,7 +94,7 @@ async def test_api_call_blocks_loopback_url():
 
 
 def test_list_tools_contains_expected_builtin_tools(monkeypatch):
-    """Builtin tools; code_execution only when E2B is configured (see _register_builtin_tools)."""
+    """Builtin tools include code_execution even when E2B is not configured."""
     import app.tools.tool_registry as tool_registry_mod
 
     monkeypatch.delenv('E2B_API_KEY', raising=False)
@@ -106,7 +106,7 @@ def test_list_tools_contains_expected_builtin_tools(monkeypatch):
     assert 'web_search' in names
     assert 'browser_automation' in names
     assert 'file_operations' in names
-    assert 'code_execution' not in names
+    assert 'code_execution' in names
     assert 'api_call' in names
     assert 'search_documents' in names
 

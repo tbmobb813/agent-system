@@ -86,14 +86,13 @@ class ToolRegistry:
             required_args=["operation"],
         )
         
-        # Code execution — register only when E2B is configured (avoids dead tool in LLM schema).
-        if settings.E2B_API_KEY:
-            self.register(
-                name="code_execution",
-                func=self._code_execution,
-                description="Execute code in a secure sandbox and return the output.",
-                required_args=["code"],
-            )
+        # Code Execution
+        self.register(
+            name="code_execution",
+            func=self._code_execution,
+            description="Execute code in a secure sandbox and return the output.",
+            required_args=["code"],
+        )
 
         # API Calling
         self.register(
