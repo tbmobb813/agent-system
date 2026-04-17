@@ -68,7 +68,10 @@ async def test_file_operations_blocks_path_traversal(tmp_path):
 
 def test_list_tools_contains_expected_builtin_tools(monkeypatch):
     """Builtin tools; code_execution only when E2B is configured (see _register_builtin_tools)."""
-    monkeypatch.setattr('app.config.settings.E2B_API_KEY', '')
+    from app.config import settings as app_settings
+
+    monkeypatch.delenv('E2B_API_KEY', raising=False)
+    monkeypatch.setattr(app_settings, 'E2B_API_KEY', '')
     registry = ToolRegistry()
     names = registry.list_tools()
 
@@ -79,7 +82,7 @@ def test_list_tools_contains_expected_builtin_tools(monkeypatch):
     assert 'api_call' in names
     assert 'search_documents' in names
 
-    monkeypatch.setattr('app.config.settings.E2B_API_KEY', 'configured')
+    monkeypatch.setattr(app_settings, 'E2B_API_KEY', 'configured')
     assert 'code_execution' in ToolRegistry().list_tools()
 
 
