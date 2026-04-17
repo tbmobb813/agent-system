@@ -66,20 +66,21 @@ async def test_file_operations_blocks_path_traversal(tmp_path):
     assert result == 'Error: path traversal not allowed'
 
 
-def test_list_tools_contains_expected_builtin_tools():
-    from app.config import settings
-
+def test_list_tools_contains_expected_builtin_tools(monkeypatch):
+    """Builtin tools; code_execution only when E2B is configured (see _register_builtin_tools)."""
+    monkeypatch.setattr('app.config.settings.E2B_API_KEY', '')
     registry = ToolRegistry()
-
     names = registry.list_tools()
 
     assert 'web_search' in names
     assert 'browser_automation' in names
     assert 'file_operations' in names
-    # Registered only when E2B is configured (see tool_registry._register_builtin_tools).
-    assert ('code_execution' in names) == bool(settings.E2B_API_KEY)
+    assert 'code_execution' not in names
     assert 'api_call' in names
     assert 'search_documents' in names
+
+    monkeypatch.setattr('app.config.settings.E2B_API_KEY', 'configured')
+    assert 'code_execution' in ToolRegistry().list_tools()
 
 
 async def test_registry_call_raises_for_unknown_tool():
