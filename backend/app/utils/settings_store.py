@@ -17,7 +17,13 @@ def load_settings_dict() -> dict:
     try:
         with open(SETTINGS_FILE, encoding="utf-8") as f:
             return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError as exc:
+        logger.warning("Could not parse settings file %s: %s", SETTINGS_FILE, exc)
+        return {}
+    except OSError as exc:
+        logger.warning("Could not load settings file %s: %s", SETTINGS_FILE, exc)
         return {}
 
 
