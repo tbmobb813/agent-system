@@ -137,6 +137,35 @@ async def test_verify_api_key_rejects_no_db_pool_in_production(monkeypatch):
         assert e.status_code == 503
 
 
+async def test_verify_api_key_rejects_no_db_pool_when_require_database_set(monkeypatch):
+    monkeypatch.setattr('app.config.settings.ENVIRONMENT', 'development')
+    monkeypatch.setattr('app.config.settings.REQUIRE_DATABASE_API_KEY', True)
+    monkeypatch.setattr('app.database.db_pool', None)
+
+    try:
+        await verify_api_key('Bearer sk-agent-user-12345')
+        assert False, 'Expected HTTPException'
+    except HTTPException as e:
+        assert e.status_code == 503
+
+
+async def test_verify_api_key_rejects_db_error_when_require_database_set(monkeypatch):
+    monkeypatch.setattr('app.config.settings.ENVIRONMENT', 'development')
+    monkeypatch.setattr('app.config.settings.REQUIRE_DATABASE_API_KEY', True)
+
+    async def failing_fetchrow(_query, _key_hash):
+        raise RuntimeError('db down')
+
+    monkeypatch.setattr('app.database.db_pool', object())
+    monkeypatch.setattr('app.database.fetchrow', failing_fetchrow)
+
+    try:
+        await verify_api_key('Bearer sk-agent-user-12345')
+        assert False, 'Expected HTTPException'
+    except HTTPException as e:
+        assert e.status_code == 503
+
+
 def test_get_user_id_from_key_always_default():
     assert get_user_id_from_key('sk-agent-any') == 'default'
 

@@ -87,3 +87,28 @@ def validate_agent_outbound_url(url: str) -> tuple[bool, str]:
     if not ok:
         return False, msg or "host failed SSRF checks"
     return True, ""
+
+
+def validate_browser_automation_host(host: str, allowlist_csv: str) -> tuple[bool, str]:
+    """
+    Optional extra restriction for browser_automation URLs.
+
+    If ``allowlist_csv`` is empty, returns (True, "").
+
+    Otherwise ``allowlist_csv`` is comma-separated host suffixes (lowercase),
+    e.g. ``wikipedia.org,.github.io``. The request host must equal a rule or
+    end with ``.<rule>`` (so ``en.wikipedia.org`` matches ``wikipedia.org``).
+    """
+    rules = [x.strip().lower() for x in allowlist_csv.split(",") if x.strip()]
+    if not rules:
+        return True, ""
+
+    h = host.lower()
+    for r in rules:
+        if h == r or h.endswith("." + r):
+            return True, ""
+
+    return (
+        False,
+        "host is not allowed by BROWSER_AUTOMATION_ALLOWED_HOST_SUFFIXES",
+    )

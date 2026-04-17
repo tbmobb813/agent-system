@@ -8,10 +8,15 @@ import httpx
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 from inspect import signature
+from urllib.parse import urlparse
 
 from app.config import settings
+from app.utils.http_headers import redact_response_headers
 from app.utils.truncate import truncate_head
-from app.utils.url_safety import validate_agent_outbound_url
+from app.utils.url_safety import (
+    validate_agent_outbound_url,
+    validate_browser_automation_host,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -383,6 +388,14 @@ class ToolRegistry:
             ok, reason = validate_agent_outbound_url(url)
             if not ok:
                 return f"Error: URL not allowed ({reason})"
+            parsed = urlparse(url)
+            if parsed.hostname:
+                ok_host, msg_host = validate_browser_automation_host(
+                    parsed.hostname,
+                    settings.BROWSER_AUTOMATION_ALLOWED_HOST_SUFFIXES,
+                )
+                if not ok_host:
+                    return f"Error: URL not allowed ({msg_host})"
 
         try:
             from playwright.async_api import async_playwright
@@ -581,7 +594,7 @@ class ToolRegistry:
 
                 return {
                     "status": resp.status_code,
-                    "headers": dict(resp.headers),
+                    "headers": redact_response_headers(dict(resp.headers)),
                     "data": body,
                 }
         except httpx.TimeoutException:

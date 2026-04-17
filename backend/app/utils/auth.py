@@ -27,8 +27,11 @@ async def verify_api_key(
     Validates against the api_keys table (key_hash column).
 
     In production, a working database is required for non-master keys.
+
     In development, if the DB pool is missing or the lookup errors, a
-    format-only check is allowed for local convenience (never in production).
+    format-only check is allowed for local convenience — unless
+    ``REQUIRE_DATABASE_API_KEY`` is set (staging / hardened dev), or
+    ``ENVIRONMENT`` is ``production``.
     """
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing authorization header")
@@ -60,6 +63,8 @@ async def verify_api_key(
     from app.database import db_pool, fetchrow, execute
 
     def _format_only_allowed() -> bool:
+        if app_settings.REQUIRE_DATABASE_API_KEY:
+            return False
         return app_settings.ENVIRONMENT != "production"
 
     if not db_pool:

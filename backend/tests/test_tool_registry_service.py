@@ -355,6 +355,46 @@ async def test_api_call_handles_non_json_response(monkeypatch):
     assert result['data'] == 'plain text body'
 
 
+async def test_api_call_redacts_sensitive_response_headers(monkeypatch):
+    registry = ToolRegistry()
+    _stub_outbound_url_checks(monkeypatch)
+
+    class _Resp:
+        status_code = 200
+        headers = httpx.Headers(
+            {
+                'Content-Type': 'application/json',
+                'Set-Cookie': 'sid=supersecret',
+                'Authorization': 'Bearer upstream-token',
+                'X-Trace': 'abc',
+            }
+        )
+        text = '{}'
+
+        def json(self):
+            return {}
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def request(self, *args, **kwargs):
+            return _Resp()
+
+    monkeypatch.setattr('app.tools.tool_registry.httpx.AsyncClient', lambda timeout=15.0: _Client())
+
+    result = await registry._api_call(url='https://example.com')
+
+    assert result['status'] == 200
+    h = {k.lower(): v for k, v in result['headers'].items()}
+    assert h['set-cookie'] == '[redacted]'
+    assert h['authorization'] == '[redacted]'
+    assert h['x-trace'] == 'abc'
+
+
 async def test_file_operations_read_missing_and_unknown_op(tmp_path):
     registry = ToolRegistry()
 
@@ -557,6 +597,32 @@ def _install_fake_playwright(monkeypatch, *, fail_on_goto: bool = False):
 
     fake_module = types.SimpleNamespace(async_playwright=lambda: _Ctx())
     monkeypatch.setitem(sys.modules, 'playwright.async_api', fake_module)
+
+
+async def test_browser_automation_blocks_host_not_in_allowlist(monkeypatch):
+    registry = ToolRegistry()
+    monkeypatch.setattr(
+        'app.config.settings.BROWSER_AUTOMATION_ALLOWED_HOST_SUFFIXES',
+        'wikipedia.org',
+    )
+    _stub_outbound_url_checks(monkeypatch)
+    _install_fake_playwright(monkeypatch)
+
+    nav = await registry._browser_automation(action='navigate', url='https://example.com')
+    assert 'BROWSER_AUTOMATION_ALLOWED_HOST_SUFFIXES' in nav
+
+
+async def test_browser_automation_allowlist_allows_matching_host(monkeypatch, tmp_path):
+    registry = ToolRegistry()
+    monkeypatch.setattr(
+        'app.config.settings.BROWSER_AUTOMATION_ALLOWED_HOST_SUFFIXES',
+        'example.com',
+    )
+    _stub_outbound_url_checks(monkeypatch)
+    _install_fake_playwright(monkeypatch)
+
+    nav = await registry._browser_automation(action='navigate', url='https://example.com')
+    assert 'Title: Fake Title' in nav
 
 
 async def test_browser_automation_success_actions(monkeypatch, tmp_path):
