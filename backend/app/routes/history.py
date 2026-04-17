@@ -8,11 +8,19 @@ To wire into main.py:
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Optional
+from typing import Literal
+from pydantic import BaseModel, Field
 
 from app.database import fetch, fetchrow, fetchval, execute
+from app.agent.memory import memory_manager
 from app.utils.auth import verify_api_key
 
 router = APIRouter(prefix="/history", tags=["history"])
+
+
+class TaskFeedbackRequest(BaseModel):
+    signal: Literal["up", "down"]
+    notes: Optional[str] = Field(default=None, max_length=1000)
 
 
 @router.get("")
@@ -69,7 +77,55 @@ async def get_task_detail(task_id: str, api_key: str = Depends(verify_api_key)):
         "SELECT * FROM task_steps WHERE task_id = $1 ORDER BY step_number ASC",
         task_id,
     )
-    return {"task": dict(task), "steps": [dict(s) for s in steps]}
+    feedback = await fetchrow(
+        """
+        SELECT signal, notes, created_at
+        FROM task_feedback
+        WHERE task_id = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        task_id,
+    )
+    return {
+        "task": dict(task),
+        "steps": [dict(s) for s in steps],
+        "feedback": dict(feedback) if feedback else None,
+    }
+
+
+@router.post("/{task_id}/feedback")
+async def submit_task_feedback(
+    task_id: str,
+    body: TaskFeedbackRequest,
+    api_key: str = Depends(verify_api_key),
+):
+    """Store explicit user feedback for a completed task and promote note-based learning."""
+    task = await fetchrow("SELECT id, query, user_id FROM tasks WHERE id = $1", task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    notes = (body.notes or "").strip() or None
+    await execute(
+        """
+        INSERT INTO task_feedback (task_id, user_id, signal, notes)
+        VALUES ($1, $2, $3, $4)
+        """,
+        task_id,
+        task.get("user_id") if isinstance(task, dict) else task["user_id"],
+        body.signal,
+        notes,
+    )
+
+    if notes:
+        await memory_manager.save_feedback_learning(
+            task_query=task.get("query") if isinstance(task, dict) else task["query"],
+            signal=body.signal,
+            notes=notes,
+            user_id=task.get("user_id") if isinstance(task, dict) else task["user_id"],
+        )
+
+    return {"status": "recorded", "task_id": task_id, "signal": body.signal, "notes": notes}
 
 
 @router.delete("/{task_id}")

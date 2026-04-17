@@ -100,8 +100,13 @@ async def test_stream_without_tool_calls_emits_text_and_done(monkeypatch):
     orch = AgentOrchestrator(cost_tracker=None)
     monkeypatch.setattr(orch.tools, 'get_tool_schemas', lambda selected=None: [])
 
+    # Query must not be "conversational" or "simple" or orchestrator skips memory extraction.
+    substantive_query = (
+        "Compare the trade-offs between REST and GraphQL for a mobile app "
+        "with intermittent connectivity."
+    )
     events = [
-        event async for event in orch.stream(query='Say hello', user_id='u1', max_iterations=2)
+        event async for event in orch.stream(query=substantive_query, user_id='u1', max_iterations=2)
     ]
     event_types = [event.type for event in events]
     full_text = ''.join((event.content or '') for event in events if event.type == EventType.TEXT_DELTA)

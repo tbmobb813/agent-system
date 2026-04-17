@@ -413,6 +413,35 @@ class MemoryManager:
         await self.save(insight, category=category, user_id=user_id)
         logger.info(f"Saved insight [{category}]: {insight[:80]}")
 
+    async def save_feedback_learning(
+        self,
+        task_query: str,
+        signal: str,
+        notes: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[str]:
+        """Promote explicit user feedback into durable memory when it contains signal."""
+        cleaned_notes = (notes or "").strip()
+        if not cleaned_notes:
+            return None
+
+        compact_query = (task_query or "").strip().replace("\n", " ")[:160]
+        if signal == "up":
+            category = "preference"
+            content = f"User confirmed a helpful response for '{compact_query}': {cleaned_notes}"
+            relevance_score = 1.2
+        else:
+            category = "pattern"
+            content = f"User correction or dissatisfaction for '{compact_query}': {cleaned_notes}"
+            relevance_score = 1.3
+
+        return await self.save(
+            content,
+            category=category,
+            user_id=user_id,
+            relevance_score=relevance_score,
+        )
+
     async def delete(self, memory_id: str) -> bool:
         """Delete a specific memory by ID."""
         if not _db.db_pool:

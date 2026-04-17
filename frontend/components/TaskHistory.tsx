@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useHistory } from '@/lib/hooks'
-import { deleteTask, getTaskDetail } from '@/lib/api'
+import { deleteTask, getTaskDetail, submitTaskFeedback } from '@/lib/api'
 import { formatCost, formatDate } from '@/lib/utils'
 import { exportElementToPdf } from '@/lib/pdf'
 
@@ -21,6 +21,11 @@ type Task = {
 type TaskDetail = {
   task: Task & { result: string | null; execution_time: number | null }
   steps: unknown[]
+  feedback?: {
+    signal: 'up' | 'down'
+    notes: string | null
+    created_at: string
+  } | null
 }
 
 const statusStyles: Record<string, string> = {
@@ -44,11 +49,21 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [feedbackSignal, setFeedbackSignal] = useState<'up' | 'down'>('up')
+  const [feedbackNotes, setFeedbackNotes] = useState('')
+  const [feedbackSaving, setFeedbackSaving] = useState(false)
+  const [feedbackSaved, setFeedbackSaved] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     getTaskDetail(taskId)
-      .then(setDetail)
+      .then(payload => {
+        setDetail(payload)
+        if (payload.feedback) {
+          setFeedbackSignal(payload.feedback.signal)
+          setFeedbackNotes(payload.feedback.notes ?? '')
+        }
+      })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [taskId])
@@ -78,12 +93,91 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
     await exportElementToPdf(contentRef.current, `task-${taskId.slice(0, 8)}.pdf`)
   }
 
+  async function handleSaveFeedback() {
+    setFeedbackSaving(true)
+    setError(null)
+    try {
+      const payload = await submitTaskFeedback(taskId, {
+        signal: feedbackSignal,
+        notes: feedbackNotes,
+      })
+      setDetail(prev => prev ? {
+        ...prev,
+        feedback: {
+          signal: payload.signal,
+          notes: payload.notes,
+          created_at: new Date().toISOString(),
+        },
+      } : prev)
+      setFeedbackSaved(true)
+      setTimeout(() => setFeedbackSaved(false), 2500)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save feedback')
+    } finally {
+      setFeedbackSaving(false)
+    }
+  }
+
   return (
     <div className="mt-3 border-t border-gray-700 pt-3 space-y-3">
       {loading && <p className="text-gray-500 text-xs">Loading…</p>}
       {error && <p className="text-red-400 text-xs">{error}</p>}
       {detail && (
         <>
+          <div className="bg-gray-900/60 border border-gray-800 rounded-lg p-3 space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-xs text-gray-400">Teach the agent from this result</p>
+              {detail.feedback && (
+                <span className="text-xs text-gray-500">
+                  Last feedback: {detail.feedback.signal === 'up' ? 'helpful' : 'needs work'}
+                </span>
+              )}
+            </div>
+
+            <div className="flex gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setFeedbackSignal('up')}
+                className={`px-3 py-1.5 rounded text-xs transition-colors ${feedbackSignal === 'up' ? 'bg-green-900/60 text-green-300 border border-green-700' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+              >
+                Helpful
+              </button>
+              <button
+                type="button"
+                onClick={() => setFeedbackSignal('down')}
+                className={`px-3 py-1.5 rounded text-xs transition-colors ${feedbackSignal === 'down' ? 'bg-red-900/60 text-red-300 border border-red-700' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+              >
+                Needs work
+              </button>
+            </div>
+
+            <div>
+              <label htmlFor={`feedback-notes-${taskId}`} className="block text-xs text-gray-400 mb-1">
+                Notes for future behavior
+              </label>
+              <textarea
+                id={`feedback-notes-${taskId}`}
+                value={feedbackNotes}
+                onChange={e => setFeedbackNotes(e.target.value)}
+                rows={3}
+                placeholder="What should the agent repeat or avoid next time?"
+                className="w-full bg-gray-800 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:outline-none focus:border-indigo-500 resize-none"
+              />
+            </div>
+
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                type="button"
+                onClick={handleSaveFeedback}
+                disabled={feedbackSaving}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded text-xs font-medium disabled:opacity-50 transition-colors"
+              >
+                {feedbackSaving ? 'Saving…' : 'Save feedback'}
+              </button>
+              {feedbackSaved && <span className="text-xs text-green-400">Feedback saved</span>}
+            </div>
+          </div>
+
           {detail.task.execution_time != null && (
             <p className="text-xs text-gray-500">
               Completed in {detail.task.execution_time.toFixed(1)}s

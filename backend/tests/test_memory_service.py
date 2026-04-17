@@ -214,6 +214,45 @@ async def test_save_interaction_saves_classified_insight(monkeypatch):
     assert kwargs['category'] == 'preference'
 
 
+async def test_save_feedback_learning_skips_empty_notes(monkeypatch):
+    mgr = MemoryManager()
+    save_mock = AsyncMock()
+    monkeypatch.setattr(mgr, 'save', save_mock)
+
+    result = await mgr.save_feedback_learning('task query', 'up', '   ', user_id='u1')
+
+    assert result is None
+    save_mock.assert_not_awaited()
+
+
+async def test_save_feedback_learning_promotes_positive_feedback(monkeypatch):
+    mgr = MemoryManager()
+    save_mock = AsyncMock(return_value='memory-1')
+    monkeypatch.setattr(mgr, 'save', save_mock)
+
+    result = await mgr.save_feedback_learning('draft release notes', 'up', 'keep this concise tone', user_id='u1')
+
+    assert result == 'memory-1'
+    _, kwargs = save_mock.await_args
+    assert kwargs['category'] == 'preference'
+    assert kwargs['relevance_score'] == 1.2
+    assert kwargs['user_id'] == 'u1'
+
+
+async def test_save_feedback_learning_promotes_negative_feedback(monkeypatch):
+    mgr = MemoryManager()
+    save_mock = AsyncMock(return_value='memory-2')
+    monkeypatch.setattr(mgr, 'save', save_mock)
+
+    result = await mgr.save_feedback_learning('answer billing question', 'down', 'too vague about pricing', user_id='u1')
+
+    assert result == 'memory-2'
+    _, kwargs = save_mock.await_args
+    assert kwargs['category'] == 'pattern'
+    assert kwargs['relevance_score'] == 1.3
+    assert kwargs['user_id'] == 'u1'
+
+
 async def test_delete_returns_false_on_exception(monkeypatch):
     fake_conn = AsyncMock()
     fake_conn.execute = AsyncMock(side_effect=RuntimeError('db error'))

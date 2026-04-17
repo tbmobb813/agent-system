@@ -67,6 +67,8 @@ async def test_file_operations_blocks_path_traversal(tmp_path):
 
 
 def test_list_tools_contains_expected_builtin_tools():
+    from app.config import settings
+
     registry = ToolRegistry()
 
     names = registry.list_tools()
@@ -74,7 +76,8 @@ def test_list_tools_contains_expected_builtin_tools():
     assert 'web_search' in names
     assert 'browser_automation' in names
     assert 'file_operations' in names
-    assert 'code_execution' in names
+    # Registered only when E2B is configured (see tool_registry._register_builtin_tools).
+    assert ('code_execution' in names) == bool(settings.E2B_API_KEY)
     assert 'api_call' in names
     assert 'search_documents' in names
 

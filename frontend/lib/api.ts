@@ -94,6 +94,16 @@ export async function getTaskDetail(taskId: string) {
   return res.json()
 }
 
+export async function submitTaskFeedback(taskId: string, data: { signal: 'up' | 'down'; notes?: string }) {
+  const res = await fetchWithTimeout(`${API_URL}/history/${taskId}/feedback`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(`Failed to submit feedback (${res.status})`)
+  return res.json()
+}
+
 export async function deleteTask(taskId: string) {
   const res = await fetchWithTimeout(`${API_URL}/history/${taskId}`, {
     method: 'DELETE',
