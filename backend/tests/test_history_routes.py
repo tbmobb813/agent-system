@@ -78,17 +78,19 @@ async def test_get_task_detail_returns_feedback(monkeypatch):
 
 
 async def test_submit_task_feedback_persists_and_promotes_learning(monkeypatch):
-    executed = {}
+    inserted = {}
 
-    async def fake_fetchrow(_query, task_id):
-        return {'id': task_id, 'query': 'Summarize this repo', 'user_id': 'default'}
-
-    async def fake_execute(query, task_id, user_id, signal, notes):
-        executed['query'] = query
-        executed['task_id'] = task_id
-        executed['user_id'] = user_id
-        executed['signal'] = signal
-        executed['notes'] = notes
+    async def fake_fetchrow(query, *args):
+        if 'FROM tasks' in query:
+            task_id = args[0]
+            return {'id': task_id, 'query': 'Summarize this repo', 'user_id': 'default', 'status': 'completed'}
+        if 'INSERT INTO task_feedback' in query:
+            inserted['task_id'] = args[0]
+            inserted['user_id'] = args[1]
+            inserted['signal'] = args[2]
+            inserted['notes'] = args[3]
+            return {'signal': args[2], 'notes': args[3], 'created_at': '2026-01-01T00:00:00Z'}
+        return None
 
     promoted = {}
 
@@ -97,7 +99,6 @@ async def test_submit_task_feedback_persists_and_promotes_learning(monkeypatch):
         return 'memory-1'
 
     monkeypatch.setattr('app.routes.history.fetchrow', fake_fetchrow)
-    monkeypatch.setattr('app.routes.history.execute', fake_execute)
     monkeypatch.setattr('app.routes.history.memory_manager.save_feedback_learning', fake_promote)
 
     transport = ASGITransport(app=app)
@@ -109,18 +110,22 @@ async def test_submit_task_feedback_persists_and_promotes_learning(monkeypatch):
         )
 
     assert response.status_code == 200
-    assert executed['task_id'] == 'task-1'
-    assert executed['signal'] == 'down'
-    assert executed['notes'] == 'too vague'
+    payload = response.json()
+    assert inserted['task_id'] == 'task-1'
+    assert inserted['signal'] == 'down'
+    assert inserted['notes'] == 'too vague'
+    assert payload['created_at'] == '2026-01-01T00:00:00Z'
     assert promoted['task_query'] == 'Summarize this repo'
     assert promoted['signal'] == 'down'
 
 
 async def test_submit_task_feedback_skips_learning_when_notes_blank(monkeypatch):
-    async def fake_fetchrow(_query, task_id):
-        return {'id': task_id, 'query': 'Summarize this repo', 'user_id': 'default'}
-
-    async def fake_execute(*args):
+    async def fake_fetchrow(query, *args):
+        if 'FROM tasks' in query:
+            task_id = args[0]
+            return {'id': task_id, 'query': 'Summarize this repo', 'user_id': 'default', 'status': 'completed'}
+        if 'INSERT INTO task_feedback' in query:
+            return {'signal': args[2], 'notes': args[3], 'created_at': '2026-01-01T00:00:00Z'}
         return None
 
     promoted = {'called': False}
@@ -129,7 +134,6 @@ async def test_submit_task_feedback_skips_learning_when_notes_blank(monkeypatch)
         promoted['called'] = True
 
     monkeypatch.setattr('app.routes.history.fetchrow', fake_fetchrow)
-    monkeypatch.setattr('app.routes.history.execute', fake_execute)
     monkeypatch.setattr('app.routes.history.memory_manager.save_feedback_learning', fake_promote)
 
     transport = ASGITransport(app=app)
@@ -142,3 +146,26 @@ async def test_submit_task_feedback_skips_learning_when_notes_blank(monkeypatch)
 
     assert response.status_code == 200
     assert promoted['called'] is False
+
+
+async def test_submit_task_feedback_rejects_non_completed_task(monkeypatch):
+    async def fake_fetchrow(query, *args):
+        if 'FROM tasks' in query:
+            task_id = args[0]
+            return {'id': task_id, 'query': 'Summarize this repo', 'user_id': 'default', 'status': 'running'}
+        if 'INSERT INTO task_feedback' in query:
+            raise AssertionError('feedback insert should not run for non-completed task')
+        return None
+
+    monkeypatch.setattr('app.routes.history.fetchrow', fake_fetchrow)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url='http://test') as client:
+        response = await client.post(
+            '/history/task-1/feedback',
+            headers={'Authorization': 'Bearer sk-agent-local-dev'},
+            json={'signal': 'up', 'notes': 'nice'},
+        )
+
+    assert response.status_code == 409
+    assert response.json()['detail'] == 'Feedback can only be submitted for completed tasks'

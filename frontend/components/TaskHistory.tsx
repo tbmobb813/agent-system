@@ -54,6 +54,7 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
   const [feedbackSaving, setFeedbackSaving] = useState(false)
   const [feedbackSaved, setFeedbackSaved] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
+  const feedbackSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     getTaskDetail(taskId)
@@ -67,6 +68,12 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [taskId])
+
+  useEffect(() => {
+    return () => {
+      if (feedbackSavedTimerRef.current) clearTimeout(feedbackSavedTimerRef.current)
+    }
+  }, [])
 
   async function handleCopy() {
     const text = detail?.task.result
@@ -106,11 +113,12 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
         feedback: {
           signal: payload.signal,
           notes: payload.notes,
-          created_at: new Date().toISOString(),
+          created_at: payload.created_at,
         },
       } : prev)
       setFeedbackSaved(true)
-      setTimeout(() => setFeedbackSaved(false), 2500)
+      if (feedbackSavedTimerRef.current) clearTimeout(feedbackSavedTimerRef.current)
+      feedbackSavedTimerRef.current = setTimeout(() => setFeedbackSaved(false), 2500)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save feedback')
     } finally {

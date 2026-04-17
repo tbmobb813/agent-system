@@ -272,6 +272,7 @@ export default function AgentExecutor() {
 
   const eventsEndRef = useRef<HTMLDivElement>(null)
   const eventsContainerRef = useRef<HTMLDivElement>(null)
+  const feedbackSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const formatTs = useCallback((ts?: number) => {
     if (!ts) return ''
@@ -295,12 +296,19 @@ export default function AgentExecutor() {
   }, [events, isRunning])
 
   useEffect(() => {
+    if (feedbackSavedTimerRef.current) clearTimeout(feedbackSavedTimerRef.current)
     setFeedbackSignal('up')
     setFeedbackNotes('')
     setFeedbackSaving(false)
     setFeedbackSaved(false)
     setFeedbackError(null)
   }, [latestTaskId])
+
+  useEffect(() => {
+    return () => {
+      if (feedbackSavedTimerRef.current) clearTimeout(feedbackSavedTimerRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -351,7 +359,8 @@ export default function AgentExecutor() {
         notes: feedbackNotes,
       })
       setFeedbackSaved(true)
-      setTimeout(() => setFeedbackSaved(false), 2500)
+      if (feedbackSavedTimerRef.current) clearTimeout(feedbackSavedTimerRef.current)
+      feedbackSavedTimerRef.current = setTimeout(() => setFeedbackSaved(false), 2500)
     } catch (err) {
       setFeedbackError(err instanceof Error ? err.message : 'Failed to save feedback')
     } finally {
