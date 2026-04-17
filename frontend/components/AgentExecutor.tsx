@@ -347,16 +347,16 @@ export default function AgentExecutor() {
     a.download = filename
     a.click()
     URL.revokeObjectURL(url)
-  }, [responseText, merged])
+    }, [responseText, merged])
 
-  const handleSaveFeedback = useCallback(async () => {
+    const handleSaveFeedback = useCallback(async () => {
     if (!latestTaskId) return
     setFeedbackSaving(true)
     setFeedbackError(null)
     try {
       await submitTaskFeedback(latestTaskId, {
-        signal: feedbackSignal,
-        notes: feedbackNotes,
+      signal: feedbackSignal,
+      notes: feedbackNotes,
       })
       setFeedbackSaved(true)
       if (feedbackSavedTimerRef.current) clearTimeout(feedbackSavedTimerRef.current)
@@ -366,6 +366,7 @@ export default function AgentExecutor() {
     } finally {
       setFeedbackSaving(false)
     }
+    }, [latestTaskId, feedbackSignal, feedbackNotes])
   }, [latestTaskId, feedbackSignal, feedbackNotes])
 
   const handleRegenerate = useCallback(() => {

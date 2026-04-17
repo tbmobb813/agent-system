@@ -63,6 +63,10 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
         if (payload.feedback) {
           setFeedbackSignal(payload.feedback.signal)
           setFeedbackNotes(payload.feedback.notes ?? '')
+        } else {
+          setFeedbackSignal('up')
+          setFeedbackNotes('')
+          setFeedbackSaved(false)
         }
       })
       .catch(e => setError(e.message))

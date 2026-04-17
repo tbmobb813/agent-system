@@ -127,6 +127,47 @@ async def submit_task_feedback(
         raise HTTPException(status_code=500, detail="Failed to store feedback")
 
     if notes:
+        try:
+            await memory_manager.save_feedback_learning(
+                task_query=task_query,
+                signal=body.signal,
+                notes=notes,
+                user_id=task_user_id,
+            )
+        except Exception as e:
+            # Log promotion failure but don't fail the request—feedback is already recorded
+            print(f"Warning: feedback learning promotion failed for task {task_id}: {e}")
+
+    return {
+        "status": "recorded",
+        "task_id": task_id,
+        "signal": saved_feedback["signal"],
+        "notes": saved_feedback["notes"],
+        "created_at": saved_feedback["created_at"],
+    }
+
+    task_status = task.get("status") if isinstance(task, dict) else task["status"]
+    if task_status != "completed":
+        raise HTTPException(status_code=409, detail="Feedback can only be submitted for completed tasks")
+
+    task_user_id = task.get("user_id") if isinstance(task, dict) else task["user_id"]
+    task_query = task.get("query") if isinstance(task, dict) else task["query"]
+    notes = (body.notes or "").strip() or None
+    saved_feedback = await fetchrow(
+        """
+        INSERT INTO task_feedback (task_id, user_id, signal, notes)
+        VALUES ($1, $2, $3, $4)
+        RETURNING signal, notes, created_at
+        """,
+        task_id,
+        task_user_id,
+        body.signal,
+        notes,
+    )
+    if not saved_feedback:
+        raise HTTPException(status_code=500, detail="Failed to store feedback")
+
+    if notes:
         await memory_manager.save_feedback_learning(
             task_query=task_query,
             signal=body.signal,
