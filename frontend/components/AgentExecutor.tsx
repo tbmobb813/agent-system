@@ -54,6 +54,23 @@ function ToolResultEvent({ event }: { event: StreamEvent }) {
 
 function EventLine({ event }: { event: StreamEvent }) {
   switch (event.type) {
+    case 'user_message':
+      return (
+        <div className="flex justify-end">
+          <div className="max-w-[85%] bg-indigo-600/20 border border-indigo-500/40 rounded-2xl rounded-br-md px-3 py-2 text-sm text-indigo-100">
+            <MarkdownContent content={event.content ?? ''} />
+          </div>
+        </div>
+      )
+    case 'turn_divider':
+      return (
+        <div className="relative py-2">
+          <div className="h-px bg-gray-800" />
+          <span className="absolute left-1/2 -translate-x-1/2 -top-1 bg-gray-900 px-2 text-[10px] tracking-wide uppercase text-gray-500">
+            {event.content ?? 'Follow-up run'}
+          </span>
+        </div>
+      )
     case 'status':
       return <p className="text-gray-400 text-sm">▷ {event.content ?? event.message}</p>
     case 'thinking':
@@ -64,8 +81,10 @@ function EventLine({ event }: { event: StreamEvent }) {
       return <ToolResultEvent event={event} />
     case 'text_delta':
       return (
-        <div className="text-gray-100 text-sm">
-          <MarkdownContent content={event.content ?? ''} />
+        <div className="flex justify-start">
+          <div className="max-w-[85%] bg-gray-800/70 border border-gray-700 rounded-2xl rounded-bl-md px-3 py-2 text-gray-100 text-sm">
+            <MarkdownContent content={event.content ?? ''} />
+          </div>
         </div>
       )
     case 'done':
@@ -126,8 +145,14 @@ function ContextBar({ events }: { events: StreamEvent[] }) {
 }
 
 export default function AgentExecutor() {
+  const THINKING_PREF_KEY = 'agent_ui_show_thinking_live'
   const [query, setQuery] = useState('')
   const [context, setContext] = useState('')
+  const [editLastOpen, setEditLastOpen] = useState(false)
+  const [editLastText, setEditLastText] = useState('')
+  const [showThinkingLive, setShowThinkingLive] = useState(false)
+  const [openThinkingByTurn, setOpenThinkingByTurn] = useState<Record<number, boolean>>({})
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const [copyLabel, setCopyLabel] = useState('Copy response')
   const [feedbackSignal, setFeedbackSignal] = useState<'up' | 'down'>('up')
   const [feedbackNotes, setFeedbackNotes] = useState('')
@@ -170,6 +195,73 @@ export default function AgentExecutor() {
 
   const responseText = [fileWrites, textResponse].filter(Boolean).join('\n\n')
 
+  const lastUserMessage = useMemo(() => {
+    for (let i = merged.length - 1; i >= 0; i--) {
+      if (merged[i].type === 'user_message' && (merged[i].content || '').trim()) {
+        return (merged[i].content || '').trim()
+      }
+    }
+    return ''
+  }, [merged])
+
+  const turnItems = useMemo(() => {
+    type TurnItem = {
+      kind: 'turn'
+      id: number
+      user?: StreamEvent
+      events: StreamEvent[]
+      thinking: StreamEvent[]
+    }
+    type DividerItem = { kind: 'divider'; event: StreamEvent }
+
+    const items: Array<TurnItem | DividerItem> = []
+    let current: TurnItem | null = null
+    let nextId = 1
+
+    const flush = () => {
+      if (!current) return
+      if (current.user || current.events.length > 0 || current.thinking.length > 0) {
+        items.push(current)
+      }
+      current = null
+    }
+
+    for (const ev of merged) {
+      if (ev.type === 'turn_divider') {
+        flush()
+        items.push({ kind: 'divider', event: ev })
+        continue
+      }
+
+      if (ev.type === 'user_message') {
+        flush()
+        current = {
+          kind: 'turn',
+          id: nextId++,
+          user: ev,
+          events: [],
+          thinking: [],
+        }
+        continue
+      }
+
+      if (!current) {
+        current = {
+          kind: 'turn',
+          id: nextId++,
+          events: [],
+          thinking: [],
+        }
+      }
+
+      if (ev.type === 'thinking') current.thinking.push(ev)
+      else current.events.push(ev)
+    }
+
+    flush()
+    return items
+  }, [merged])
+
   const isDone = merged.some(ev => ev.type === 'done')
   const latestTaskId = useMemo(() => {
     for (let i = merged.length - 1; i >= 0; i--) {
@@ -179,6 +271,21 @@ export default function AgentExecutor() {
   }, [merged])
 
   const eventsEndRef = useRef<HTMLDivElement>(null)
+  const eventsContainerRef = useRef<HTMLDivElement>(null)
+
+  const formatTs = useCallback((ts?: number) => {
+    if (!ts) return ''
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }, [])
+
+  const formatDuration = useCallback((ms: number) => {
+    const seconds = ms / 1000
+    if (seconds < 10) return `${seconds.toFixed(1)}s`
+    if (seconds < 60) return `${Math.round(seconds)}s`
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.round(seconds % 60)
+    return `${mins}m ${secs}s`
+  }, [])
 
   // Auto-scroll the events container to bottom as new events arrive
   useEffect(() => {
@@ -194,6 +301,23 @@ export default function AgentExecutor() {
     setFeedbackSaved(false)
     setFeedbackError(null)
   }, [latestTaskId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const raw = localStorage.getItem(THINKING_PREF_KEY)
+    if (raw === '1') setShowThinkingLive(true)
+  }, [THINKING_PREF_KEY])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    localStorage.setItem(THINKING_PREF_KEY, showThinkingLive ? '1' : '0')
+  }, [THINKING_PREF_KEY, showThinkingLive])
+
+  useEffect(() => {
+    if (!editLastOpen) {
+      setEditLastText(lastUserMessage)
+    }
+  }, [lastUserMessage, editLastOpen])
 
   const handleCopy = useCallback(async () => {
     if (!responseText) return
@@ -235,17 +359,50 @@ export default function AgentExecutor() {
     }
   }, [latestTaskId, feedbackSignal, feedbackNotes])
 
+  const handleRegenerate = useCallback(() => {
+    if (!lastUserMessage || isRunning) return
+    run(lastUserMessage, context.trim() || undefined, conversationId)
+  }, [lastUserMessage, isRunning, run, context, conversationId])
+
+  const handleResendEdited = useCallback(() => {
+    const text = editLastText.trim()
+    if (!text || isRunning) return
+    run(text, context.trim() || undefined, conversationId)
+    setEditLastOpen(false)
+    setQuery('')
+  }, [editLastText, isRunning, run, context, conversationId])
+
+  const toggleTurnThinking = useCallback((turnId: number) => {
+    setOpenThinkingByTurn(prev => ({ ...prev, [turnId]: !prev[turnId] }))
+  }, [])
+
+  const handleEventsScroll = useCallback(() => {
+    const el = eventsContainerRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    setShowJumpToLatest(distanceFromBottom > 140)
+  }, [])
+
+  const jumpToLatest = useCallback(() => {
+    eventsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    setShowJumpToLatest(false)
+  }, [])
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!query.trim() || isRunning) return
-    run(query.trim(), context.trim() || undefined, conversationId)
+    const nextQuery = query.trim()
+    run(nextQuery, context.trim() || undefined, conversationId)
+    setQuery('')
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       if (!query.trim() || isRunning) return
-      run(query.trim(), context.trim() || undefined, conversationId)
+      const nextQuery = query.trim()
+      run(nextQuery, context.trim() || undefined, conversationId)
+      setQuery('')
     }
   }
 
@@ -328,26 +485,166 @@ export default function AgentExecutor() {
                 )}
               </div>
             )}
-            <div className="flex-1 min-h-0 overflow-y-auto bg-gray-900 rounded-xl border border-gray-800 p-4 space-y-2 font-mono text-sm">
-              {merged.map((ev, i) => (
-                <EventLine key={i} event={ev} />
-              ))}
+            <div
+              ref={eventsContainerRef}
+              onScroll={handleEventsScroll}
+              className="flex-1 min-h-0 overflow-y-auto bg-gray-900 rounded-xl border border-gray-800 p-4 space-y-2 font-mono text-sm relative"
+            >
+              {turnItems.map((item, i) => {
+                if (item.kind === 'divider') {
+                  return <EventLine key={`divider-${i}`} event={item.event} />
+                }
+
+                const turnDoneEvent = [...item.events].reverse().find(ev => ev.type === 'done')
+                const turnStartedAt = item.user?.client_ts
+                const turnEndedAt = turnDoneEvent?.client_ts
+                const turnDuration = turnStartedAt && turnEndedAt ? Math.max(0, turnEndedAt - turnStartedAt) : null
+
+                return (
+                  <div key={`turn-${item.id}`} className="space-y-2">
+                    {(turnStartedAt || turnDuration) && (
+                      <div className="flex items-center gap-2 text-[10px] text-gray-500 ml-1">
+                        {turnStartedAt ? <span>{formatTs(turnStartedAt)}</span> : null}
+                        {turnDuration != null ? <span>• {formatDuration(turnDuration)}</span> : null}
+                      </div>
+                    )}
+                    {item.user && <EventLine event={item.user} />}
+
+                    {showThinkingLive && item.thinking.map((ev, idx) => (
+                      <EventLine key={`turn-${item.id}-thinking-live-${idx}`} event={ev} />
+                    ))}
+
+                    {item.events.map((ev, idx) => (
+                      <EventLine key={`turn-${item.id}-event-${idx}`} event={ev} />
+                    ))}
+
+                    {item.thinking.length > 0 && (
+                      <div className="ml-1 mr-8 bg-gray-900/60 border border-gray-800 rounded-lg p-2 space-y-2">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <p className="text-xs text-gray-400">
+                            Reasoning for this turn: {item.thinking.length} {item.thinking.length === 1 ? 'event' : 'events'}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => toggleTurnThinking(item.id)}
+                            className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-300 transition-colors"
+                          >
+                            {openThinkingByTurn[item.id] ? 'Hide reasoning' : 'View reasoning'}
+                          </button>
+                        </div>
+
+                        {openThinkingByTurn[item.id] && (
+                          <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
+                            {item.thinking.map((ev, idx) => (
+                              <div key={`turn-${item.id}-thinking-${idx}`} className="bg-gray-800/80 border border-gray-700 rounded px-2 py-1.5 text-xs text-purple-200">
+                                <span className="text-purple-400 mr-1">💭</span>
+                                {ev.content || '(empty reasoning event)'}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
               {isRunning && (
-                <span className="inline-block w-2 h-4 bg-indigo-400 animate-pulse align-middle" />
+                <div className="flex justify-start">
+                  <div className="max-w-[85%] bg-gray-800/70 border border-gray-700 rounded-2xl rounded-bl-md px-3 py-2 text-gray-300 text-sm">
+                    <span className="inline-flex items-center gap-2">
+                      <span>Assistant is typing</span>
+                      <span className="inline-flex gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce [animation-delay:-0.2s]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce [animation-delay:-0.1s]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce" />
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {showJumpToLatest && (
+                <button
+                  type="button"
+                  onClick={jumpToLatest}
+                  className="absolute bottom-3 right-3 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-full text-xs font-medium text-white shadow-lg transition-colors"
+                >
+                  Jump to latest
+                </button>
               )}
               <div ref={eventsEndRef} />
             </div>
           </div>
         ) : (
-          <div className="flex-1 min-h-0 flex items-center justify-center text-gray-600 text-sm select-none">
-            Response will appear here
+          <div className="flex-1 min-h-0 flex items-center justify-center text-gray-600 text-sm select-none text-center px-6">
+            <div>
+              <p>Start chatting to see responses here.</p>
+              <p className="text-xs text-gray-500 mt-2">Enter to send, Shift+Enter for newline. Reasoning can stay hidden until you need it.</p>
+            </div>
           </div>
         )}
       </div>
 
       {/* ── Bottom controls — pinned ── */}
-      <div className="shrink-0 space-y-3">
+      <div className="shrink-0 space-y-3 sticky bottom-0 bg-gray-950/95 backdrop-blur-sm pt-2 border-t border-gray-800">
         <ContextBar events={events} />
+
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-xs text-gray-400">
+            <input
+              type="checkbox"
+              checked={showThinkingLive}
+              onChange={e => setShowThinkingLive(e.target.checked)}
+              className="w-3.5 h-3.5 accent-indigo-500"
+            />
+            Show reasoning while streaming
+          </label>
+        </div>
+
+        {!isRunning && lastUserMessage && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={handleRegenerate}
+              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300 transition-colors"
+            >
+              Regenerate last response
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEditLastOpen(v => !v)
+                setEditLastText(lastUserMessage)
+              }}
+              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300 transition-colors"
+            >
+              {editLastOpen ? 'Close edit' : 'Edit & resend last message'}
+            </button>
+          </div>
+        )}
+
+        {editLastOpen && !isRunning && (
+          <div className="bg-gray-900/70 border border-gray-800 rounded-lg p-3 space-y-2">
+            <label htmlFor="edit-last-message" className="block text-xs text-gray-400">Edit last user message</label>
+            <textarea
+              id="edit-last-message"
+              value={editLastText}
+              onChange={e => setEditLastText(e.target.value)}
+              rows={3}
+              className="w-full bg-gray-900 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:outline-none focus:border-indigo-500 resize-none"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleResendEdited}
+                disabled={!editLastText.trim()}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded text-xs font-medium disabled:opacity-50 transition-colors"
+              >
+                Resend edited message
+              </button>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 text-red-400 text-sm">
@@ -373,7 +670,7 @@ export default function AgentExecutor() {
               value={query}
               onChange={e => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="What do you want the agent to do? (Ctrl+Enter to run)"
+              placeholder="Message the agent (Enter to send, Shift+Enter for newline)"
               rows={3}
               disabled={isRunning}
               className="w-full bg-gray-900 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:outline-none focus:border-indigo-500 resize-none disabled:opacity-50"

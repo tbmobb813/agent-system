@@ -33,6 +33,7 @@ export type StreamEvent = {
   context_tokens_used?: number
   context_tokens_max?: number
   context_percent?: number
+  client_ts?: number
 }
 
 const STORAGE_KEY = 'agent_session'
@@ -82,7 +83,22 @@ export function useAgentStream() {
   }, [events, conversationId, hydrated])
 
   const run = useCallback(async (query: string, context?: string, convId?: string | null) => {
-    setEvents([])
+    setEvents(prev => {
+      const next = [...prev]
+      if (next.length > 0) {
+        next.push({
+          type: 'turn_divider',
+          content: 'Follow-up run',
+          client_ts: Date.now(),
+        })
+      }
+      next.push({
+        type: 'user_message',
+        content: query,
+        client_ts: Date.now(),
+      })
+      return next
+    })
     setError(null)
     setIsRunning(true)
 
@@ -117,7 +133,10 @@ export function useAgentStream() {
         if (dataLines.length === 0) return
 
         try {
-          const event: StreamEvent = JSON.parse(dataLines.join('\n'))
+          const event: StreamEvent = {
+            ...JSON.parse(dataLines.join('\n')),
+            client_ts: Date.now(),
+          }
           setEvents(prev => [...prev, event])
           if (event.task_id) setTaskId(event.task_id)
           if (event.type === 'done') {

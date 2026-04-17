@@ -72,7 +72,7 @@ test('full user flow: dashboard to agent execution', async ({ page }) => {
 
   await expect(page).toHaveURL(/\/agent$/)
   await page
-    .getByPlaceholder('What do you want the agent to do? (Ctrl+Enter to run)')
+    .getByPlaceholder('Message the agent (Enter to send, Shift+Enter for newline)')
     .fill('Run a full flow test')
   await page.getByRole('button', { name: 'Run Agent' }).click()
 
