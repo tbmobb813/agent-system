@@ -25,7 +25,10 @@ async def verify_api_key(
     Expects: Authorization: Bearer sk-agent-xxxxx
 
     Validates against the api_keys table (key_hash column).
-    Falls back to format-only check if the database is unavailable.
+
+    In production, a working database is required for non-master keys.
+    In development, if the DB pool is missing or the lookup errors, a
+    format-only check is allowed for local convenience (never in production).
     """
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing authorization header")
@@ -43,41 +46,65 @@ async def verify_api_key(
     # BACKEND_EXTRA_KEYS (comma-separated). Skips DB validation entirely.
     from app.config import settings as app_settings
     allowed = [k.strip() for k in app_settings.BACKEND_API_KEY.split(",") if k.strip()]
-    if any(hmac.compare_digest(token, k) for k in allowed):
-        logger.debug(f"API key accepted via master key bypass: {token[:20]}...")
-        return token
+    for k in allowed:
+        if len(k) != len(token):
+            continue
+        try:
+            if hmac.compare_digest(token, k):
+                logger.debug("API key accepted via master key bypass")
+                return token
+        except (TypeError, ValueError):
+            continue
 
     # DB validation
     from app.database import db_pool, fetchrow, execute
-    if db_pool:
-        key_hash = _hash_key(token)
-        db_error = False
-        try:
-            row = await fetchrow(
-                "SELECT user_id, is_active FROM api_keys WHERE key_hash = $1",
-                key_hash,
+
+    def _format_only_allowed() -> bool:
+        return app_settings.ENVIRONMENT != "production"
+
+    if not db_pool:
+        if not _format_only_allowed():
+            raise HTTPException(
+                status_code=503,
+                detail="Database unavailable; API key validation requires a database in production",
             )
+        logger.warning("API key accepted by format only (no DB pool configured)")
+        return token
+
+    key_hash = _hash_key(token)
+    db_error = False
+    try:
+        row = await fetchrow(
+            "SELECT user_id, is_active FROM api_keys WHERE key_hash = $1",
+            key_hash,
+        )
+    except Exception as e:
+        logger.warning(f"API key DB lookup failed: {e}")
+        db_error = True
+        row = None
+
+    if db_error:
+        if not _format_only_allowed():
+            raise HTTPException(
+                status_code=503,
+                detail="Unable to validate API key (database error); try again later",
+            )
+        logger.warning("API key accepted by format only after DB lookup error (development mode)")
+        return token
+
+    if row is None:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    if not row["is_active"]:
+        raise HTTPException(status_code=401, detail="API key is disabled")
+    # Fire-and-forget last_used update — log but don't fail auth on DB error
+    async def _update_last_used():
+        try:
+            await execute("UPDATE api_keys SET last_used = NOW() WHERE key_hash = $1", key_hash)
         except Exception as e:
-            logger.warning(f"API key DB lookup failed: {e} — falling back to format check")
-            db_error = True
-            row = None
+            logger.debug(f"Could not update last_used for key: {e}")
 
-        if not db_error:
-            if row is None:
-                raise HTTPException(status_code=401, detail="Invalid API key")
-            if not row["is_active"]:
-                raise HTTPException(status_code=401, detail="API key is disabled")
-            # Fire-and-forget last_used update — log but don't fail auth on DB error
-            async def _update_last_used():
-                try:
-                    await execute("UPDATE api_keys SET last_used = NOW() WHERE key_hash = $1", key_hash)
-                except Exception as e:
-                    logger.debug(f"Could not update last_used for key: {e}")
-            asyncio.create_task(_update_last_used())
-            logger.debug(f"API key authenticated (DB): {token[:20]}...")
-            return token
-
-    logger.warning(f"API key accepted by format only (no DB): {token[:20]}...")
+    asyncio.create_task(_update_last_used())
+    logger.debug("API key authenticated via database")
     return token
 
 

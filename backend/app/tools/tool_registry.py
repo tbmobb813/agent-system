@@ -5,11 +5,13 @@ Tool Registry - Manages all available tools the agent can use.
 import logging
 import os
 import httpx
+from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 from inspect import signature
 
 from app.config import settings
 from app.utils.truncate import truncate_head
+from app.utils.url_safety import validate_agent_outbound_url
 
 logger = logging.getLogger(__name__)
 
@@ -377,6 +379,11 @@ class ToolRegistry:
         """
         logger.info(f"Browser automation: {action} {url}")
 
+        if url:
+            ok, reason = validate_agent_outbound_url(url)
+            if not ok:
+                return f"Error: URL not allowed ({reason})"
+
         try:
             from playwright.async_api import async_playwright
         except ImportError:
@@ -460,10 +467,17 @@ class ToolRegistry:
 
         logger.info(f"File operation: {operation} on {path}")
 
-        # Restrict to workspace — prevent path traversal
-        safe_path = os.path.realpath(os.path.join(workspace, path.lstrip("/")))
-        if not safe_path.startswith(os.path.realpath(workspace)):
+        # Restrict to workspace — prevent path traversal (including /ws_evil vs /ws prefix bypass)
+        ws_root = Path(workspace).expanduser().resolve()
+        try:
+            candidate = (ws_root / path.lstrip("/")).resolve()
+        except (OSError, RuntimeError):
+            return "Error: invalid path"
+        try:
+            candidate.relative_to(ws_root)
+        except ValueError:
             return "Error: path traversal not allowed"
+        safe_path = str(candidate)
 
         os.makedirs(workspace, exist_ok=True)
 
@@ -488,7 +502,8 @@ class ToolRegistry:
 
         elif operation == "list":
             try:
-                entries = os.listdir(safe_path if os.path.isdir(safe_path) else workspace)
+                list_dir = safe_path if os.path.isdir(safe_path) else str(ws_root)
+                entries = os.listdir(list_dir)
                 return "\n".join(entries)
             except Exception as e:
                 return f"Error listing directory: {e}"
@@ -546,6 +561,9 @@ class ToolRegistry:
         # Basic URL validation — must be http/https
         if not url.startswith(("http://", "https://")):
             return {"error": "URL must start with http:// or https://"}
+        ok, reason = validate_agent_outbound_url(url)
+        if not ok:
+            return {"error": f"URL not allowed: {reason}"}
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
