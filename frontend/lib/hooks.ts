@@ -103,6 +103,7 @@ export function useAgentStream() {
   }, [events, conversationId, hydrated])
 
   const run = useCallback(async (query: string, context?: string, convId?: string | null) => {
+    setTaskId(null)
     setEvents(prev => {
       const next = [...prev]
       if (next.length > 0) {
@@ -192,6 +193,7 @@ export function useAgentStream() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
+      setTaskId(null)
     } finally {
       setIsRunning(false)
     }

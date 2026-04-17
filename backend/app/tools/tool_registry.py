@@ -548,12 +548,18 @@ class ToolRegistry:
         # E2B sandbox execution (requires e2b package)
         try:
             from e2b_code_interpreter import Sandbox
-            async with Sandbox() as sbx:
-                result = sbx.run_code(code)
-                output = "\n".join(str(r) for r in result.results)
-                if result.error:
-                    output += f"\nError: {result.error}"
-                return output or "(no output)"
+            sandbox = Sandbox()
+            if hasattr(sandbox, "__aenter__"):
+                async with sandbox as sbx:
+                    result = sbx.run_code(code)
+            else:
+                with sandbox as sbx:
+                    result = sbx.run_code(code)
+
+            output = "\n".join(str(r) for r in result.results)
+            if result.error:
+                output += f"\nError: {result.error}"
+            return output or "(no output)"
         except ImportError:
             return "Code execution not available — install e2b-code-interpreter package"
         except Exception as e:

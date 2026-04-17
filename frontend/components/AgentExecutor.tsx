@@ -273,6 +273,7 @@ export default function AgentExecutor() {
   const eventsEndRef = useRef<HTMLDivElement>(null)
   const eventsContainerRef = useRef<HTMLDivElement>(null)
   const feedbackSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const formatTs = useCallback((ts?: number) => {
     if (!ts) return ''
@@ -307,6 +308,7 @@ export default function AgentExecutor() {
   useEffect(() => {
     return () => {
       if (feedbackSavedTimerRef.current) clearTimeout(feedbackSavedTimerRef.current)
+      if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current)
     }
   }, [])
 
@@ -331,7 +333,8 @@ export default function AgentExecutor() {
     if (!responseText) return
     await navigator.clipboard.writeText(responseText)
     setCopyLabel('Copied!')
-    setTimeout(() => setCopyLabel('Copy response'), 2000)
+    if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current)
+    copyResetTimerRef.current = setTimeout(() => setCopyLabel('Copy response'), 2000)
   }, [responseText])
 
   const handleDownload = useCallback(() => {

@@ -57,8 +57,13 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
   const feedbackSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+
     getTaskDetail(taskId)
       .then(payload => {
+        if (cancelled) return
         setDetail(payload)
         if (payload.feedback) {
           setFeedbackSignal(payload.feedback.signal)
@@ -69,8 +74,18 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
           setFeedbackSaved(false)
         }
       })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false))
+      .catch(e => {
+        if (cancelled) return
+        setError(e.message)
+      })
+      .finally(() => {
+        if (cancelled) return
+        setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [taskId])
 
   useEffect(() => {
