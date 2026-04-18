@@ -5,11 +5,18 @@ Tool Registry - Manages all available tools the agent can use.
 import logging
 import os
 import httpx
+from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 from inspect import signature
+from urllib.parse import urlparse
 
 from app.config import settings
+from app.utils.http_headers import redact_response_headers
 from app.utils.truncate import truncate_head
+from app.utils.url_safety import (
+    validate_agent_outbound_url,
+    validate_browser_automation_host,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,16 +86,14 @@ class ToolRegistry:
             required_args=["operation"],
         )
         
-        # Code Execution — only register when E2B sandbox is configured.
-        # Without E2B_API_KEY the tool always fails, adding noise to the schema.
-        if settings.E2B_API_KEY:
-            self.register(
-                name="code_execution",
-                func=self._code_execution,
-                description="Execute code in a secure sandbox and return the output.",
-                required_args=["code"],
-            )
-        
+        # Code Execution
+        self.register(
+            name="code_execution",
+            func=self._code_execution,
+            description="Execute code in a secure sandbox and return the output.",
+            required_args=["code"],
+        )
+
         # API Calling
         self.register(
             name="api_call",
@@ -379,6 +384,19 @@ class ToolRegistry:
         """
         logger.info(f"Browser automation: {action} {url}")
 
+        if url:
+            ok, reason = validate_agent_outbound_url(url)
+            if not ok:
+                return f"Error: URL not allowed ({reason})"
+            parsed = urlparse(url)
+            if parsed.hostname:
+                ok_host, msg_host = validate_browser_automation_host(
+                    parsed.hostname,
+                    settings.BROWSER_AUTOMATION_ALLOWED_HOST_SUFFIXES,
+                )
+                if not ok_host:
+                    return f"Error: URL not allowed ({msg_host})"
+
         try:
             from playwright.async_api import async_playwright
         except ImportError:
@@ -462,10 +480,17 @@ class ToolRegistry:
 
         logger.info(f"File operation: {operation} on {path}")
 
-        # Restrict to workspace — prevent path traversal
-        safe_path = os.path.realpath(os.path.join(workspace, path.lstrip("/")))
-        if not safe_path.startswith(os.path.realpath(workspace)):
+        # Restrict to workspace — prevent path traversal (including /ws_evil vs /ws prefix bypass)
+        ws_root = Path(workspace).expanduser().resolve()
+        try:
+            candidate = (ws_root / path.lstrip("/")).resolve()
+        except (OSError, RuntimeError):
+            return "Error: invalid path"
+        try:
+            candidate.relative_to(ws_root)
+        except ValueError:
             return "Error: path traversal not allowed"
+        safe_path = str(candidate)
 
         os.makedirs(workspace, exist_ok=True)
 
@@ -490,7 +515,8 @@ class ToolRegistry:
 
         elif operation == "list":
             try:
-                entries = os.listdir(safe_path if os.path.isdir(safe_path) else workspace)
+                list_dir = safe_path if os.path.isdir(safe_path) else str(ws_root)
+                entries = os.listdir(list_dir)
                 return "\n".join(entries)
             except Exception as e:
                 return f"Error listing directory: {e}"
@@ -519,17 +545,19 @@ class ToolRegistry:
                 f"Code received ({language}):\n{code}"
             )
 
-        # E2B sandbox execution (requires e2b package)
+        # E2B code interpreter (optional dependency). Official pattern: async context manager.
         try:
             from e2b_code_interpreter import Sandbox
-            async with Sandbox() as sbx:
-                result = sbx.run_code(code)
-                output = "\n".join(str(r) for r in result.results)
-                if result.error:
-                    output += f"\nError: {result.error}"
-                return output or "(no output)"
         except ImportError:
             return "Code execution not available — install e2b-code-interpreter package"
+
+        try:
+            async with Sandbox() as sbx:
+                result = sbx.run_code(code)
+            output = "\n".join(str(r) for r in result.results)
+            if result.error:
+                output += f"\nError: {result.error}"
+            return output or "(no output)"
         except Exception as e:
             return f"Code execution failed: {e}"
 
@@ -548,6 +576,9 @@ class ToolRegistry:
         # Basic URL validation — must be http/https
         if not url.startswith(("http://", "https://")):
             return {"error": "URL must start with http:// or https://"}
+        ok, reason = validate_agent_outbound_url(url)
+        if not ok:
+            return {"error": f"URL not allowed: {reason}"}
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -565,7 +596,7 @@ class ToolRegistry:
 
                 return {
                     "status": resp.status_code,
-                    "headers": dict(resp.headers),
+                    "headers": redact_response_headers(dict(resp.headers)),
                     "data": body,
                 }
         except httpx.TimeoutException:

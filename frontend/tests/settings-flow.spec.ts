@@ -38,13 +38,13 @@ test('settings page: load and update settings', async ({ page }) => {
   await expect(heading).toBeVisible()
 
   // Verify settings are loaded into form
-  const budgetInput = page.locator('input[type="number"]')
+  const budgetInput = page.getByLabel('Monthly Budget (USD)')
   await expect(budgetInput).toHaveValue('50')
 
-  const modelInput = page.locator('input[type="text"]').first()
+  const modelInput = page.getByLabel('Preferred Model')
   await expect(modelInput).toHaveValue('gpt-4')
 
-  const timezoneInput = page.locator('input[type="text"]').nth(1)
+  const timezoneInput = page.getByLabel('Timezone')
   await expect(timezoneInput).toHaveValue('UTC')
 
   // Verify checkboxes

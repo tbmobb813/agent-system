@@ -6,6 +6,7 @@ To wire into main.py:
     app.include_router(history_router)
 """
 
+import logging
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Optional
 from typing import Literal
@@ -16,6 +17,7 @@ from app.agent.memory import memory_manager
 from app.utils.auth import verify_api_key
 
 router = APIRouter(prefix="/history", tags=["history"])
+logger = logging.getLogger(__name__)
 
 
 class TaskFeedbackRequest(BaseModel):
@@ -127,31 +129,50 @@ async def submit_task_feedback(
     api_key: str = Depends(verify_api_key),
 ):
     """Store explicit user feedback for a completed task and promote note-based learning."""
-    task = await fetchrow("SELECT id, query, user_id FROM tasks WHERE id = $1", task_id)
+    task = await fetchrow("SELECT id, query, user_id, status FROM tasks WHERE id = $1", task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    task_status = task.get("status") if isinstance(task, dict) else task["status"]
+    if task_status != "completed":
+        raise HTTPException(status_code=409, detail="Feedback can only be submitted for completed tasks")
+
+    task_user_id = task.get("user_id") if isinstance(task, dict) else task["user_id"]
+    task_query = task.get("query") if isinstance(task, dict) else task["query"]
     notes = (body.notes or "").strip() or None
-    await execute(
+    saved_feedback = await fetchrow(
         """
         INSERT INTO task_feedback (task_id, user_id, signal, notes)
         VALUES ($1, $2, $3, $4)
+        RETURNING signal, notes, created_at
         """,
         task_id,
-        task.get("user_id") if isinstance(task, dict) else task["user_id"],
+        task_user_id,
         body.signal,
         notes,
     )
+    if not saved_feedback:
+        raise HTTPException(status_code=500, detail="Failed to store feedback")
 
     if notes:
-        await memory_manager.save_feedback_learning(
-            task_query=task.get("query") if isinstance(task, dict) else task["query"],
-            signal=body.signal,
-            notes=notes,
-            user_id=task.get("user_id") if isinstance(task, dict) else task["user_id"],
-        )
+        try:
+            await memory_manager.save_feedback_learning(
+                task_query=task_query,
+                signal=body.signal,
+                notes=notes,
+                user_id=task_user_id,
+            )
+        except Exception as e:
+            # Log promotion failure but don't fail the request—feedback is already recorded
+            logger.warning("Feedback learning promotion failed for task %s: %s", task_id, e)
 
-    return {"status": "recorded", "task_id": task_id, "signal": body.signal, "notes": notes}
+    return {
+        "status": "recorded",
+        "task_id": task_id,
+        "signal": saved_feedback["signal"],
+        "notes": saved_feedback["notes"],
+        "created_at": saved_feedback["created_at"],
+    }
 
 
 @router.delete("/{task_id}")

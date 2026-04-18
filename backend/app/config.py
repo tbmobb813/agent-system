@@ -3,8 +3,8 @@ Configuration and cost tracking for the personal AI agent system.
 Enforces $30/month budget and tracks spending per model.
 """
 
-from pydantic_settings import BaseSettings
 from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from datetime import datetime, timedelta
 import calendar
 import os
@@ -45,11 +45,15 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = Field(default=["http://localhost:3003", "http://localhost:8000", "http://167.88.45.213:3003"])
     SITE_URL: str = Field(default="http://localhost:3003")
     AGENT_WORKSPACE_DIR: str = Field(default="/tmp/agent-workspace")
+    # If true, non-master API keys require a working database even when ENVIRONMENT is not production.
+    REQUIRE_DATABASE_API_KEY: bool = Field(default=False)
     
     # Tools
     SEARXNG_URL: str = Field(default="http://localhost:8888")  # Your SearXNG instance URL
     BRAVE_SEARCH_API_KEY: str = Field(default="")             # Brave Search fallback
     E2B_API_KEY: str = Field(default="")
+    # Comma-separated host suffixes for browser_automation (e.g. wikipedia.org,.github.io). Empty = SSRF checks only.
+    BROWSER_AUTOMATION_ALLOWED_HOST_SUFFIXES: str = Field(default="")
     
     # Master API keys — comma-separated, bypass DB validation (set in .env)
     BACKEND_API_KEY: str = Field(default="sk-agent-local-dev,sk-agent-telegram-bot")
@@ -83,10 +87,11 @@ class Settings(BaseSettings):
     MAX_CONTEXT_TOKENS: int = Field(default=128000)
     CONTEXT_TRIGGER_PERCENT: float = Field(default=0.70)
     KEEP_RECENT_TURNS: int = Field(default=5)
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+    )
 
 
 # Load settings

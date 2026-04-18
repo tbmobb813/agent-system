@@ -94,7 +94,10 @@ export async function getTaskDetail(taskId: string) {
   return res.json()
 }
 
-export async function submitTaskFeedback(taskId: string, data: { signal: 'up' | 'down'; notes?: string }) {
+export async function submitTaskFeedback(
+  taskId: string,
+  data: { signal: 'up' | 'down'; notes?: string },
+): Promise<{ status: string; task_id: string; signal: 'up' | 'down'; notes: string | null; created_at: string }> {
   const res = await fetchWithTimeout(`${API_URL}/history/${taskId}/feedback`, {
     method: 'POST',
     headers: headers(),

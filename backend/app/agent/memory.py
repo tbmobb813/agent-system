@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_USER = "default"
 MAX_MEMORY_CONTENT = 2000   # chars stored per memory
-MAX_CONTEXT_CHARS  = 1500   # chars injected into system prompt
+MAX_CONTEXT_CHARS = 1500   # chars injected into system prompt
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -430,10 +430,13 @@ class MemoryManager:
             category = "preference"
             content = f"User confirmed a helpful response for '{compact_query}': {cleaned_notes}"
             relevance_score = 1.2
-        else:
+        elif signal == "down":
             category = "pattern"
             content = f"User correction or dissatisfaction for '{compact_query}': {cleaned_notes}"
             relevance_score = 1.3
+        else:
+            logger.warning(f"Ignoring unknown feedback signal: {signal!r}")
+            return None
 
         return await self.save(
             content,

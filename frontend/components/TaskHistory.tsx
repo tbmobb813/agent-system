@@ -74,23 +74,46 @@ function TaskDetailPanel({ taskId, onClose, onFeedbackSaved }: { taskId: string;
   const [feedbackSaving, setFeedbackSaving] = useState(false)
   const [feedbackSaved, setFeedbackSaved] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
+  const feedbackSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
+    let cancelled = false
     setLoading(true)
     setLoadError(null)
     setFeedbackError(null)
     setPdfError(null)
     getTaskDetail(taskId)
       .then(payload => {
+        if (cancelled) return
         setDetail(payload)
         if (payload.feedback) {
           setFeedbackSignal(payload.feedback.signal)
           setFeedbackNotes(payload.feedback.notes ?? '')
+        } else {
+          setFeedbackSignal('up')
+          setFeedbackNotes('')
+          setFeedbackSaved(false)
         }
       })
-      .catch(e => setLoadError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false))
+      .catch(e => {
+        if (cancelled) return
+        setLoadError(e instanceof Error ? e.message : String(e))
+      })
+      .finally(() => {
+        if (cancelled) return
+        setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [taskId])
+
+  useEffect(() => {
+    return () => {
+      if (feedbackSavedTimerRef.current) clearTimeout(feedbackSavedTimerRef.current)
+    }
+  }, [])
 
   async function handleCopy() {
     const text = detail?.task.result
@@ -135,12 +158,13 @@ function TaskDetailPanel({ taskId, onClose, onFeedbackSaved }: { taskId: string;
         feedback: {
           signal: payload.signal,
           notes: payload.notes,
-          created_at: new Date().toISOString(),
+          created_at: payload.created_at,
         },
       } : prev)
       setFeedbackSaved(true)
       onFeedbackSaved?.()
-      setTimeout(() => setFeedbackSaved(false), 2500)
+      if (feedbackSavedTimerRef.current) clearTimeout(feedbackSavedTimerRef.current)
+      feedbackSavedTimerRef.current = setTimeout(() => setFeedbackSaved(false), 2500)
     } catch (e) {
       setFeedbackError(e instanceof Error ? e.message : 'Failed to save feedback')
     } finally {
