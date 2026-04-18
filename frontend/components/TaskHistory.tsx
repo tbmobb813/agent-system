@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import dynamic from 'next/dynamic'
 import { useHistory } from '@/lib/hooks'
 import { deleteTask, getTaskDetail, submitTaskFeedback } from '@/lib/api'
@@ -16,6 +16,7 @@ type Task = {
   created_at: string
   cost: number
   model_used: string | null
+  feedback_signal?: string | null
 }
 
 type TaskDetail = {
@@ -29,25 +30,44 @@ type TaskDetail = {
 }
 
 const statusStyles: Record<string, string> = {
-  completed: 'bg-green-900/50 text-green-400',
-  running:   'bg-blue-900/50 text-blue-400',
-  failed:    'bg-red-900/50 text-red-400',
-  pending:   'bg-gray-800 text-gray-400',
-  stopped:   'bg-yellow-900/50 text-yellow-400',
+  completed: 'border border-[color:var(--success)]/35 bg-[color:var(--success)]/10 text-[color:var(--success)]',
+  running:   'border border-[color:var(--accent-2)]/35 bg-[color:var(--accent-2)]/10 text-[color:var(--accent-2)]',
+  failed:    'border border-[color:var(--danger)]/35 bg-[color:var(--danger)]/10 text-[color:var(--danger)]',
+  pending:   'border border-[color:var(--border)] bg-[color:var(--surface-soft)] text-muted',
+  stopped:   'border border-[color:var(--warn)]/35 bg-[color:var(--warn)]/10 text-[color:var(--warn)]',
 }
 
 function StatusBadge({ status }: { status: string }) {
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${statusStyles[status] ?? 'bg-gray-800 text-gray-400'}`}>
+    <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${statusStyles[status] ?? 'border border-[color:var(--border)] bg-[color:var(--surface-soft)] text-muted'}`}>
       {status}
     </span>
   )
 }
 
-function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
+function FeedbackHint({ signal }: { signal: string }) {
+  if (signal !== 'up' && signal !== 'down') return null
+  const up = signal === 'up'
+  const label = up ? 'Marked helpful' : 'Marked needs work'
+  return (
+    <span
+      className={`text-[10px] px-2 py-0.5 rounded-full border shrink-0 ${up
+        ? 'border-[color:var(--success)]/40 bg-[color:var(--success)]/10 text-[color:var(--success)]'
+        : 'border-[color:var(--danger)]/40 bg-[color:var(--danger)]/10 text-[color:var(--danger)]'}`}
+      title={label}
+      aria-label={label}
+    >
+      {up ? 'Helpful' : 'Needs work'}
+    </span>
+  )
+}
+
+function TaskDetailPanel({ taskId, onClose, onFeedbackSaved }: { taskId: string; onClose: () => void; onFeedbackSaved?: () => void }) {
   const [detail, setDetail] = useState<TaskDetail | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [feedbackError, setFeedbackError] = useState<string | null>(null)
+  const [pdfError, setPdfError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [feedbackSignal, setFeedbackSignal] = useState<'up' | 'down'>('up')
   const [feedbackNotes, setFeedbackNotes] = useState('')
@@ -59,8 +79,9 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    setError(null)
-
+    setLoadError(null)
+    setFeedbackError(null)
+    setPdfError(null)
     getTaskDetail(taskId)
       .then(payload => {
         if (cancelled) return
@@ -76,7 +97,7 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
       })
       .catch(e => {
         if (cancelled) return
-        setError(e.message)
+        setLoadError(e instanceof Error ? e.message : String(e))
       })
       .finally(() => {
         if (cancelled) return
@@ -116,12 +137,17 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
 
   async function handleExportPdf() {
     if (!contentRef.current) return
-    await exportElementToPdf(contentRef.current, `task-${taskId.slice(0, 8)}.pdf`)
+    setPdfError(null)
+    try {
+      await exportElementToPdf(contentRef.current, `task-${taskId.slice(0, 8)}.pdf`)
+    } catch (e) {
+      setPdfError(e instanceof Error ? e.message : 'PDF export failed')
+    }
   }
 
   async function handleSaveFeedback() {
     setFeedbackSaving(true)
-    setError(null)
+    setFeedbackError(null)
     try {
       const payload = await submitTaskFeedback(taskId, {
         signal: feedbackSignal,
@@ -136,26 +162,27 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
         },
       } : prev)
       setFeedbackSaved(true)
+      onFeedbackSaved?.()
       if (feedbackSavedTimerRef.current) clearTimeout(feedbackSavedTimerRef.current)
       feedbackSavedTimerRef.current = setTimeout(() => setFeedbackSaved(false), 2500)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save feedback')
+      setFeedbackError(e instanceof Error ? e.message : 'Failed to save feedback')
     } finally {
       setFeedbackSaving(false)
     }
   }
 
   return (
-    <div className="mt-3 border-t border-gray-700 pt-3 space-y-3">
-      {loading && <p className="text-gray-500 text-xs">Loading…</p>}
-      {error && <p className="text-red-400 text-xs">{error}</p>}
+    <div className="mt-3 border-t border-[color:var(--border)] pt-3 space-y-3">
+      {loading && <p className="text-muted text-xs">Loading…</p>}
+      {loadError && <p className="text-[color:var(--danger)] text-xs">{loadError}</p>}
       {detail && (
         <>
-          <div className="bg-gray-900/60 border border-gray-800 rounded-lg p-3 space-y-3">
+          <div className="panel panel-soft rounded-lg p-3 space-y-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <p className="text-xs text-gray-400">Teach the agent from this result</p>
+              <p className="text-xs text-muted">Teach the agent from this result</p>
               {detail.feedback && (
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-muted">
                   Last feedback: {detail.feedback.signal === 'up' ? 'helpful' : 'needs work'}
                 </span>
               )}
@@ -165,21 +192,21 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
               <button
                 type="button"
                 onClick={() => setFeedbackSignal('up')}
-                className={`px-3 py-1.5 rounded text-xs transition-colors ${feedbackSignal === 'up' ? 'bg-green-900/60 text-green-300 border border-green-700' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+                className={`px-3 py-1.5 rounded text-xs transition-colors ${feedbackSignal === 'up' ? 'border border-[color:var(--success)]/50 bg-[color:var(--success)]/15 text-[color:var(--success)]' : 'btn-ghost text-muted'}`}
               >
                 Helpful
               </button>
               <button
                 type="button"
                 onClick={() => setFeedbackSignal('down')}
-                className={`px-3 py-1.5 rounded text-xs transition-colors ${feedbackSignal === 'down' ? 'bg-red-900/60 text-red-300 border border-red-700' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+                className={`px-3 py-1.5 rounded text-xs transition-colors ${feedbackSignal === 'down' ? 'border border-[color:var(--danger)]/50 bg-[color:var(--danger)]/15 text-[color:var(--danger)]' : 'btn-ghost text-muted'}`}
               >
                 Needs work
               </button>
             </div>
 
             <div>
-              <label htmlFor={`feedback-notes-${taskId}`} className="block text-xs text-gray-400 mb-1">
+              <label htmlFor={`feedback-notes-${taskId}`} className="block text-xs text-muted mb-1">
                 Notes for future behavior
               </label>
               <textarea
@@ -188,7 +215,7 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                 onChange={e => setFeedbackNotes(e.target.value)}
                 rows={3}
                 placeholder="What should the agent repeat or avoid next time?"
-                className="w-full bg-gray-800 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:outline-none focus:border-indigo-500 resize-none"
+                className="w-full bg-[color:var(--bg-elev)] rounded-lg px-3 py-2 text-sm border border-[color:var(--border)] focus:outline-none focus:border-[color:var(--accent)] resize-none"
               />
             </div>
 
@@ -197,16 +224,17 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                 type="button"
                 onClick={handleSaveFeedback}
                 disabled={feedbackSaving}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded text-xs font-medium disabled:opacity-50 transition-colors"
+                className="btn-accent px-3 py-1.5 rounded text-xs font-medium disabled:opacity-50"
               >
                 {feedbackSaving ? 'Saving…' : 'Save feedback'}
               </button>
-              {feedbackSaved && <span className="text-xs text-green-400">Feedback saved</span>}
+              {feedbackSaved && <span className="text-xs text-[color:var(--success)]">Feedback saved</span>}
+              {feedbackError && <span className="text-xs text-[color:var(--danger)]">{feedbackError}</span>}
             </div>
           </div>
 
           {detail.task.execution_time != null && (
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted">
               Completed in {detail.task.execution_time.toFixed(1)}s
             </p>
           )}
@@ -214,46 +242,54 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
             <>
               <div className="flex gap-2 justify-end">
                 <button
+                  type="button"
                   onClick={handleCopy}
-                  className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-300 transition-colors"
+                  className="btn-ghost px-2 py-1 rounded text-xs"
                 >
                   {copied ? 'Copied!' : 'Copy'}
                 </button>
                 <button
+                  type="button"
                   onClick={handleDownload}
-                  className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-300 transition-colors"
+                  className="btn-ghost px-2 py-1 rounded text-xs"
                 >
                   Download
                 </button>
                 <button
+                  type="button"
                   onClick={handleExportPdf}
-                  className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-300 transition-colors"
+                  className="btn-ghost px-2 py-1 rounded text-xs"
                 >
                   PDF
                 </button>
                 <button
+                  type="button"
                   onClick={onClose}
-                  className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-400 transition-colors"
+                  className="btn-ghost px-2 py-1 rounded text-xs text-muted"
                 >
                   Collapse
                 </button>
               </div>
-              <div ref={contentRef} className="text-sm text-gray-100 bg-gray-800 rounded-lg p-4 leading-relaxed">
+              {pdfError && (
+                <p className="text-[color:var(--danger)] text-xs text-right">{pdfError}</p>
+              )}
+              <div ref={contentRef} className="text-sm bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded-lg p-4 leading-relaxed">
                 <MarkdownContent content={detail.task.result} />
               </div>
             </>
           ) : (
             <div className="flex justify-end">
               <button
+                type="button"
                 onClick={onClose}
-                className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-400 transition-colors"
+                className="btn-ghost px-2 py-1 rounded text-xs text-muted"
               >
                 Collapse
               </button>
             </div>
           )}
           {!detail.task.result && (
-            <p className="text-gray-500 text-xs italic">No result stored for this task.</p>
+            <p className="text-muted text-xs italic">No result stored for this task.</p>
           )}
         </>
       )}
@@ -288,6 +324,7 @@ export default function TaskHistory() {
   }, [offset, activeSearch]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleDelete(id: string) {
+    if (!window.confirm('Delete this task and its stored result from history?')) return
     if (expanded === id) setExpanded(null)
     setDeleting(id)
     try {
@@ -302,23 +339,30 @@ export default function TaskHistory() {
     setExpanded(prev => prev === id ? null : id)
   }
 
+  function rowKeyToggle(e: KeyboardEvent, id: string) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      toggleExpand(id)
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* Search bar */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm select-none">⌕</span>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm select-none">⌕</span>
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search queries and results…"
-            className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:border-indigo-500 placeholder:text-gray-600"
+            className="w-full bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:border-[color:var(--accent)] placeholder:text-muted"
           />
           {search && (
             <button
               onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-[color:var(--text)] text-xs"
             >
               ✕
             </button>
@@ -326,7 +370,7 @@ export default function TaskHistory() {
         </div>
         <button
           onClick={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)}
-          className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors shrink-0"
+          className="text-sm text-[color:var(--accent-2)] hover:opacity-90 transition-opacity shrink-0"
         >
           Refresh
         </button>
@@ -334,7 +378,7 @@ export default function TaskHistory() {
 
       {/* Status line */}
       {!loading && data && (
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-muted">
           {activeSearch
             ? `${data.total} result${data.total !== 1 ? 's' : ''} for "${activeSearch}"`
             : `${data.total} total task${data.total !== 1 ? 's' : ''}`}
@@ -342,24 +386,29 @@ export default function TaskHistory() {
         </p>
       )}
 
-      {loading && <p className="text-gray-400 text-sm">Loading…</p>}
-      {error && <p className="text-red-400 text-sm">Error: {error}</p>}
+      {loading && <p className="text-muted text-sm">Loading…</p>}
+      {error && <p className="text-[color:var(--danger)] text-sm">Error: {error}</p>}
 
       {!loading && data && data.tasks.length === 0 && (
-        <p className="text-gray-400 text-sm">
+        <p className="text-muted text-sm">
           {activeSearch ? `No tasks match "${activeSearch}".` : 'No tasks yet. Run your first agent query!'}
         </p>
       )}
 
       {(data?.tasks as Task[] ?? []).map((task) => (
-        <div key={task.id} className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+        <div key={task.id} className="panel p-4">
           <div
-            className="flex items-start justify-between gap-4 cursor-pointer select-none"
+            role="button"
+            tabIndex={0}
+            aria-expanded={expanded === task.id}
+            aria-label={expanded === task.id ? `Collapse task: ${task.query}` : `Expand task: ${task.query}`}
+            className="flex items-start justify-between gap-4 cursor-pointer select-none rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]"
             onClick={() => toggleExpand(task.id)}
+            onKeyDown={e => rowKeyToggle(e, task.id)}
           >
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium">{task.query}</p>
-              <div className="flex flex-wrap gap-3 mt-1 text-xs text-gray-400">
+              <div className="flex flex-wrap gap-3 mt-1 text-xs text-muted">
                 <span>{formatDate(task.created_at)}</span>
                 {task.model_used && (
                   <span className="font-mono truncate max-w-[180px]" title={task.model_used}>
@@ -370,12 +419,17 @@ export default function TaskHistory() {
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {task.feedback_signal && (
+                <FeedbackHint signal={task.feedback_signal} />
+              )}
               <StatusBadge status={task.status} />
-              <span className="text-gray-600 text-xs">{expanded === task.id ? '▲' : '▼'}</span>
+              <span className="text-muted text-xs" aria-hidden>{expanded === task.id ? '▲' : '▼'}</span>
               <button
+                type="button"
                 onClick={e => { e.stopPropagation(); handleDelete(task.id) }}
+                onKeyDown={e => e.stopPropagation()}
                 disabled={deleting === task.id}
-                className="text-xs text-gray-500 hover:text-red-400 transition-colors disabled:opacity-50"
+                className="text-xs text-muted hover:text-[color:var(--danger)] transition-colors disabled:opacity-50"
                 aria-label="Delete task"
               >
                 {deleting === task.id ? '…' : '✕'}
@@ -384,7 +438,11 @@ export default function TaskHistory() {
           </div>
 
           {expanded === task.id && (
-            <TaskDetailPanel taskId={task.id} onClose={() => setExpanded(null)} />
+            <TaskDetailPanel
+              taskId={task.id}
+              onClose={() => setExpanded(null)}
+              onFeedbackSaved={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)}
+            />
           )}
         </div>
       ))}
@@ -394,17 +452,17 @@ export default function TaskHistory() {
           <button
             onClick={() => { setOffset(o => Math.max(0, o - PAGE_SIZE)); setExpanded(null) }}
             disabled={offset === 0}
-            className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm disabled:opacity-40 transition-colors"
+            className="btn-ghost px-3 py-1.5 rounded-lg text-sm disabled:opacity-40"
           >
             ← Newer
           </button>
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-muted">
             Page {Math.floor(offset / PAGE_SIZE) + 1} of {Math.ceil(data.total / PAGE_SIZE)}
           </span>
           <button
             onClick={() => { setOffset(o => o + PAGE_SIZE); setExpanded(null) }}
             disabled={offset + PAGE_SIZE >= data.total}
-            className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm disabled:opacity-40 transition-colors"
+            className="btn-ghost px-3 py-1.5 rounded-lg text-sm disabled:opacity-40"
           >
             Older →
           </button>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import PageHeader from '@/components/PageHeader'
 import { getDocuments, uploadDocument, deleteDocument } from '@/lib/api'
 
 type Doc = {
@@ -73,16 +74,15 @@ export default function DocumentsPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Documents</h1>
-        <p className="text-gray-400 text-sm mt-1">
-          Upload PDFs, DOCX, or text files. The agent searches them automatically when answering questions.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Knowledge base"
+        title="Documents"
+        description="Upload PDFs, DOCX, or text files. The agent searches them automatically when answering questions."
+      />
 
       {/* Upload area */}
-      <div className="bg-gray-900 rounded-xl border border-gray-700 border-dashed p-6 text-center space-y-3">
-        <p className="text-gray-400 text-sm">PDF, DOCX, TXT, MD — up to 20 MB</p>
+      <div className="panel rounded-xl border-dashed p-6 text-center space-y-3">
+        <p className="text-muted text-sm">PDF, DOCX, TXT, MD — up to 20 MB</p>
         <label className="inline-block cursor-pointer">
           <input
             ref={fileRef}
@@ -94,42 +94,42 @@ export default function DocumentsPage() {
           />
           <span className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
             uploading
-              ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-              : 'bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer'
+              ? 'bg-[color:var(--surface-soft)] text-muted cursor-not-allowed border border-[color:var(--border)]'
+              : 'btn-accent cursor-pointer'
           }`}>
             {uploading ? 'Ingesting…' : 'Choose file to upload'}
           </span>
         </label>
-        {uploadMsg && <p className="text-green-400 text-sm">{uploadMsg}</p>}
-        {error && <p className="text-red-400 text-sm">{error}</p>}
+        {uploadMsg && <p className="text-[color:var(--success)] text-sm">{uploadMsg}</p>}
+        {error && <p className="text-[color:var(--danger)] text-sm">{error}</p>}
       </div>
 
       {/* Document list */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs text-gray-500 px-1">
+        <div className="flex items-center justify-between text-xs text-muted px-1">
           <span>{total} document{total !== 1 ? 's' : ''}</span>
-          <button onClick={load} className="hover:text-gray-300 transition-colors">Refresh</button>
+          <button onClick={load} className="hover:text-[color:var(--text)] transition-colors">Refresh</button>
         </div>
 
         {loading ? (
-          <p className="text-gray-500 text-sm py-4 text-center">Loading…</p>
+          <p className="text-muted text-sm py-4 text-center">Loading…</p>
         ) : docs.length === 0 ? (
-          <p className="text-gray-500 text-sm py-4 text-center">No documents yet. Upload one above.</p>
+          <p className="text-muted text-sm py-4 text-center">No documents yet. Upload one above.</p>
         ) : (
           docs.map(doc => (
-            <div key={doc.id} className="flex items-center gap-3 bg-gray-900 rounded-lg px-4 py-3 border border-gray-800">
-              <span className="text-xs bg-gray-800 text-gray-400 rounded px-2 py-0.5 uppercase font-mono">
+            <div key={doc.id} className="panel flex items-center gap-3 rounded-lg px-4 py-3">
+              <span className="text-xs bg-[color:var(--surface-soft)] text-muted rounded px-2 py-0.5 uppercase font-mono border border-[color:var(--border)]">
                 {doc.file_type}
               </span>
               <div className="flex-1 min-w-0">
                 <p className="text-sm truncate">{doc.filename}</p>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted">
                   {doc.chunk_count} chunks · {formatBytes(doc.file_size)} · {new Date(doc.created_at).toLocaleDateString()}
                 </p>
               </div>
               <button
                 onClick={() => handleDelete(doc.id, doc.filename)}
-                className="text-xs text-gray-500 hover:text-red-400 transition-colors shrink-0"
+                className="text-xs text-muted hover:text-[color:var(--danger)] transition-colors shrink-0"
               >
                 Delete
               </button>

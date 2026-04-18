@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import PageHeader from '@/components/PageHeader'
 
 type Section = {
   title: string
@@ -24,7 +25,9 @@ const sections: Section[] = [
     rows: [
       { cell1: 'http://localhost:3003/agent', cell2: 'Run the agent', code: true },
       { cell1: 'http://localhost:3003/history', cell2: 'Task history', code: true },
+      { cell1: 'http://localhost:3003/analytics', cell2: 'Analytics dashboard', code: true },
       { cell1: 'http://localhost:3003/costs', cell2: 'Budget & costs', code: true },
+      { cell1: 'http://localhost:3003/documents', cell2: 'Uploaded documents', code: true },
       { cell1: 'http://localhost:3003/settings', cell2: 'Settings', code: true },
       { cell1: 'http://localhost:3003/commands', cell2: 'This page', code: true },
       { cell1: 'http://localhost:8000/docs', cell2: 'Backend API docs (interactive)', code: true },
@@ -111,42 +114,46 @@ export default function CommandsPage() {
     : sections
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Commands & Reference</h1>
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Reference"
+        title="Commands & shortcuts"
+        description="CLI entrypoints, web routes, Telegram verbs, and API paths—filter the tables when you are looking for one string."
+      />
+      <div className="panel panel-soft p-4 flex justify-end flex-wrap gap-3">
         <input
           type="text"
-          placeholder="Filter..."
+          placeholder="Filter tables…"
           value={filter}
           onChange={e => setFilter(e.target.value)}
-          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500 w-48"
+          className="bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-[color:var(--accent)] w-full sm:w-56"
         />
       </div>
 
       <div className="space-y-8">
         {filtered.map(section => (
           <div key={section.title}>
-            <h2 className="text-sm font-semibold text-indigo-400 uppercase tracking-wider mb-3">
+            <h2 className="text-sm font-semibold text-[color:var(--accent-2)] uppercase tracking-wider mb-3">
               {section.title}
             </h2>
-            <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+            <div className="panel rounded-xl overflow-hidden">
               <table className="w-full text-sm">
                 <tbody>
                   {section.rows.map((row, i) => (
                     <tr
                       key={i}
-                      className="border-b border-gray-800 last:border-0 hover:bg-gray-800/50 transition-colors"
+                      className="border-b border-[color:var(--border)] last:border-0 hover:bg-[color:var(--surface-soft)] transition-colors"
                     >
                       <td className="px-4 py-3 w-1/2">
                         {row.code !== false ? (
-                          <code className="text-indigo-300 bg-gray-800 px-1.5 py-0.5 rounded text-xs">
+                          <code className="text-[color:var(--accent-2)] bg-[color:var(--surface-soft)] border border-[color:var(--border)] px-1.5 py-0.5 rounded text-xs">
                             {row.cell1}
                           </code>
                         ) : (
-                          <span className="text-gray-300">{row.cell1}</span>
+                          <span>{row.cell1}</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-gray-400">{row.cell2}</td>
+                      <td className="px-4 py-3 text-muted">{row.cell2}</td>
                     </tr>
                   ))}
                 </tbody>

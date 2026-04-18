@@ -1,9 +1,14 @@
 import AnalyticsDashboard from '@/components/AnalyticsDashboard'
+import PageHeader from '@/components/PageHeader'
 
 export default function AnalyticsPage() {
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Analytics</h1>
+      <PageHeader
+        eyebrow="Telemetry"
+        title="Analytics"
+        description="Trends across spend, models, tools, and alert signals. Use this alongside Budget for day-to-day caps."
+      />
       <AnalyticsDashboard />
     </div>
   )
