@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import PageHeader from '@/components/PageHeader'
 import { getSettings, updateSettings, getPersonaPreview } from '@/lib/api'
 
 async function getAutostartEnabled(): Promise<boolean | null> {
@@ -21,6 +22,7 @@ async function setAutostart(enabled: boolean) {
 }
 
 type SettingsData = {
+  display_name: string | null
   preferred_model: string | null
   max_monthly_cost: number
   enable_notifications: boolean
@@ -35,7 +37,9 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
   const [autostart, setAutostartState] = useState<boolean | null>(null)
   const [personaPreview, setPersonaPreview] = useState('')
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -47,18 +51,18 @@ export default function SettingsPage() {
   useEffect(() => {
     getSettings()
       .then(setSettings)
-      .catch(err => setError(err.message))
+      .catch(err => setLoadError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false))
   }, [])
 
   async function refreshPersonaPreview() {
     setPreviewLoading(true)
-    setError(null)
+    setPreviewError(null)
     try {
       const payload = await getPersonaPreview()
       setPersonaPreview(payload.preview || '')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Preview failed')
+      setPreviewError(err instanceof Error ? err.message : 'Preview failed')
     } finally {
       setPreviewLoading(false)
     }
@@ -68,29 +72,34 @@ export default function SettingsPage() {
     e.preventDefault()
     if (!settings) return
     setSaving(true)
-    setError(null)
+    setSaveError(null)
     try {
-      await updateSettings(settings)
+      const payload = {
+        ...settings,
+        display_name: settings.display_name?.trim() || null,
+      }
+      await updateSettings(payload)
+      setSettings(payload)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed')
+      setSaveError(err instanceof Error ? err.message : 'Save failed')
     } finally {
       setSaving(false)
     }
   }
 
   if (loading) return <p className="text-muted">Loading settings…</p>
-  if (!settings && error) return <p className="text-[color:var(--danger)]">Error: {error}</p>
+  if (!settings && loadError) return <p className="text-[color:var(--danger)]">Error: {loadError}</p>
   if (!settings) return null
 
   return (
     <div className="space-y-6">
-      <div className="panel panel-soft p-6">
-        <p className="text-xs uppercase tracking-[0.22em] text-muted mb-2">Control Deck</p>
-        <h1 className="section-title text-2xl font-bold mb-2">Settings</h1>
-        <p className="text-sm text-muted">Tune budgets, routing preferences, and persona behavior for your agent.</p>
-      </div>
+      <PageHeader
+        eyebrow="Control deck"
+        title="Settings"
+        description="Tune budgets, routing preferences, and persona behavior for your agent."
+      />
 
       <form onSubmit={handleSave} className="max-w-2xl space-y-5 panel p-6">
 
@@ -129,6 +138,20 @@ export default function SettingsPage() {
             onChange={e => setSettings({ ...settings, timezone: e.target.value })}
             className="w-full bg-[color:var(--bg-elev)] rounded-lg px-3 py-2 text-sm border border-[color:var(--border)] focus:outline-none focus:border-[color:var(--accent)]"
           />
+          <p className="text-xs text-muted mt-1">IANA name (e.g. America/New_York). Used with the hour of day for your dashboard greeting.</p>
+        </div>
+
+        <div>
+          <label htmlFor="display-name" className="block text-sm text-muted mb-1">Display name</label>
+          <input
+            id="display-name"
+            type="text"
+            placeholder="e.g. Jason"
+            value={settings.display_name ?? ''}
+            onChange={e => setSettings({ ...settings, display_name: e.target.value || null })}
+            className="w-full bg-[color:var(--bg-elev)] rounded-lg px-3 py-2 text-sm border border-[color:var(--border)] focus:outline-none focus:border-[color:var(--accent)]"
+          />
+          <p className="text-xs text-muted mt-1">Shown on the dashboard (e.g. “Good evening, Jason”). Leave blank for a generic greeting.</p>
         </div>
 
         <div className="pt-2 border-t border-[color:var(--border)]">
@@ -157,7 +180,7 @@ export default function SettingsPage() {
             Relative example: data/persona. Absolute paths are also supported.
           </p>
 
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={refreshPersonaPreview}
@@ -166,6 +189,7 @@ export default function SettingsPage() {
             >
               {previewLoading ? 'Loading preview…' : 'Preview resolved persona block'}
             </button>
+            {previewError && <span className="text-[color:var(--danger)] text-xs">{previewError}</span>}
           </div>
 
           <label htmlFor="persona-preview" className="block text-sm text-muted mt-3 mb-1">Persona Preview</label>
@@ -232,7 +256,7 @@ export default function SettingsPage() {
             {saving ? 'Saving…' : 'Save Settings'}
           </button>
           {saved && <span className="text-[color:var(--success)] text-sm">Saved!</span>}
-          {error && <span className="text-[color:var(--danger)] text-sm">{error}</span>}
+          {saveError && <span className="text-[color:var(--danger)] text-sm">{saveError}</span>}
         </div>
       </form>
     </div>

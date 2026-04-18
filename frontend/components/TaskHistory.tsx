@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import dynamic from 'next/dynamic'
 import { useHistory } from '@/lib/hooks'
 import { deleteTask, getTaskDetail, submitTaskFeedback } from '@/lib/api'
@@ -16,6 +16,7 @@ type Task = {
   created_at: string
   cost: number
   model_used: string | null
+  feedback_signal?: string | null
 }
 
 type TaskDetail = {
@@ -44,10 +45,29 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
+function FeedbackHint({ signal }: { signal: string }) {
+  if (signal !== 'up' && signal !== 'down') return null
+  const up = signal === 'up'
+  const label = up ? 'Marked helpful' : 'Marked needs work'
+  return (
+    <span
+      className={`text-[10px] px-2 py-0.5 rounded-full border shrink-0 ${up
+        ? 'border-[color:var(--success)]/40 bg-[color:var(--success)]/10 text-[color:var(--success)]'
+        : 'border-[color:var(--danger)]/40 bg-[color:var(--danger)]/10 text-[color:var(--danger)]'}`}
+      title={label}
+      aria-label={label}
+    >
+      {up ? 'Helpful' : 'Needs work'}
+    </span>
+  )
+}
+
+function TaskDetailPanel({ taskId, onClose, onFeedbackSaved }: { taskId: string; onClose: () => void; onFeedbackSaved?: () => void }) {
   const [detail, setDetail] = useState<TaskDetail | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [feedbackError, setFeedbackError] = useState<string | null>(null)
+  const [pdfError, setPdfError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [feedbackSignal, setFeedbackSignal] = useState<'up' | 'down'>('up')
   const [feedbackNotes, setFeedbackNotes] = useState('')
@@ -56,6 +76,10 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
   const contentRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    setLoading(true)
+    setLoadError(null)
+    setFeedbackError(null)
+    setPdfError(null)
     getTaskDetail(taskId)
       .then(payload => {
         setDetail(payload)
@@ -64,7 +88,7 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
           setFeedbackNotes(payload.feedback.notes ?? '')
         }
       })
-      .catch(e => setError(e.message))
+      .catch(e => setLoadError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false))
   }, [taskId])
 
@@ -90,12 +114,17 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
 
   async function handleExportPdf() {
     if (!contentRef.current) return
-    await exportElementToPdf(contentRef.current, `task-${taskId.slice(0, 8)}.pdf`)
+    setPdfError(null)
+    try {
+      await exportElementToPdf(contentRef.current, `task-${taskId.slice(0, 8)}.pdf`)
+    } catch (e) {
+      setPdfError(e instanceof Error ? e.message : 'PDF export failed')
+    }
   }
 
   async function handleSaveFeedback() {
     setFeedbackSaving(true)
-    setError(null)
+    setFeedbackError(null)
     try {
       const payload = await submitTaskFeedback(taskId, {
         signal: feedbackSignal,
@@ -110,9 +139,10 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
         },
       } : prev)
       setFeedbackSaved(true)
+      onFeedbackSaved?.()
       setTimeout(() => setFeedbackSaved(false), 2500)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save feedback')
+      setFeedbackError(e instanceof Error ? e.message : 'Failed to save feedback')
     } finally {
       setFeedbackSaving(false)
     }
@@ -121,7 +151,7 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
   return (
     <div className="mt-3 border-t border-[color:var(--border)] pt-3 space-y-3">
       {loading && <p className="text-muted text-xs">Loading…</p>}
-      {error && <p className="text-[color:var(--danger)] text-xs">{error}</p>}
+      {loadError && <p className="text-[color:var(--danger)] text-xs">{loadError}</p>}
       {detail && (
         <>
           <div className="panel panel-soft rounded-lg p-3 space-y-3">
@@ -175,6 +205,7 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
                 {feedbackSaving ? 'Saving…' : 'Save feedback'}
               </button>
               {feedbackSaved && <span className="text-xs text-[color:var(--success)]">Feedback saved</span>}
+              {feedbackError && <span className="text-xs text-[color:var(--danger)]">{feedbackError}</span>}
             </div>
           </div>
 
@@ -187,30 +218,37 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
             <>
               <div className="flex gap-2 justify-end">
                 <button
+                  type="button"
                   onClick={handleCopy}
                   className="btn-ghost px-2 py-1 rounded text-xs"
                 >
                   {copied ? 'Copied!' : 'Copy'}
                 </button>
                 <button
+                  type="button"
                   onClick={handleDownload}
                   className="btn-ghost px-2 py-1 rounded text-xs"
                 >
                   Download
                 </button>
                 <button
+                  type="button"
                   onClick={handleExportPdf}
                   className="btn-ghost px-2 py-1 rounded text-xs"
                 >
                   PDF
                 </button>
                 <button
+                  type="button"
                   onClick={onClose}
                   className="btn-ghost px-2 py-1 rounded text-xs text-muted"
                 >
                   Collapse
                 </button>
               </div>
+              {pdfError && (
+                <p className="text-[color:var(--danger)] text-xs text-right">{pdfError}</p>
+              )}
               <div ref={contentRef} className="text-sm bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded-lg p-4 leading-relaxed">
                 <MarkdownContent content={detail.task.result} />
               </div>
@@ -218,6 +256,7 @@ function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => v
           ) : (
             <div className="flex justify-end">
               <button
+                type="button"
                 onClick={onClose}
                 className="btn-ghost px-2 py-1 rounded text-xs text-muted"
               >
@@ -261,6 +300,7 @@ export default function TaskHistory() {
   }, [offset, activeSearch]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleDelete(id: string) {
+    if (!window.confirm('Delete this task and its stored result from history?')) return
     if (expanded === id) setExpanded(null)
     setDeleting(id)
     try {
@@ -273,6 +313,13 @@ export default function TaskHistory() {
 
   function toggleExpand(id: string) {
     setExpanded(prev => prev === id ? null : id)
+  }
+
+  function rowKeyToggle(e: KeyboardEvent, id: string) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      toggleExpand(id)
+    }
   }
 
   return (
@@ -327,8 +374,13 @@ export default function TaskHistory() {
       {(data?.tasks as Task[] ?? []).map((task) => (
         <div key={task.id} className="panel p-4">
           <div
-            className="flex items-start justify-between gap-4 cursor-pointer select-none"
+            role="button"
+            tabIndex={0}
+            aria-expanded={expanded === task.id}
+            aria-label={expanded === task.id ? `Collapse task: ${task.query}` : `Expand task: ${task.query}`}
+            className="flex items-start justify-between gap-4 cursor-pointer select-none rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]"
             onClick={() => toggleExpand(task.id)}
+            onKeyDown={e => rowKeyToggle(e, task.id)}
           >
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium">{task.query}</p>
@@ -343,10 +395,15 @@ export default function TaskHistory() {
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {task.feedback_signal && (
+                <FeedbackHint signal={task.feedback_signal} />
+              )}
               <StatusBadge status={task.status} />
-              <span className="text-muted text-xs">{expanded === task.id ? '▲' : '▼'}</span>
+              <span className="text-muted text-xs" aria-hidden>{expanded === task.id ? '▲' : '▼'}</span>
               <button
+                type="button"
                 onClick={e => { e.stopPropagation(); handleDelete(task.id) }}
+                onKeyDown={e => e.stopPropagation()}
                 disabled={deleting === task.id}
                 className="text-xs text-muted hover:text-[color:var(--danger)] transition-colors disabled:opacity-50"
                 aria-label="Delete task"
@@ -357,7 +414,11 @@ export default function TaskHistory() {
           </div>
 
           {expanded === task.id && (
-            <TaskDetailPanel taskId={task.id} onClose={() => setExpanded(null)} />
+            <TaskDetailPanel
+              taskId={task.id}
+              onClose={() => setExpanded(null)}
+              onFeedbackSaved={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)}
+            />
           )}
         </div>
       ))}

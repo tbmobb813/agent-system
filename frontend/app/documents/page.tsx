@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import PageHeader from '@/components/PageHeader'
 import { getDocuments, uploadDocument, deleteDocument } from '@/lib/api'
 
 type Doc = {
@@ -73,12 +74,11 @@ export default function DocumentsPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      <div className="panel panel-soft p-6">
-        <h1 className="section-title text-2xl font-semibold">Documents</h1>
-        <p className="text-muted text-sm mt-1">
-          Upload PDFs, DOCX, or text files. The agent searches them automatically when answering questions.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Knowledge base"
+        title="Documents"
+        description="Upload PDFs, DOCX, or text files. The agent searches them automatically when answering questions."
+      />
 
       {/* Upload area */}
       <div className="panel rounded-xl border-dashed p-6 text-center space-y-3">
