@@ -266,6 +266,75 @@ class MemoryManager:
         # ── Full-text fallback ───────────────────────────────────────
         return await self._fulltext_search(query, user_id, limit, category)
 
+    async def search_by_time_range(
+        self,
+        *,
+        start_time: datetime,
+        end_time: datetime,
+        user_id: Optional[str] = None,
+        query: Optional[str] = None,
+        limit: int = 10,
+        category: Optional[str] = None,
+    ) -> list[dict]:
+        """
+        Retrieve episodic memories constrained to a time window.
+
+        If query is provided, the method applies full-text ranking within the
+        date range; otherwise it returns most recent memories in range.
+        """
+        if not _db.db_pool:
+            return []
+
+        user_id = user_id or DEFAULT_USER
+        try:
+            async with _db.db_pool.acquire() as conn:
+                cat_filter = "AND category = $6" if category else ""
+                if query and query.strip():
+                    params = [user_id, start_time, end_time, query.strip(), limit]
+                    if category:
+                        params.append(category)
+                    rows = await conn.fetch(
+                        f"""
+                        SELECT id, category, content, relevance_score, created_at,
+                               ts_rank(to_tsvector('english', content),
+                                       plainto_tsquery('english', $4)) AS similarity
+                        FROM memory
+                        WHERE user_id = $1
+                          AND created_at >= $2
+                          AND created_at <= $3
+                          AND to_tsvector('english', content)
+                              @@ plainto_tsquery('english', $4)
+                          {cat_filter}
+                        ORDER BY similarity DESC, created_at DESC
+                        LIMIT $5
+                        """,
+                        *params,
+                    )
+                else:
+                    params = [user_id, start_time, end_time, limit]
+                    if category:
+                        params.append(category)
+                        cat_filter = "AND category = $5"
+                    else:
+                        cat_filter = ""
+                    rows = await conn.fetch(
+                        f"""
+                        SELECT id, category, content, relevance_score, created_at
+                        FROM memory
+                        WHERE user_id = $1
+                          AND created_at >= $2
+                          AND created_at <= $3
+                          {cat_filter}
+                        ORDER BY created_at DESC
+                        LIMIT $4
+                        """,
+                        *params,
+                    )
+            return [dict(r) for r in rows]
+        except Exception as e:
+            logger.warning(f"Temporal memory search failed: {e}")
+            return []
+
     async def _vector_search(
         self,
         embedding: list[float],
@@ -444,6 +513,64 @@ class MemoryManager:
             user_id=user_id,
             relevance_score=relevance_score,
         )
+
+    async def apply_relevance_decay(
+        self,
+        *,
+        user_id: Optional[str] = None,
+        half_life_days: float = 90.0,
+        min_relevance: float = 0.1,
+    ) -> int:
+        """
+        Decay memory relevance scores using exponential half-life.
+
+        Returns the number of rows updated.
+        """
+        if not _db.db_pool:
+            return 0
+        if half_life_days <= 0:
+            raise ValueError("half_life_days must be > 0")
+
+        try:
+            async with _db.db_pool.acquire() as conn:
+                if user_id:
+                    result = await conn.execute(
+                        """
+                        UPDATE memory
+                        SET relevance_score = GREATEST(
+                            $3::float8,
+                            relevance_score * EXP(
+                                -LN(2) * (EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0) / $2::float8
+                            )
+                        ),
+                        accessed_at = accessed_at
+                        WHERE user_id = $1
+                        """,
+                        user_id,
+                        half_life_days,
+                        min_relevance,
+                    )
+                else:
+                    result = await conn.execute(
+                        """
+                        UPDATE memory
+                        SET relevance_score = GREATEST(
+                            $2::float8,
+                            relevance_score * EXP(
+                                -LN(2) * (EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0) / $1::float8
+                            )
+                        ),
+                        accessed_at = accessed_at
+                        """,
+                        half_life_days,
+                        min_relevance,
+                    )
+            # result format: "UPDATE <count>"
+            updated = int(str(result).split()[-1])
+            return updated
+        except Exception as e:
+            logger.warning(f"Memory decay update failed: {e}")
+            return 0
 
     async def delete(self, memory_id: str) -> bool:
         """Delete a specific memory by ID."""

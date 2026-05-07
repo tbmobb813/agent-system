@@ -7,7 +7,6 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from datetime import datetime, timedelta
 import calendar
-import os
 import time
 import logging
 from typing import Optional
@@ -82,6 +81,13 @@ class Settings(BaseSettings):
     
     # Execution limits
     MAX_STREAM_SECONDS: int = Field(default=300)  # Wall-clock timeout for SSE runs
+
+    # OpenRouter: optional reasoning/thinking token stream (extra_body.reasoning). Billed as output tokens.
+    # Examples: "medium", "high", "low". Unset = omit parameter (provider default; many models still stream reasoning when supported).
+    OPENROUTER_REASONING_EFFORT: Optional[str] = Field(default=None)
+    QUALITY_SCORING_ENABLED: bool = Field(default=False)
+    QUALITY_SCORING_SAMPLE_RATE: float = Field(default=0.10)
+    QUALITY_SCORING_MODEL: str = Field(default="anthropic/claude-3.5-haiku")
 
     # Context limits
     MAX_CONTEXT_TOKENS: int = Field(default=128000)

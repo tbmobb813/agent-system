@@ -9,7 +9,6 @@ Deduplication: each threshold fires at most once per calendar month.
 
 import logging
 from datetime import datetime
-from typing import Optional
 
 import httpx
 
@@ -88,7 +87,7 @@ class AlertManager:
                     "parse_mode": "Markdown",
                 })
                 if resp.status_code == 200:
-                    logger.info(f"Budget alert sent via Telegram")
+                    logger.info("Budget alert sent via Telegram")
                 else:
                     logger.warning(f"Telegram alert failed: {resp.status_code} {resp.text}")
         except Exception as e:

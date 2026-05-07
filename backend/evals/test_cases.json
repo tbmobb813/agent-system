@@ -1,0 +1,42 @@
+{
+  "version": "1.0.0",
+  "description": "Initial eval harness cases for router behavior and expected response patterns.",
+  "cases": [
+    {
+      "id": "routing_conversational_001",
+      "type": "router_tier",
+      "input": "hi there",
+      "expected_tier": "conversational"
+    },
+    {
+      "id": "routing_simple_001",
+      "type": "router_tier",
+      "input": "Define entropy in simple terms",
+      "expected_tier": "simple"
+    },
+    {
+      "id": "routing_coding_001",
+      "type": "router_tier",
+      "input": "Debug this Python function and add tests",
+      "expected_tier": "coding"
+    },
+    {
+      "id": "routing_research_001",
+      "type": "router_tier",
+      "input": "Provide a deep dive and comprehensive overview of transformer scaling laws",
+      "expected_tier": "research"
+    },
+    {
+      "id": "routing_complex_001",
+      "type": "router_tier",
+      "input": "Compare two architectures and explain trade-offs",
+      "expected_tier": "complex"
+    },
+    {
+      "id": "routing_premium_001",
+      "type": "router_tier",
+      "input": "Use your best model to write a complete professional report",
+      "expected_tier": "premium"
+    }
+  ]
+}

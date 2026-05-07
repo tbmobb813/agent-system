@@ -11,6 +11,7 @@ const settingsBody = JSON.stringify({
   timezone: 'UTC',
   agent_persona_enabled: true,
   agent_persona_path: 'data/persona',
+  agent_show_thinking_while_streaming: true,
   metadata: {},
 })
 

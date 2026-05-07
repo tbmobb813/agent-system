@@ -19,6 +19,7 @@ async function notifyTaskDone() {
   }
 }
 
+/** One SSE payload from the agent stream (`reasoning_delta` = OpenRouter model reasoning when enabled). */
 export type StreamEvent = {
   type: string
   message?: string
@@ -28,8 +29,9 @@ export type StreamEvent = {
   tool_result?: string
   error?: string
   cost?: number
-  conversation_id?: string
+  /** Present on streamed events once the backend attaches it (needed for feedback after `done`). */
   task_id?: string
+  conversation_id?: string
   context_tokens_used?: number
   context_tokens_max?: number
   context_percent?: number
@@ -102,7 +104,12 @@ export function useAgentStream() {
     saveSession(events, conversationId)
   }, [events, conversationId, hydrated])
 
-  const run = useCallback(async (query: string, context?: string, convId?: string | null) => {
+  const run = useCallback(async (
+    query: string,
+    context?: string,
+    convId?: string | null,
+    reasoningEffort?: string,
+  ) => {
     setTaskId(null)
     setEvents(prev => {
       const next = [...prev]
@@ -124,7 +131,13 @@ export function useAgentStream() {
     setIsRunning(true)
 
     try {
-      const response = await streamAgent(query, context, undefined, convId ?? undefined)
+      const response = await streamAgent(
+        query,
+        context,
+        undefined,
+        convId ?? undefined,
+        reasoningEffort,
+      )
       if (!response.ok) {
         let detail = ''
         try {

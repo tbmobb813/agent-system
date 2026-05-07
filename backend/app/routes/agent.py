@@ -20,7 +20,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 
 from app.config import settings
-from app.models import AgentRequest, AgentResponse, TaskStatus
+from app.models import AgentRequest, AgentResponse
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.streaming import format_sse_event
@@ -44,6 +44,66 @@ def _cost_tracker(request: Request):
     if not ct:
         raise HTTPException(status_code=503, detail="Cost tracker not initialized")
     return ct
+
+
+def _runtime(request: Request):
+    runtime = getattr(request.app.state, "orchestration_runtime", None)
+    if not runtime:
+        raise HTTPException(status_code=503, detail="Orchestration runtime not initialized")
+    return runtime
+
+
+async def _record_latency_metric(
+    *,
+    endpoint: str,
+    duration_ms: int,
+    status: str,
+    task_id: str | None = None,
+    user_id: str | None = None,
+) -> None:
+    """Best-effort latency metric persistence (never raises)."""
+    if not _db.db_pool:
+        return
+    try:
+        await execute(
+            """
+            INSERT INTO latency_metrics (endpoint, duration_ms, status, task_id, user_id, created_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
+            """,
+            endpoint,
+            duration_ms,
+            status,
+            task_id,
+            user_id,
+        )
+    except Exception as e:
+        # Keep request paths resilient even if metrics table is missing.
+        logger.debug(f"Could not persist latency metric: {e}")
+
+
+def _schedule_quality_scoring(
+    *,
+    query: str,
+    response: str,
+    task_id: str | None,
+    user_id: str | None,
+    model_used: str | None,
+) -> None:
+    """Fire-and-forget quality scoring for completed responses."""
+    try:
+        from app.agent.quality import score_response_quality
+
+        asyncio.create_task(
+            score_response_quality(
+                query=query,
+                response=response,
+                task_id=task_id,
+                user_id=user_id,
+                model_used=model_used,
+            )
+        )
+    except Exception as e:
+        logger.debug(f"Could not schedule quality scoring: {e}")
 
 
 @router.post("/run")
@@ -72,22 +132,45 @@ async def run_agent(
         )
 
     t0 = time.monotonic()
-    result, conv_id = await orchestrator.run(
+    run_status = "completed"
+    try:
+        result, conv_id = await orchestrator.run(
+            query=body.query,
+            context=body.context,
+            tools=body.tools,
+            user_id=body.user_id,
+            max_iterations=body.max_iterations,
+            conversation_id=body.conversation_id,
+            reasoning_effort=body.reasoning_effort,
+        )
+    except Exception:
+        run_status = "failed"
+        raise
+    finally:
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        await _record_latency_metric(
+            endpoint="/agent/run",
+            duration_ms=elapsed_ms,
+            status=run_status,
+            user_id=body.user_id,
+        )
+    elapsed = elapsed_ms / 1000.0
+
+    model_used = cost_tracker.get_last_model(task_id=None)
+    _schedule_quality_scoring(
         query=body.query,
-        context=body.context,
-        tools=body.tools,
+        response=result,
+        task_id=None,
         user_id=body.user_id,
-        max_iterations=body.max_iterations,
-        conversation_id=body.conversation_id,
+        model_used=model_used,
     )
-    elapsed = time.monotonic() - t0
 
     return AgentResponse(
         query=body.query,
         result=result,
         status="completed",
         cost=await cost_tracker.get_last_call_cost(task_id=None),
-        model_used=cost_tracker.get_last_model(task_id=None),
+        model_used=model_used,
         tokens=cost_tracker.get_last_usage(task_id=None),
         execution_time=round(elapsed, 3),
         conversation_id=conv_id,
@@ -122,11 +205,13 @@ async def stream_agent(
 
     async def generate():
         _stream = None
+        stream_status = "completed"
         try:
             estimated_cost = await cost_tracker.estimate_cost(body.query)
             remaining = settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_month()
 
             if estimated_cost > remaining:
+                stream_status = "budget_exceeded"
                 yield format_sse_event({
                     "type": "error",
                     "error": "Insufficient budget",
@@ -165,6 +250,7 @@ async def stream_agent(
                 max_iterations=body.max_iterations,
                 task_id=task_id,
                 conversation_id=body.conversation_id,
+                reasoning_effort=body.reasoning_effort,
             )
             while True:
                 try:
@@ -182,6 +268,7 @@ async def stream_agent(
                     break
                 except asyncio.TimeoutError:
                     status = "failed"
+                    stream_status = "failed"
                     await _persist_terminal_status(status)
                     if _stream is not None:
                         try:
@@ -195,14 +282,18 @@ async def stream_agent(
                     return
 
                 data = event.model_dump(mode="json")
+                # Always attach task id so the client can rate the correct row after a run completes.
+                data["task_id"] = str(task_id)
                 if event.type.value == "text_delta" and event.content:
                     result_parts.append(event.content)
                     if event.model and not model_used:
                         model_used = event.model
                 if event.type.value == "error":
                     status = "failed"
+                    stream_status = "failed"
                 if event.type.value == "status" and event.content == "stopped by user":
                     status = "stopped"
+                    stream_status = "stopped"
                 if event.type.value == "done":
                     got_done = True
                     final_cost = await cost_tracker.get_last_call_cost(task_id=task_id)
@@ -229,13 +320,23 @@ async def stream_agent(
                             )
                         except Exception as e:
                             logger.warning(f"Could not update task record: {e}")
+                    _schedule_quality_scoring(
+                        query=body.query,
+                        response="".join(result_parts),
+                        task_id=task_id,
+                        user_id=user_id,
+                        model_used=model_used,
+                    )
                 yield format_sse_event(data)
 
             # Stream ended without DONE (stopped or interrupted) — update DB
             if not got_done:
+                if status == "completed":
+                    stream_status = "incomplete"
                 await _persist_terminal_status(status)
 
         except asyncio.CancelledError:
+            stream_status = "cancelled"
             if _stream is not None:
                 try:
                     await _stream.aclose()
@@ -243,9 +344,18 @@ async def stream_agent(
                     logger.debug(f"Failed to close cancelled stream: {close_error}")
             raise
         except Exception as e:
+            stream_status = "failed"
             logger.error(f"Stream error: {e}", exc_info=True)
             yield format_sse_event({"type": "error", "error": str(e)})
         finally:
+            elapsed_ms = int((datetime.utcnow() - started_at).total_seconds() * 1000)
+            await _record_latency_metric(
+                endpoint="/agent/stream",
+                duration_ms=elapsed_ms,
+                status=stream_status,
+                task_id=task_id,
+                user_id=user_id,
+            )
             if await request.is_disconnected() and _stream is not None:
                 try:
                     await _stream.aclose()
@@ -267,6 +377,64 @@ async def stream_agent(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/enqueue")
+@limiter.limit("20/minute")
+async def enqueue_agent_task(
+    request: Request,
+    body: AgentRequest,
+    api_key: str = Depends(verify_api_key),
+):
+    """Queue a deferred task for background execution."""
+    runtime = _runtime(request)
+    cost_tracker = _cost_tracker(request)
+    estimated_cost = await cost_tracker.estimate_cost(body.query)
+    remaining = settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_month()
+    if estimated_cost > remaining:
+        return JSONResponse(
+            status_code=402,
+            content={
+                "error": "Insufficient budget",
+                "spent_month": await cost_tracker.get_spent_month(),
+                "budget": settings.OPENROUTER_BUDGET_MONTHLY,
+                "estimated_cost": estimated_cost,
+            },
+        )
+
+    task_id = str(uuid.uuid4())
+    if _db.db_pool:
+        try:
+            await execute(
+                """
+                INSERT INTO tasks (id, user_id, query, status, cost, created_at)
+                VALUES ($1, $2, $3, 'queued', 0, $4)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                task_id,
+                body.user_id,
+                body.query,
+                datetime.utcnow(),
+            )
+        except Exception as e:
+            logger.warning(f"Could not pre-insert queued task: {e}")
+    await runtime.enqueue_task(
+        {
+            "task_id": task_id,
+            "query": body.query,
+            "context": body.context,
+            "tools": body.tools,
+            "user_id": body.user_id,
+            "max_iterations": body.max_iterations,
+            "conversation_id": body.conversation_id,
+            "reasoning_effort": body.reasoning_effort,
+        }
+    )
+    return {
+        "status": "queued",
+        "task_id": task_id,
+        "queue_size": runtime.queue.qsize(),
+    }
 
 
 @router.post("/stop")

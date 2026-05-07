@@ -1,5 +1,8 @@
+import pytest
 from httpx import ASGITransport, AsyncClient
-from app.models import ExecutionEvent, EventType
+from pydantic import ValidationError
+
+from app.models import AgentRequest, ExecutionEvent, EventType
 
 from app.main import app
 
@@ -54,6 +57,25 @@ class DummyStreamOrchestrator:
 
     async def stop_task(self, task_id: str) -> bool:
         return self.stop_ok
+
+
+class DummyRuntime:
+    def __init__(self):
+        self._items = []
+
+    async def enqueue_task(self, payload: dict):
+        self._items.append(payload)
+
+    class _Queue:
+        def __init__(self, parent):
+            self.parent = parent
+
+        def qsize(self):
+            return len(self.parent._items)
+
+    @property
+    def queue(self):
+        return self._Queue(self)
 
 
 async def test_run_agent_returns_completed_response():
@@ -175,7 +197,6 @@ class TimeoutStreamOrchestrator:
 async def test_stream_agent_times_out_cleanly(monkeypatch):
     original_orch = getattr(app.state, "agent_orchestrator", None)
     original_cost = getattr(app.state, "cost_tracker", None)
-    original_timeout = app.state if False else None
 
     app.state.agent_orchestrator = TimeoutStreamOrchestrator()
     app.state.cost_tracker = DummyCostTracker(estimate=0.01, spent=0.0)
@@ -353,3 +374,83 @@ async def test_list_models_returns_routing_info():
     payload = response.json()
     assert payload['routing_strategy'] == 'complexity_based'
     assert isinstance(payload['models'], dict)
+
+
+async def test_enqueue_agent_task_queues_payload():
+    original_runtime = getattr(app.state, "orchestration_runtime", None)
+    original_cost = getattr(app.state, "cost_tracker", None)
+    app.state.orchestration_runtime = DummyRuntime()
+    app.state.cost_tracker = DummyCostTracker(estimate=0.01, spent=0.0)
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.post(
+                '/agent/enqueue',
+                headers={'Authorization': 'Bearer sk-agent-local-dev'},
+                json={'query': 'run this later', 'user_id': 'u1'},
+            )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload['status'] == 'queued'
+        assert payload['queue_size'] == 1
+    finally:
+        app.state.orchestration_runtime = original_runtime
+        app.state.cost_tracker = original_cost
+
+
+async def test_enqueue_agent_task_rejects_when_budget_exceeded():
+    original_runtime = getattr(app.state, "orchestration_runtime", None)
+    original_cost = getattr(app.state, "cost_tracker", None)
+    app.state.orchestration_runtime = DummyRuntime()
+    app.state.cost_tracker = DummyCostTracker(estimate=5.0, spent=29.5)
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.post(
+                '/agent/enqueue',
+                headers={'Authorization': 'Bearer sk-agent-local-dev'},
+                json={'query': 'run this later', 'user_id': 'u1'},
+            )
+
+        assert response.status_code == 402
+        payload = response.json()
+        assert payload['error'] == 'Insufficient budget'
+    finally:
+        app.state.orchestration_runtime = original_runtime
+        app.state.cost_tracker = original_cost
+
+
+def test_agent_request_reasoning_effort_normalizes():
+    assert AgentRequest(query='x').reasoning_effort is None
+    assert AgentRequest(query='x', reasoning_effort='Medium').reasoning_effort == 'medium'
+    assert AgentRequest(query='x', reasoning_effort='DISABLE').reasoning_effort == 'off'
+
+
+def test_agent_request_reasoning_effort_rejects_unknown():
+    with pytest.raises(ValidationError):
+        AgentRequest(query='x', reasoning_effort='bogus')
+
+
+async def test_run_agent_returns_422_for_invalid_reasoning_effort():
+    original_orch = getattr(app.state, "agent_orchestrator", None)
+    original_cost = getattr(app.state, "cost_tracker", None)
+
+    app.state.agent_orchestrator = DummyOrchestrator()
+    app.state.cost_tracker = DummyCostTracker(estimate=0.01, spent=0.0, last_cost=0.0025)
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.post(
+                '/agent/run',
+                headers={'Authorization': 'Bearer sk-agent-local-dev'},
+                json={'query': 'Say hello', 'reasoning_effort': 'not-a-level'},
+            )
+
+        assert response.status_code == 422
+    finally:
+        app.state.agent_orchestrator = original_orch
+        app.state.cost_tracker = original_cost

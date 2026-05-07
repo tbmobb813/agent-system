@@ -12,9 +12,9 @@ import asyncio
 import json
 import uuid
 import logging
-from datetime import datetime
-from typing import AsyncIterator, Optional
-from pydantic import BaseModel
+from datetime import datetime, timedelta
+from typing import Any, AsyncIterator, Optional
+from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 
 from app.config import settings
@@ -47,7 +47,54 @@ def _openrouter_client() -> AsyncOpenAI:
     )
 
 
+def _openrouter_reasoning_extra_body(reasoning_effort: Optional[str]) -> Optional[dict[str, Any]]:
+    """Build OpenRouter `extra_body.reasoning` for chat.completions.
+    ``reasoning_effort`` comes from the HTTP request (already normalized).
+    ``None`` means inherit ``OPENROUTER_REASONING_EFFORT`` from settings.
+    ``\"off\"`` forces no reasoning effort block (overrides env).
+    """
+    if reasoning_effort is None:
+        env = getattr(settings, "OPENROUTER_REASONING_EFFORT", None)
+        if env and str(env).strip():
+            return {"reasoning": {"effort": str(env).strip().lower()}}
+        return None
+    if reasoning_effort == "off":
+        return None
+    return {"reasoning": {"effort": reasoning_effort}}
+
+
 logger = logging.getLogger(__name__)
+
+
+def _reasoning_delta_snippet(delta: Any) -> Optional[str]:
+    """Readable reasoning from a chat completion stream delta (OpenRouter reasoning_details / reasoning)."""
+    parts: list[str] = []
+    raw_r = getattr(delta, "reasoning", None)
+    if isinstance(raw_r, str) and raw_r.strip():
+        parts.append(raw_r)
+    details = getattr(delta, "reasoning_details", None)
+    if details is not None:
+        if isinstance(details, dict):
+            details_list: list[Any] = [details]
+        elif isinstance(details, list):
+            details_list = details
+        else:
+            details_list = []
+        for item in details_list:
+            if not isinstance(item, dict):
+                continue
+            typ = str(item.get("type") or "")
+            if typ == "reasoning.text":
+                t = item.get("text")
+                if isinstance(t, str) and t:
+                    parts.append(t)
+            elif typ == "reasoning.summary":
+                s = item.get("summary")
+                if isinstance(s, str) and s:
+                    parts.append(s)
+    out = "".join(parts)
+    return out.strip() or None
+
 
 BASE_SYSTEM_PROMPT = """You are a capable personal AI assistant with access to tools.
 
@@ -91,8 +138,9 @@ class ExecutionState(BaseModel):
     status: TaskStatus
     current_step: int
     total_steps: int
-    results: dict = {}
-    errors: list = []
+    results: dict = Field(default_factory=dict)
+    errors: list = Field(default_factory=list)
+    working_memory: list[dict[str, Any]] = Field(default_factory=list)
     start_time: datetime
     last_update: datetime
 
@@ -105,6 +153,24 @@ class AgentOrchestrator:
         self.active_tasks = {}
         self._cancelled_tasks: set[str] = set()
         self._active_conversations: dict[str, str] = {}  # conv_id → task_id
+        self._circuit_failure_threshold = 5
+        self._circuit_recovery_seconds = 60
+        self._circuit_failures = 0
+        self._circuit_open_until: Optional[datetime] = None
+
+    def _is_circuit_open(self) -> bool:
+        if self._circuit_open_until is None:
+            return False
+        return datetime.utcnow() < self._circuit_open_until
+
+    def _record_circuit_failure(self) -> None:
+        self._circuit_failures += 1
+        if self._circuit_failures >= self._circuit_failure_threshold:
+            self._circuit_open_until = datetime.utcnow() + timedelta(seconds=self._circuit_recovery_seconds)
+
+    def _record_circuit_success(self) -> None:
+        self._circuit_failures = 0
+        self._circuit_open_until = None
 
     async def run(
         self,
@@ -114,6 +180,7 @@ class AgentOrchestrator:
         user_id: Optional[str] = None,
         max_iterations: int = 10,
         conversation_id: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> tuple[str, Optional[str]]:
         """Execute agent synchronously. Returns (result, conversation_id)."""
         task_id = str(uuid.uuid4())
@@ -123,6 +190,7 @@ class AgentOrchestrator:
             query=query, context=context, tools=tools,
             user_id=user_id, max_iterations=max_iterations,
             task_id=task_id, conversation_id=conversation_id,
+            reasoning_effort=reasoning_effort,
         ):
             if event.type == EventType.TEXT_DELTA:
                 result += event.content or ""
@@ -139,6 +207,7 @@ class AgentOrchestrator:
         max_iterations: int = 10,
         task_id: Optional[str] = None,
         conversation_id: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> AsyncIterator[ExecutionEvent]:
         """
         ReAct loop — stream events as the agent reasons and acts.
@@ -308,6 +377,8 @@ class AgentOrchestrator:
                 # Check for stop request before each LLM call
                 if task_id in self._cancelled_tasks:
                     raise asyncio.CancelledError()
+                if self._is_circuit_open():
+                    raise RuntimeError("Circuit breaker open: retry after recovery window")
 
                 state.current_step = iteration + 1
                 state.last_update = datetime.utcnow()
@@ -323,15 +394,20 @@ class AgentOrchestrator:
 
                 while current_model:
                     try:
+                        create_kwargs: dict[str, Any] = {
+                            "model": current_model,
+                            "messages": messages,
+                            "stream": True,
+                            "stream_options": {"include_usage": True},
+                        }
+                        if tool_schemas:
+                            create_kwargs["tools"] = tool_schemas
+                            create_kwargs["tool_choice"] = "auto"
+                        reasoning_extra = _openrouter_reasoning_extra_body(reasoning_effort)
+                        if reasoning_extra:
+                            create_kwargs["extra_body"] = reasoning_extra
                         llm_task = asyncio.create_task(
-                            client.chat.completions.create(
-                                model=current_model,
-                                messages=messages,
-                                tools=tool_schemas if tool_schemas else None,
-                                tool_choice="auto" if tool_schemas else None,
-                                stream=True,
-                                stream_options={"include_usage": True},
-                            )
+                            client.chat.completions.create(**create_kwargs),
                         )
                         wait_seconds = 0
                         while True:
@@ -359,12 +435,14 @@ class AgentOrchestrator:
                         
                         if current_model != agent_model:
                             yield ExecutionEvent(type=EventType.STATUS, content=f"using fallback model: {current_model}")
+                        self._record_circuit_success()
                         break
 
                     except asyncio.CancelledError:
                         raise
 
                     except Exception as e:
+                        self._record_circuit_failure()
                         err = classify(e)
                         reason_key = err.reason.value
 
@@ -475,13 +553,28 @@ class AgentOrchestrator:
                             continue
 
                         piece = getattr(delta, "content", None)
+                        emitted_list_reasoning = False
                         if piece:
                             if isinstance(piece, list):
-                                text_piece = "".join(
-                                    p.get("text", "")
-                                    for p in piece
-                                    if isinstance(p, dict)
-                                )
+                                text_parts: list[str] = []
+                                for p in piece:
+                                    if not isinstance(p, dict):
+                                        continue
+                                    p_type = str(p.get("type") or "").lower()
+                                    if p_type in ("thinking", "reasoning"):
+                                        inner = p.get("thinking") or p.get("text")
+                                        if isinstance(inner, str) and inner:
+                                            emitted_list_reasoning = True
+                                            yield ExecutionEvent(
+                                                type=EventType.REASONING_DELTA,
+                                                content=inner,
+                                                model=agent_model,
+                                            )
+                                    elif p_type == "text":
+                                        t = p.get("text")
+                                        if isinstance(t, str):
+                                            text_parts.append(t)
+                                text_piece = "".join(text_parts)
                             else:
                                 text_piece = str(piece)
 
@@ -490,6 +583,15 @@ class AgentOrchestrator:
                                 yield ExecutionEvent(
                                     type=EventType.TEXT_DELTA,
                                     content=text_piece,
+                                    model=agent_model,
+                                )
+
+                        if not emitted_list_reasoning:
+                            reasoning_piece = _reasoning_delta_snippet(delta)
+                            if reasoning_piece:
+                                yield ExecutionEvent(
+                                    type=EventType.REASONING_DELTA,
+                                    content=reasoning_piece,
                                     model=agent_model,
                                 )
 
@@ -639,6 +741,12 @@ class AgentOrchestrator:
                     except json.JSONDecodeError:
                         args = {}
                     parsed_calls.append((tool_call["id"], name, args))
+                    state.working_memory.append({
+                        "iteration": iteration + 1,
+                        "type": "planned_tool_call",
+                        "tool": name,
+                        "args": args,
+                    })
                     yield ExecutionEvent(
                         type=EventType.TOOL_CALL,
                         tool_name=name,
@@ -664,7 +772,10 @@ class AgentOrchestrator:
                     ))
                     try:
                         result = await self.tools.call(name, **args)
-                        result_str = str(result)
+                        if isinstance(result, (dict, list)):
+                            result_str = json.dumps(result, default=str)
+                        else:
+                            result_str = str(result)
                         truncated_str = truncate_tail(result_str)
                         if truncated_str != result_str:
                             logger.warning(f"Tool '{name}' result truncated ({len(result_str)} chars → tail kept)")
@@ -698,8 +809,20 @@ class AgentOrchestrator:
 
                 for call_id, name, result_str, err in tool_results:
                     if err:
+                        state.working_memory.append({
+                            "iteration": iteration + 1,
+                            "type": "tool_error",
+                            "tool": name,
+                            "error": err,
+                        })
                         yield ExecutionEvent(type=EventType.ERROR, error=f"{name} failed: {err}")
                     else:
+                        state.working_memory.append({
+                            "iteration": iteration + 1,
+                            "type": "tool_result",
+                            "tool": name,
+                            "result_preview": result_str[:300],
+                        })
                         yield ExecutionEvent(
                             type=EventType.TOOL_RESULT,
                             tool_name=name,
@@ -944,3 +1067,28 @@ class AgentOrchestrator:
 
     def get_available_tools(self) -> list[str]:
         return self.tools.list_tools()
+
+    async def run_sub_agent(
+        self,
+        *,
+        query: str,
+        user_id: Optional[str] = None,
+        max_iterations: int = 6,
+        depth: int = 1,
+        max_depth: int = 2,
+    ) -> dict[str, Any]:
+        """
+        Agent-as-tool pattern: run a constrained nested agent task.
+        """
+        if depth > max_depth:
+            raise ValueError("sub-agent max depth exceeded")
+        result, conversation_id = await self.run(
+            query=query,
+            user_id=user_id,
+            max_iterations=max_iterations,
+        )
+        return {
+            "depth": depth,
+            "conversation_id": conversation_id,
+            "result": result,
+        }

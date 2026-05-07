@@ -18,6 +18,7 @@ from datetime import datetime
 
 from app.config import settings, CostTracker
 from app.agent.orchestrator import AgentOrchestrator
+from app.agent.orchestration_runtime import OrchestrationRuntime
 from app.database import init_db
 from app.models import CostStatus
 from app.utils.auth import verify_api_key
@@ -28,6 +29,7 @@ from app.routes.memory import router as memory_router
 from app.routes.conversations import router as conversations_router
 from app.routes.documents import router as documents_router
 from app.routes.analytics import router as analytics_router
+from app.routes.integrations import router as integrations_router
 
 # Configure logging
 logging.basicConfig(
@@ -52,6 +54,8 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Cost tracker running without database: {e}")
     app.state.cost_tracker = cost_tracker
     app.state.agent_orchestrator = AgentOrchestrator(cost_tracker=app.state.cost_tracker)
+    app.state.orchestration_runtime = OrchestrationRuntime(app.state.agent_orchestrator)
+    await app.state.orchestration_runtime.start()
 
     # Playwright check
     try:
@@ -72,6 +76,9 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down...")
     if hasattr(app.state, "cost_tracker"):
         await app.state.cost_tracker.close()
+    runtime = getattr(app.state, "orchestration_runtime", None)
+    if runtime is not None:
+        await runtime.stop()
     logger.info("✓ Clean shutdown")
 
 
@@ -115,6 +122,7 @@ app.include_router(memory_router)
 app.include_router(conversations_router)
 app.include_router(documents_router)
 app.include_router(analytics_router)
+app.include_router(integrations_router)
 
 
 # ============================================================================
