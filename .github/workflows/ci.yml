@@ -69,7 +69,7 @@ jobs:
         env:
           BACKEND_API_KEY: sk-agent-local-dev
           OPENROUTER_BUDGET_MONTHLY: "30.0"
-        run: pytest
+        run: pytest --cov=app --cov-report=term-missing --cov-report=xml
 
   frontend:
     name: Frontend Lint and Build

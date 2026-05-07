@@ -2,8 +2,10 @@
 Tool Registry - Manages all available tools the agent can use.
 """
 
+import json
 import logging
 import os
+import re
 import httpx
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
@@ -58,6 +60,9 @@ class ToolRegistry:
     
     def __init__(self):
         self.tools: Dict[str, Tool] = {}
+        self._dynamic_schemas: Dict[str, dict] = {}
+        self._mcp_tool_names: list[str] = []
+        self._sub_agent_registered: bool = False
         self._register_builtin_tools()
     
     def _register_builtin_tools(self):
@@ -109,7 +114,240 @@ class ToolRegistry:
             description="Search through uploaded documents for relevant information.",
             required_args=["query"],
         )
-    
+
+    @staticmethod
+    def _json_schema_to_openai_params(schema: Any) -> dict:
+        if not isinstance(schema, dict) or not schema:
+            return {"type": "object", "properties": {}, "required": []}
+        if schema.get("type") == "object":
+            return {
+                "type": "object",
+                "properties": schema.get("properties") or {},
+                "required": list(schema.get("required") or []),
+            }
+        return {"type": "object", "properties": {"_value": schema}, "required": []}
+
+    @staticmethod
+    def _sanitize_mcp_function_name(server_key: str, tool_name: str) -> str:
+        raw = re.sub(r"[^a-zA-Z0-9_]", "_", f"mcp_{server_key}_{tool_name}")
+        if raw and raw[0].isdigit():
+            raw = "mcp_" + raw
+        return raw[:80]
+
+    async def load_mcp_tools(self) -> None:
+        """
+        Register tools from MCP servers listed in agent_pillars.yaml (tools.mcp).
+        Uses HTTP JSON-RPC against {url}/rpc — minimal transport; expand for stdio/SSE later.
+        """
+        from app.tools.mcp_client import MCPClient
+        from app.utils.pillar_loader import get_pillar_config
+
+        for name in self._mcp_tool_names:
+            self.tools.pop(name, None)
+            self._dynamic_schemas.pop(name, None)
+        self._mcp_tool_names = []
+
+        cfg = get_pillar_config()
+        mcp_cfg = (cfg.get("tools") or {}).get("mcp") or {}
+        if not mcp_cfg.get("enabled"):
+            return
+
+        for srv in mcp_cfg.get("servers") or []:
+            if not isinstance(srv, dict):
+                continue
+            skey = str(srv.get("name") or "server").strip() or "server"
+            base_url = str(srv.get("url") or "").strip().rstrip("/")
+            if not base_url:
+                logger.warning("MCP server %s skipped — no url", skey)
+                continue
+
+            client = MCPClient(base_url)
+            try:
+                remote_tools = await client.list_tools()
+            except Exception as e:
+                logger.warning("MCP tools/list failed for %s (%s): %s", skey, base_url, e)
+                continue
+
+            for rt in remote_tools:
+                if not isinstance(rt, dict):
+                    continue
+                tn = rt.get("name")
+                if not tn:
+                    continue
+                reg_name = self._sanitize_mcp_function_name(skey, str(tn))
+                if reg_name in self.tools:
+                    reg_name = f"{reg_name}_alt"
+
+                desc = str(rt.get("description") or f"MCP tool {tn} ({skey})")[:800]
+                input_schema = rt.get("inputSchema") or rt.get("input_schema") or {}
+                oa = self._json_schema_to_openai_params(input_schema)
+                required = list(oa.get("required") or [])
+
+                def _make_handler(url: str, mcp_name: str):
+                    async def _handler(**kwargs: Any) -> dict[str, Any]:
+                        cl = MCPClient(url)
+                        return await cl.call_tool(mcp_name, kwargs)
+
+                    return _handler
+
+                handler = _make_handler(base_url, str(tn))
+                self.register(
+                    name=reg_name,
+                    func=handler,
+                    description=desc,
+                    required_args=required,
+                )
+                self._mcp_tool_names.append(reg_name)
+                self._dynamic_schemas[reg_name] = {
+                    "type": "function",
+                    "function": {
+                        "name": reg_name,
+                        "description": desc,
+                        "parameters": oa,
+                    },
+                }
+        if self._mcp_tool_names:
+            logger.info("Registered %s MCP tool(s)", len(self._mcp_tool_names))
+
+    def register_sub_agent_tool(self, orchestrator: Any) -> None:
+        """Expose nested agent runs as delegate_sub_agent (call once after orchestrator exists)."""
+        if self._sub_agent_registered:
+            return
+        self._sub_agent_registered = True
+
+        async def _delegate(*, query: str, depth: int = 1) -> str:
+            out = await orchestrator.run_sub_agent(
+                query=query,
+                depth=int(depth),
+                max_depth=2,
+            )
+            return json.dumps(out, ensure_ascii=False)
+
+        desc = (
+            "Delegate a focused sub-task to a nested agent run (fresh ReAct loop, depth-limited). "
+            "Use for isolated research, coding, or analysis that should not pollute the main thread."
+        )
+        self.register(
+            name="delegate_sub_agent",
+            func=_delegate,
+            description=desc,
+            required_args=["query"],
+        )
+        self._dynamic_schemas["delegate_sub_agent"] = {
+            "type": "function",
+            "function": {
+                "name": "delegate_sub_agent",
+                "description": desc,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Self-contained sub-task for the nested agent",
+                        },
+                        "depth": {
+                            "type": "integer",
+                            "description": "Nesting depth (1–2)",
+                            "default": 1,
+                        },
+                    },
+                    "required": ["query"],
+                },
+            },
+        }
+
+    async def tool_health_snapshot(self) -> list[dict[str, Any]]:
+        """Lightweight readiness checks for builtins + configured MCP servers."""
+        from app.tools.mcp_client import MCPClient
+        from app.utils.pillar_loader import get_pillar_config
+
+        rows: list[dict[str, Any]] = []
+
+        # web_search — SearXNG or Brave
+        searx_ok = False
+        searx_err = ""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as hc:
+                r = await hc.get(
+                    f"{settings.SEARXNG_URL}/search",
+                    params={"q": "__health__", "format": "json"},
+                )
+                searx_ok = r.status_code < 500
+        except Exception as e:
+            searx_err = str(e)
+        brave_configured = bool(settings.BRAVE_SEARCH_API_KEY)
+        ws_ok = searx_ok or brave_configured
+        rows.append(
+            {
+                "tool": "web_search",
+                "ok": ws_ok,
+                "detail": "searxng" if searx_ok else ("brave_key_set" if brave_configured else searx_err or "no_provider"),
+            }
+        )
+
+        browser_ok = False
+        berr = ""
+        try:
+            from playwright.async_api import async_playwright  # noqa: F401
+
+            browser_ok = True
+        except Exception as e:
+            berr = str(e)
+        rows.append({"tool": "browser_automation", "ok": browser_ok, "detail": "playwright_import" if browser_ok else berr})
+
+        rows.append(
+            {
+                "tool": "code_execution",
+                "ok": bool(settings.E2B_API_KEY),
+                "detail": "e2b_configured" if settings.E2B_API_KEY else "E2B_API_KEY unset",
+            }
+        )
+
+        ws_path = Path(settings.AGENT_WORKSPACE_DIR).expanduser()
+        try:
+            ws_path.mkdir(parents=True, exist_ok=True)
+            w_ok = os.access(ws_path, os.W_OK)
+        except Exception:
+            w_ok = False
+        rows.append({"tool": "file_operations", "ok": w_ok, "detail": str(ws_path)})
+
+        rows.append({"tool": "api_call", "ok": True, "detail": "always_available"})
+
+        doc_ok = bool(settings.OPENAI_API_KEY)
+        rows.append(
+            {
+                "tool": "search_documents",
+                "ok": doc_ok,
+                "detail": "openai_embeddings" if doc_ok else "fulltext_only_without_openai",
+            }
+        )
+
+        if "delegate_sub_agent" in self.tools:
+            rows.append({"tool": "delegate_sub_agent", "ok": True, "detail": "registered"})
+
+        mcp_cfg = (get_pillar_config().get("tools") or {}).get("mcp") or {}
+        if mcp_cfg.get("enabled"):
+            for srv in mcp_cfg.get("servers") or []:
+                if not isinstance(srv, dict):
+                    continue
+                skey = str(srv.get("name") or "server")
+                url = str(srv.get("url") or "").strip().rstrip("/")
+                if not url:
+                    continue
+                try:
+                    h = await MCPClient(url).health_check()
+                    rows.append(
+                        {
+                            "tool": f"mcp:{skey}",
+                            "ok": bool(h.get("ok")),
+                            "detail": h,
+                        }
+                    )
+                except Exception as e:
+                    rows.append({"tool": f"mcp:{skey}", "ok": False, "detail": str(e)})
+
+        return rows
+
     def register(
         self,
         name: str,
@@ -260,7 +498,15 @@ class ToolRegistry:
         }
 
         names = allowed if allowed is not None else list(self.tools.keys())
-        return [SCHEMAS[n] for n in names if n in SCHEMAS and n in self.tools]
+        schemas: list[dict] = []
+        for n in names:
+            if n not in self.tools:
+                continue
+            if n in SCHEMAS:
+                schemas.append(SCHEMAS[n])
+            elif n in self._dynamic_schemas:
+                schemas.append(self._dynamic_schemas[n])
+        return schemas
 
     def get_tool_info(self, tool_name: str) -> dict:
         """Get information about a tool."""

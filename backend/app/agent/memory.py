@@ -572,6 +572,31 @@ class MemoryManager:
             logger.warning(f"Memory decay update failed: {e}")
             return 0
 
+    async def consolidate_duplicate_memories(self) -> int:
+        """
+        Delete rows with identical (user_id, category, content), keeping the newest id.
+        Returns number of rows removed.
+        """
+        if not _db.db_pool:
+            return 0
+        try:
+            async with _db.db_pool.acquire() as conn:
+                result = await conn.execute(
+                    """
+                    DELETE FROM memory AS a
+                    USING memory AS b
+                    WHERE a.id < b.id
+                      AND a.user_id = b.user_id
+                      AND a.category = b.category
+                      AND a.content = b.content
+                    """
+                )
+            parts = str(result).split()
+            return int(parts[-1]) if parts else 0
+        except Exception as e:
+            logger.warning(f"Memory consolidation failed: {e}")
+            return 0
+
     async def delete(self, memory_id: str) -> bool:
         """Delete a specific memory by ID."""
         if not _db.db_pool:

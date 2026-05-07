@@ -10,8 +10,10 @@ Flow:
 
 import asyncio
 import json
+import re
 import uuid
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, AsyncIterator, Optional
 from pydantic import BaseModel, Field
@@ -106,10 +108,116 @@ Guidelines:
 - If a tool fails, try a different approach or answer from your own knowledge."""
 
 
+@dataclass
+class PlanResult:
+    """Structured output from the planning step (cheap model)."""
+
+    plan_markdown: str
+    plan_confidence: float  # 0.0–1.0
+    fallback_if_wrong: str = ""
+    risk_notes: str = ""
+
+
+def _coerce_plan_confidence(value: Any) -> float:
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        return 0.5
+    if x > 1.0:
+        x = x / 100.0
+    return max(0.0, min(1.0, x))
+
+
+def _parse_plan_llm_output(raw: str) -> PlanResult:
+    """Parse JSON plan from model output; fall back to treating the whole reply as plan_markdown."""
+    raw = (raw or "").strip()
+    if not raw:
+        return PlanResult("", 0.45, "", "")
+
+    def _from_dict(data: dict[str, Any]) -> PlanResult:
+        md = str(data.get("plan_markdown") or "").strip()
+        if not md:
+            md = raw
+        return PlanResult(
+            plan_markdown=md,
+            plan_confidence=_coerce_plan_confidence(data.get("plan_confidence", 50)),
+            fallback_if_wrong=str(data.get("fallback_if_wrong") or "").strip(),
+            risk_notes=str(data.get("risk_notes") or "").strip(),
+        )
+
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            return _from_dict(data)
+    except json.JSONDecodeError:
+        pass
+
+    m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
+    if m:
+        try:
+            data = json.loads(m.group(1))
+            if isinstance(data, dict):
+                return _from_dict(data)
+        except json.JSONDecodeError:
+            pass
+
+    return PlanResult(plan_markdown=raw, plan_confidence=0.5, fallback_if_wrong="", risk_notes="")
+
+
+def _extract_done_when_line(plan_markdown: str) -> Optional[str]:
+    for line in (plan_markdown or "").splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("done when:"):
+            return stripped
+    return None
+
+
+def _format_progress_checkpoint(state: "ExecutionState") -> str:
+    """Summarize in-flight execution for goal alignment (only when there is tool-round memory)."""
+    if not state.working_memory:
+        return ""
+
+    lines: list[str] = []
+    if state.goal:
+        lines.append(f"User goal: {state.goal}")
+    if state.done_when:
+        lines.append(f"Success criterion: {state.done_when}")
+
+    lines.append("Recent trace (most recent last):")
+    for entry in state.working_memory[-8:]:
+        it = entry.get("iteration", "?")
+        typ = entry.get("type", "")
+        if typ == "planned_tool_call":
+            lines.append(f"  - Round {it}: planned tool {entry.get('tool')} with args {entry.get('args')!r}")
+        elif typ == "tool_result":
+            prev = (entry.get("result_preview") or "")[:160]
+            lines.append(f"  - Round {it}: {entry.get('tool')} result preview: {prev!r}")
+        elif typ == "tool_error":
+            lines.append(f"  - Round {it}: {entry.get('tool')} error: {entry.get('error')}")
+        else:
+            lines.append(f"  - Round {it}: {entry}")
+
+    lines.append(
+        "Assess progress toward the success criterion. If blocked or off-track, adjust your approach "
+        "or ask one clarifying question — do not continue blindly."
+    )
+    return "\n".join(lines)
+
+
+def _compose_system_with_progress(system_base: str, state: "ExecutionState") -> str:
+    body = _format_progress_checkpoint(state)
+    if not body:
+        return system_base
+    return f"{system_base}\n\n<progress_checkpoint>\n{body}\n</progress_checkpoint>"
+
+
 def _build_system_prompt(
     retrieved_context: Optional[str],
     extra_context: Optional[str],
     persona_prompt: str,
+    *,
+    budget_remaining: Optional[float] = None,
+    monthly_budget_usd: Optional[float] = None,
 ) -> str:
     system = BASE_SYSTEM_PROMPT
     if persona_prompt:
@@ -130,6 +238,15 @@ def _build_system_prompt(
         )
     if extra_context:
         system += f"\n\nAdditional context: {extra_context}"
+
+    if budget_remaining is not None and monthly_budget_usd is not None:
+        system += (
+            "\n\n<fiscal_context>\n"
+            f"Monthly budget (USD): ${float(monthly_budget_usd):.2f}. "
+            f"Estimated remaining this month: ${float(budget_remaining):.2f}.\n"
+            "When remaining is low, prefer cheaper approaches, fewer API/tool calls, and avoid unnecessary searches.\n"
+            "</fiscal_context>"
+        )
     return system
 
 
@@ -141,6 +258,8 @@ class ExecutionState(BaseModel):
     results: dict = Field(default_factory=dict)
     errors: list = Field(default_factory=list)
     working_memory: list[dict[str, Any]] = Field(default_factory=list)
+    goal: Optional[str] = None
+    done_when: Optional[str] = None
     start_time: datetime
     last_update: datetime
 
@@ -218,6 +337,7 @@ class AgentOrchestrator:
             status=TaskStatus.RUNNING,
             current_step=0,
             total_steps=max_iterations,
+            goal=query,
             start_time=datetime.utcnow(),
             last_update=datetime.utcnow(),
         )
@@ -342,28 +462,50 @@ class AgentOrchestrator:
             combined_context = context or ""
             if tool_hint:
                 combined_context = (combined_context + "\n\n" + tool_hint).strip()
-            system = _build_system_prompt(retrieved_context, combined_context or None, persona_prompt)
+            system_base = _build_system_prompt(
+                retrieved_context,
+                combined_context or None,
+                persona_prompt,
+                budget_remaining=budget_remaining,
+                monthly_budget_usd=float(settings.OPENROUTER_BUDGET_MONTHLY),
+            )
 
             # ── Plan-then-execute for qualifying multi-step queries ───
             plan_prefix = ""
             if self.router.should_plan(query, has_tools=bool(tool_schemas), has_history=bool(history)):
                 yield ExecutionEvent(type=EventType.STATUS, content="planning...")
-                plan_prefix = await self._make_plan(query, context, agent_model, run_client)
+                plan_result = await self._make_plan(query, context, agent_model, run_client)
+                plan_prefix = plan_result.plan_markdown
                 if plan_prefix:
                     yield ExecutionEvent(type=EventType.THINKING, content=f"Plan:\n{plan_prefix}")
-                    # Extract the "Done when:" line and add it to the system prompt
-                    # so the agent has an explicit, verifiable stopping condition.
-                    for line in plan_prefix.splitlines():
-                        if line.strip().lower().startswith("done when:"):
-                            system += (
-                                f"\n\n<success_criteria>\n{line.strip()}\n"
-                                "Stop using tools and write your final response as soon as "
-                                "this condition is met.\n</success_criteria>"
-                            )
-                            break
+                    done_line = _extract_done_when_line(plan_prefix)
+                    if done_line:
+                        state.done_when = done_line
+                        system_base += (
+                            f"\n\n<success_criteria>\n{done_line}\n"
+                            "Stop using tools and write your final response as soon as "
+                            "this condition is met.\n</success_criteria>"
+                        )
+                    meta_lines = [
+                        f"plan_confidence: {plan_result.plan_confidence:.0%}",
+                    ]
+                    if plan_result.fallback_if_wrong:
+                        meta_lines.append(f"fallback_if_wrong: {plan_result.fallback_if_wrong}")
+                    if plan_result.risk_notes:
+                        meta_lines.append(f"risk_notes: {plan_result.risk_notes}")
+                    system_base += "\n\n<plan_meta>\n" + "\n".join(meta_lines) + "\n</plan_meta>"
+
+                    asyncio.create_task(decision_tracker.log_decision(
+                        task_id=task_id,
+                        decision_point="planning",
+                        chosen="accepted_plan",
+                        reasoning=(plan_result.risk_notes or plan_result.plan_markdown[:1000]),
+                        confidence=plan_result.plan_confidence,
+                        user_id=user_id,
+                    ))
 
             # System + history + new user message (with plan prepended if available)
-            messages = [{"role": "system", "content": system}]
+            messages = [{"role": "system", "content": _compose_system_with_progress(system_base, state)}]
             messages.extend(history)
             user_content = f"[Plan]\n{plan_prefix}\n\n[Task]\n{query}" if plan_prefix else query
             messages.append({"role": "user", "content": user_content})
@@ -394,11 +536,14 @@ class AgentOrchestrator:
 
                 while current_model:
                     try:
+                        sampling = self.router.sampling_params_for_model(current_model)
                         create_kwargs: dict[str, Any] = {
                             "model": current_model,
                             "messages": messages,
                             "stream": True,
                             "stream_options": {"include_usage": True},
+                            "temperature": sampling["temperature"],
+                            "top_p": sampling["top_p"],
                         }
                         if tool_schemas:
                             create_kwargs["tools"] = tool_schemas
@@ -481,7 +626,7 @@ class AgentOrchestrator:
                             await conversation_manager.compact(conversation_id, summary=summary)
                             history = await conversation_manager.load_messages(conversation_id)
                             # Rebuild messages with compacted history
-                            messages = [{"role": "system", "content": system}]
+                            messages = [{"role": "system", "content": _compose_system_with_progress(system_base, state)}]
                             messages.extend(history)
                             messages.append({"role": "user", "content": user_content})
                             client = _openrouter_client()
@@ -834,6 +979,8 @@ class AgentOrchestrator:
                         "content": result_str,
                     })
 
+                messages[0]["content"] = _compose_system_with_progress(system_base, state)
+
                 yield ExecutionEvent(
                     type=EventType.STATUS,
                     content=f"processing results (round {iteration + 1})...",
@@ -877,23 +1024,26 @@ class AgentOrchestrator:
             if conversation_id and self._active_conversations.get(conversation_id) == task_id:
                 del self._active_conversations[conversation_id]
 
-    async def _make_plan(self, query: str, context: Optional[str], model: str, client: Optional[AsyncOpenAI] = None) -> str:
+    async def _make_plan(
+        self,
+        query: str,
+        context: Optional[str],
+        model: str,
+        client: Optional[AsyncOpenAI] = None,
+    ) -> PlanResult:
         """
-        Ask the model to produce a concise numbered plan with explicit success criteria.
-        Uses the cheap model to keep cost low — plan is short and structured.
-
-        Output format (enforced by prompt):
-            1. Step one
-            2. Step two
-            ...
-            Done when: <verifiable completion condition>
+        Ask the cheap model for a JSON plan: markdown steps + confidence + fallback hints.
+        Parses with _parse_plan_llm_output (tolerates prose-only replies).
         """
         plan_prompt = (
-            "You are a planning assistant. Given the task below, produce:\n"
-            "1. A short numbered step-by-step plan (max 5 steps) of what needs to be done.\n"
-            "2. A final line starting with exactly 'Done when:' that states a specific, "
-            "verifiable condition that signals the task is complete.\n\n"
-            "Be specific and concise. Do not execute anything — only plan.\n\n"
+            "You are a planning assistant. Reply with ONLY a single JSON object "
+            "(no markdown fences, no commentary) using exactly these keys:\n"
+            '- "plan_markdown": string — a short numbered plan (max 5 steps) plus a final line '
+            'starting exactly with "Done when: " giving a verifiable completion condition.\n'
+            '- "plan_confidence": number from 0 to 100 — how confident you are the plan will succeed.\n'
+            '- "fallback_if_wrong": string — one line on what to try if the plan fails or key assumptions are wrong.\n'
+            '- "risk_notes": string — brief unknowns or risks (omit or leave empty).\n\n'
+            "Do not execute anything — only plan.\n\n"
             f"Task: {query}"
         )
         if context:
@@ -904,13 +1054,14 @@ class AgentOrchestrator:
             resp = await c.chat.completions.create(
                 model=settings.DEFAULT_MODEL_SIMPLE,
                 messages=[{"role": "user", "content": plan_prompt}],
-                max_tokens=250,
+                max_tokens=420,
                 temperature=0,
             )
-            return (resp.choices[0].message.content or "").strip()
+            raw = (resp.choices[0].message.content or "").strip()
+            return _parse_plan_llm_output(raw)
         except Exception as e:
             logger.warning(f"Planning step failed: {e}")
-            return ""
+            return PlanResult("", 0.45, "", "")
 
     async def _summarize_history(self, history: list[dict], model: str, client: Optional[AsyncOpenAI] = None) -> str:
         """

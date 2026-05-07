@@ -54,6 +54,8 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Cost tracker running without database: {e}")
     app.state.cost_tracker = cost_tracker
     app.state.agent_orchestrator = AgentOrchestrator(cost_tracker=app.state.cost_tracker)
+    await app.state.agent_orchestrator.tools.load_mcp_tools()
+    app.state.agent_orchestrator.tools.register_sub_agent_tool(app.state.agent_orchestrator)
     app.state.orchestration_runtime = OrchestrationRuntime(app.state.agent_orchestrator)
     await app.state.orchestration_runtime.start()
 

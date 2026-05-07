@@ -452,6 +452,22 @@ async def stop_agent(
     return {"status": "stopped", "task_id": task_id_str}
 
 
+@router.get("/tools/health")
+@limiter.limit("60/minute")
+async def agent_tools_health(
+    request: Request,
+    api_key: str = Depends(verify_api_key),
+):
+    """Readiness snapshot for built-in tools and configured MCP servers."""
+    orchestrator = _orchestrator(request)
+    checks = await orchestrator.tools.tool_health_snapshot()
+    return {
+        "checks": checks,
+        "healthy_count": sum(1 for c in checks if c.get("ok")),
+        "total": len(checks),
+    }
+
+
 @router.get("/tools")
 async def list_tools(request: Request, api_key: str = Depends(verify_api_key)):
     """List available tools."""

@@ -16,8 +16,21 @@ from typing import Optional
 
 from app.config import settings
 from app.agent import cost_learning
+from app.utils.pillar_loader import get_pillar_config
 
 logger = logging.getLogger(__name__)
+
+# Router internal tier keys → agent_pillars.yaml llm.model_tiers keys
+_ROUTER_TIER_TO_YAML: dict[str, str] = {
+    "free": "free",
+    "simple": "simple",
+    "balanced": "simple",
+    "coding": "coding",
+    "research": "research",
+    "advanced": "advanced",
+    "premium": "premium",
+    "agent": "agent",
+}
 
 
 class ModelRouter:
@@ -318,6 +331,34 @@ class ModelRouter:
 
     def get_available_models(self) -> dict:
         return self.MODELS
+
+    def tier_key_for_model(self, model: str) -> Optional[str]:
+        """Return router tier key (e.g. agent, simple) for a concrete model id."""
+        for tier_key, meta in self.MODELS.items():
+            if meta.get("model") == model:
+                return tier_key
+        return None
+
+    def sampling_params_for_model(self, model: str) -> dict[str, float]:
+        """
+        temperature / top_p from agent_pillars.yaml for the tier that owns this model.
+        Falls back to sensible defaults if yaml is missing or tier unknown.
+        """
+        defaults = {"temperature": 0.7, "top_p": 0.9}
+        tier = self.tier_key_for_model(model)
+        yaml_tier = _ROUTER_TIER_TO_YAML.get(tier or "", "simple")
+        cfg = get_pillar_config()
+        tiers = (cfg.get("llm") or {}).get("model_tiers") or {}
+        spec = tiers.get(yaml_tier) or tiers.get("simple") or {}
+        try:
+            temperature = float(spec.get("temperature", defaults["temperature"]))
+        except (TypeError, ValueError):
+            temperature = defaults["temperature"]
+        try:
+            top_p = float(spec.get("top_p", defaults["top_p"]))
+        except (TypeError, ValueError):
+            top_p = defaults["top_p"]
+        return {"temperature": temperature, "top_p": top_p}
 
     def get_next_fallback(self, current_model: str) -> Optional[str]:
         """Get next model in fallback chain after current fails."""

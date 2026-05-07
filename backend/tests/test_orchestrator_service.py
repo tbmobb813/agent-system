@@ -1,7 +1,14 @@
 from types import SimpleNamespace
 from datetime import datetime
 
-from app.agent.orchestrator import AgentOrchestrator, ExecutionState
+from app.agent.orchestrator import (
+    AgentOrchestrator,
+    ExecutionState,
+    PlanResult,
+    _compose_system_with_progress,
+    _format_progress_checkpoint,
+    _parse_plan_llm_output,
+)
 from app.models import EventType
 from app.models import TaskStatus
 
@@ -9,8 +16,10 @@ from app.models import TaskStatus
 class _FakeCompletions:
     def __init__(self, responses):
         self._responses = responses
+        self.calls: list = []
 
     async def create(self, **kwargs):
+        self.calls.append(kwargs)
         if not self._responses:
             raise RuntimeError('No fake responses configured')
         return self._responses.pop(0)
@@ -356,7 +365,15 @@ async def test_stream_includes_plan_and_success_criteria_for_first_complex_tool_
         return ''
 
     async def _plan(*args, **kwargs):
-        return '1. Read docs\n2. Call tools\nDone when: user gets a clear final answer with cited results'
+        return PlanResult(
+            plan_markdown=(
+                '1. Read docs\n2. Call tools\n'
+                'Done when: user gets a clear final answer with cited results'
+            ),
+            plan_confidence=0.82,
+            fallback_if_wrong='Ask the user for product constraints.',
+            risk_notes='Subjective recommendation.',
+        )
 
     monkeypatch.setattr('app.agent.orchestrator._openrouter_client', lambda: recording_client)
     monkeypatch.setattr('app.agent.orchestrator.conversation_manager.get_or_create', _get_or_create)
@@ -386,6 +403,10 @@ async def test_stream_includes_plan_and_success_criteria_for_first_complex_tool_
     assert messages[0]['role'] == 'system'
     assert '<success_criteria>' in messages[0]['content']
     assert 'Done when: user gets a clear final answer with cited results' in messages[0]['content']
+    assert '<plan_meta>' in messages[0]['content']
+    assert 'plan_confidence: 82%' in messages[0]['content']
+    assert 'fallback_if_wrong:' in messages[0]['content']
+    assert '<fiscal_context>' in messages[0]['content']
     assert messages[-1]['role'] == 'user'
     assert messages[-1]['content'].startswith('[Plan]')
 
@@ -508,6 +529,126 @@ async def test_run_sub_agent_rejects_depth_over_limit():
         assert False, "Expected ValueError"
     except ValueError as e:
         assert "max depth" in str(e)
+
+
+async def test_stream_plan_tool_then_final_updates_progress_checkpoint(monkeypatch):
+    """Plan JSON + tool round: second streamed LLM call includes <progress_checkpoint> on system."""
+    plan_json = (
+        '{"plan_markdown": "1. Search\\n2. Read\\nDone when: synthesized answer delivered", '
+        '"plan_confidence": 90, "fallback_if_wrong": "narrow the question", '
+        '"risk_notes": ""}'
+    )
+    responses = [
+        _response_with_text(plan_json),
+        _response_with_tool_call('web_search', '{"query":"cloud compare"}'),
+        _response_with_text('Here is the comparison.'),
+    ]
+
+    async def _get_or_create(conversation_id, user_id=None):
+        return 'conv-pt-check'
+
+    async def _load_messages(conversation_id):
+        return []
+
+    async def _estimate_tokens(conversation_id):
+        return 0
+
+    async def _save_turn(**kwargs):
+        return None
+
+    async def _save_interaction(**kwargs):
+        return None
+
+    async def _build_context(query, user_id=None):
+        return ''
+
+    async def _tool_call(name, **kwargs):
+        return {'snippet': 'data'}
+
+    fake = _FakeClient(responses)
+    monkeypatch.setattr('app.agent.orchestrator._openrouter_client', lambda: fake)
+    monkeypatch.setattr('app.agent.orchestrator.conversation_manager.get_or_create', _get_or_create)
+    monkeypatch.setattr('app.agent.orchestrator.conversation_manager.load_messages', _load_messages)
+    monkeypatch.setattr('app.agent.orchestrator.conversation_manager.estimate_tokens', _estimate_tokens)
+    monkeypatch.setattr('app.agent.orchestrator.conversation_manager.save_turn', _save_turn)
+    monkeypatch.setattr('app.agent.orchestrator.memory_manager.save_interaction', _save_interaction)
+    monkeypatch.setattr('app.agent.orchestrator.context_builder.build', _build_context)
+
+    orch = AgentOrchestrator(cost_tracker=None)
+    monkeypatch.setattr(orch.tools, 'get_tool_schemas', lambda selected=None: [{'type': 'function'}])
+    monkeypatch.setattr(orch.tools, 'call', _tool_call)
+
+    events = [
+        event async for event in orch.stream(
+            query='Compare two cloud architectures and recommend one',
+            user_id='u1',
+            max_iterations=5,
+        )
+    ]
+    assert events[-1].type == EventType.DONE
+
+    completions = fake.chat.completions.calls
+    assert len(completions) == 3
+    first_stream = completions[1]['messages'][0]['content']
+    assert '<plan_meta>' in first_stream
+    assert '<fiscal_context>' in first_stream
+    second_stream_sys = completions[2]['messages'][0]['content']
+    assert '<progress_checkpoint>' in second_stream_sys
+
+
+def test_parse_plan_llm_output_valid_json():
+    raw = (
+        '{"plan_markdown": "1. Step\\nDone when: ok", '
+        '"plan_confidence": 75, "fallback_if_wrong": "retry", "risk_notes": "n/a"}'
+    )
+    pr = _parse_plan_llm_output(raw)
+    assert abs(pr.plan_confidence - 0.75) < 1e-6
+    assert 'Done when:' in pr.plan_markdown
+    assert pr.fallback_if_wrong == 'retry'
+
+
+def test_parse_plan_llm_output_invalid_json_fallback_to_prose():
+    pr = _parse_plan_llm_output('Plain text only\nDone when: criterion met')
+    assert pr.plan_markdown.startswith('Plain text')
+    assert pr.plan_confidence == 0.5
+
+
+def test_format_progress_checkpoint_skip_when_memory_empty():
+    st = ExecutionState(
+        task_id='tchk',
+        status=TaskStatus.RUNNING,
+        current_step=0,
+        total_steps=3,
+        goal='hello',
+        start_time=datetime.utcnow(),
+        last_update=datetime.utcnow(),
+    )
+    assert _format_progress_checkpoint(st) == ''
+
+
+def test_compose_system_with_progress_after_tool_round():
+    st = ExecutionState(
+        task_id='tcp',
+        status=TaskStatus.RUNNING,
+        current_step=1,
+        total_steps=3,
+        goal='Get weather',
+        done_when='Done when: temp returned',
+        start_time=datetime.utcnow(),
+        last_update=datetime.utcnow(),
+        working_memory=[
+            {
+                'iteration': 1,
+                'type': 'tool_result',
+                'tool': 'web_search',
+                'result_preview': 'warm',
+            }
+        ],
+    )
+    assembled = _compose_system_with_progress('CORE_SYSTEM', st)
+    assert assembled.startswith('CORE_SYSTEM')
+    assert '<progress_checkpoint>' in assembled
+    assert 'web_search' in assembled
 
 
 def test_execution_state_initializes_working_memory_independently():

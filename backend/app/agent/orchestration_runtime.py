@@ -80,6 +80,21 @@ class OrchestrationRuntime:
             callback=_decay_job,
         )
 
+        async def _consolidation_job() -> None:
+            from app.utils.pillar_loader import get_pillar_config
+
+            life = (get_pillar_config().get("memory") or {}).get("lifecycle") or {}
+            if not life.get("consolidation_enabled"):
+                return
+            removed = await memory_manager.consolidate_duplicate_memories()
+            logger.info("Memory consolidation removed %s duplicate row(s)", removed)
+
+        self.add_interval_job(
+            name="memory_consolidation",
+            interval_seconds=7 * 24 * 60 * 60,
+            callback=_consolidation_job,
+        )
+
         self._worker_task = asyncio.create_task(self._queue_worker())
         self._scheduler_task = asyncio.create_task(self._scheduler_loop())
 
