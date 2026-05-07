@@ -195,6 +195,11 @@ class AgentOrchestrator:
             persona_prompt = await asyncio.to_thread(build_persona_prompt, user_settings)
 
             # All model selection goes through the router — single authority.
+            # Early cancellation guard — honour stop() calls that arrived before
+            # the run started, before we create any clients or background tasks.
+            if task_id in self._cancelled_tasks:
+                raise asyncio.CancelledError()
+
             agent_model = self.router.select_for_run(
                 query,
                 has_tools=bool(tool_schemas),
