@@ -4,7 +4,7 @@ Pydantic models for the AI agent system.
 
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
-from typing import Optional, Any, Literal
+from typing import Optional, Literal
 from enum import Enum
 
 

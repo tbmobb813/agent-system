@@ -20,7 +20,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 
 from app.config import settings
-from app.models import AgentRequest, AgentResponse, TaskStatus
+from app.models import AgentRequest, AgentResponse
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.streaming import format_sse_event

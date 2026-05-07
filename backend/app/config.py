@@ -7,7 +7,6 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from datetime import datetime, timedelta
 import calendar
-import os
 import time
 import logging
 from typing import Optional

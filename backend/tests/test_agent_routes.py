@@ -197,7 +197,6 @@ class TimeoutStreamOrchestrator:
 async def test_stream_agent_times_out_cleanly(monkeypatch):
     original_orch = getattr(app.state, "agent_orchestrator", None)
     original_cost = getattr(app.state, "cost_tracker", None)
-    original_timeout = app.state if False else None
 
     app.state.agent_orchestrator = TimeoutStreamOrchestrator()
     app.state.cost_tracker = DummyCostTracker(estimate=0.01, spent=0.0)

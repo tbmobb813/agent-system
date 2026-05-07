@@ -5,7 +5,6 @@ Document routes — upload, list, delete, and search ingested documents.
 import logging
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Query
-from fastapi.responses import JSONResponse
 
 from app.utils.auth import verify_api_key
 from app.database import fetch, fetchrow, fetchval, execute

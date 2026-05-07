@@ -494,6 +494,7 @@ function formatWebSearchToolSummary(raw: string): string | null {
 }
 
 function ToolResultEvent({ event }: { event: StreamEvent }) {
+  const [open, setOpen] = useState(false)
   const text = String(event.tool_result ?? '')
   const webSummary =
     (event.tool_name === 'web_search' || event.tool_name == null || event.tool_name === '')
@@ -508,7 +509,6 @@ function ToolResultEvent({ event }: { event: StreamEvent }) {
     )
   }
 
-  const [open, setOpen] = useState(false)
   const truncated = text.length > 300
   const preview = truncated ? text.slice(0, 300) + '…' : text
   return (

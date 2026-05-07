@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from app.agent.memory import MemoryManager, _classify_insight
