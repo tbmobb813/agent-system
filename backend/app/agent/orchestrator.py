@@ -33,6 +33,7 @@ from app.agent import decision_tracker
 from app.agent.reflection import post_task_reflection
 from app.agent import skill_registry
 from app.agent.tool_learning import get_tool_hint, learn_tool_chains
+from app.agent.cost_learning import refresh_efficiency_cache
 
 
 def _openrouter_client() -> AsyncOpenAI:
@@ -186,9 +187,10 @@ class AgentOrchestrator:
                 get_tool_hint(query),
             )
 
-            # Background learning jobs — throttled internally, never block.
+            # Background learning jobs — all throttled internally, never block.
             asyncio.create_task(skill_registry.update_skills())
             asyncio.create_task(learn_tool_chains())
+            asyncio.create_task(refresh_efficiency_cache())
 
             persona_prompt = await asyncio.to_thread(build_persona_prompt, user_settings)
 
