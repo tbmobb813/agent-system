@@ -2,6 +2,7 @@
 Analytics routes for cost, performance, and tool usage insights.
 """
 
+import json
 from calendar import monthrange
 from datetime import datetime
 
@@ -10,6 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.config import settings
 from app.database import fetch, fetchval
 from app.utils.auth import verify_api_key
+from app.agent.skill_registry import get_agent_profile
+from app.agent.cost_learning import get_efficiency_scores
+from app.agent.ab_testing import run_ab_test
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -251,3 +255,168 @@ async def get_budget_alerts(days: int = 30, api_key: str = Depends(verify_api_ke
         "delta": projected_total - budget,
         "alerts": alerts,
     }
+
+
+@router.get("/skills")
+async def get_skills_profile(api_key: str = Depends(verify_api_key)):
+    """Agent skill profile: competency levels and growth areas by task type."""
+    return await get_agent_profile()
+
+
+@router.get("/decisions")
+async def get_decision_analytics(days: int = 30, api_key: str = Depends(verify_api_key)):
+    """Decision patterns: most common choices and confidence by decision point."""
+    safe_days = min(max(days, 1), 180)
+    try:
+        rows = await fetch(
+            """
+            SELECT
+                decision_point,
+                chosen,
+                COUNT(*) AS times_chosen,
+                AVG(confidence) AS avg_confidence,
+                COUNT(*) FILTER (WHERE outcome = 'success') AS successes,
+                COUNT(*) FILTER (WHERE outcome = 'failure') AS failures
+            FROM decisions
+            WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
+            GROUP BY decision_point, chosen
+            ORDER BY decision_point, times_chosen DESC
+            """,
+            safe_days,
+        )
+    except Exception:
+        return {"days": safe_days, "decisions": []}
+
+    decisions = [
+        {
+            "decision_point": r["decision_point"],
+            "chosen": r["chosen"],
+            "times_chosen": int(r["times_chosen"] or 0),
+            "avg_confidence": round(float(r["avg_confidence"] or 0), 3),
+            "successes": int(r["successes"] or 0),
+            "failures": int(r["failures"] or 0),
+        }
+        for r in rows
+    ]
+    return {"days": safe_days, "decisions": decisions}
+
+
+@router.get("/errors")
+async def get_error_analytics(days: int = 30, api_key: str = Depends(verify_api_key)):
+    """Error pattern breakdown: frequency, models affected, recovery outcomes."""
+    safe_days = min(max(days, 1), 180)
+    try:
+        rows = await fetch(
+            """
+            SELECT
+                error_type,
+                recovery_strategy,
+                model_used,
+                COUNT(*) AS occurrences,
+                COUNT(*) FILTER (WHERE recovery_successful = true) AS recovered
+            FROM error_patterns
+            WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
+            GROUP BY error_type, recovery_strategy, model_used
+            ORDER BY occurrences DESC
+            LIMIT 50
+            """,
+            safe_days,
+        )
+    except Exception:
+        return {"days": safe_days, "patterns": []}
+
+    patterns = [
+        {
+            "error_type": r["error_type"],
+            "recovery_strategy": r["recovery_strategy"],
+            "model_used": r["model_used"],
+            "occurrences": int(r["occurrences"] or 0),
+            "recovered": int(r["recovered"] or 0),
+        }
+        for r in rows
+    ]
+    return {"days": safe_days, "patterns": patterns}
+
+
+@router.get("/cost-efficiency")
+async def get_cost_efficiency(api_key: str = Depends(verify_api_key)):
+    """
+    Quality-per-dollar breakdown by model, derived from task_feedback signals.
+    Returns the in-memory efficiency cache populated by cost_learning.
+    """
+    scores = get_efficiency_scores()
+    if not scores:
+        return {"note": "No efficiency data yet — run tasks and give feedback to populate.", "models": []}
+
+    ranked = sorted(scores.values(), key=lambda s: s.efficiency, reverse=True)
+    return {
+        "models": [
+            {
+                "model": s.model,
+                "avg_cost_per_task": round(s.avg_cost, 6),
+                "thumbs_up_rate": round(s.thumbs_up_rate, 3),
+                "efficiency_score": round(s.efficiency, 2),
+                "sample_count": s.sample_count,
+                "last_updated": s.last_updated.isoformat(),
+            }
+            for s in ranked
+        ]
+    }
+
+
+@router.get("/ab-tests")
+async def get_ab_tests(limit: int = 20, api_key: str = Depends(verify_api_key)):
+    """Recent A/B test results with winner breakdown."""
+    safe_limit = min(max(limit, 1), 100)
+    try:
+        rows = await fetch(
+            """
+            SELECT task_description, approach_a, approach_b,
+                   result_a, result_b, winner, win_reason, created_at
+            FROM ab_tests
+            ORDER BY created_at DESC
+            LIMIT $1
+            """,
+            safe_limit,
+        )
+    except Exception:
+        return {"tests": []}
+
+    tests = []
+    for r in rows:
+        ra = json.loads(r["result_a"] or "{}")
+        rb = json.loads(r["result_b"] or "{}")
+        tests.append({
+            "task": r["task_description"],
+            "approach_a": json.loads(r["approach_a"] or "{}"),
+            "approach_b": json.loads(r["approach_b"] or "{}"),
+            "result_a": {"cost": ra.get("cost"), "time_ms": ra.get("time_ms"), "success": ra.get("success")},
+            "result_b": {"cost": rb.get("cost"), "time_ms": rb.get("time_ms"), "success": rb.get("success")},
+            "winner": r["winner"],
+            "win_reason": r["win_reason"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        })
+    return {"tests": tests}
+
+
+@router.post("/ab-tests/run")
+async def trigger_ab_test(
+    task: str,
+    model_a: str,
+    model_b: str,
+    system_prompt_a: str = "",
+    system_prompt_b: str = "",
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Run the same task against two model configurations and record the winner.
+    Results are persisted to ab_tests and returned immediately.
+    """
+    if not task.strip():
+        raise HTTPException(status_code=400, detail="task must not be empty")
+    result = await run_ab_test(
+        task_description=task,
+        approach_a={"model": model_a, "system_prompt": system_prompt_a},
+        approach_b={"model": model_b, "system_prompt": system_prompt_b},
+    )
+    return result

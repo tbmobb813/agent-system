@@ -29,6 +29,11 @@ from app.agent.error_classifier import classify, FailoverReason
 from app.tools.tool_registry import ToolRegistry
 from app.utils.persona_loader import build_persona_prompt
 from app.utils.settings_store import load_settings_dict
+from app.agent import decision_tracker
+from app.agent.reflection import post_task_reflection
+from app.agent import skill_registry
+from app.agent.tool_learning import get_tool_hint, learn_tool_chains
+from app.agent.cost_learning import refresh_efficiency_cache
 
 
 def _openrouter_client() -> AsyncOpenAI:
@@ -168,21 +173,52 @@ class AgentOrchestrator:
             async def _get_settings() -> dict:
                 return await asyncio.to_thread(load_settings_dict)
 
-            budget_remaining, conversation_id, retrieved_context, user_settings = await asyncio.gather(
+            (
+                budget_remaining,
+                conversation_id,
+                retrieved_context,
+                user_settings,
+                tool_hint,
+            ) = await asyncio.gather(
                 _get_budget(),
                 conversation_manager.get_or_create(conversation_id, user_id=user_id),
                 context_builder.build(query, user_id=user_id),
                 _get_settings(),
+                get_tool_hint(query),
             )
+
+            # Background learning jobs — all throttled internally, never block.
+            asyncio.create_task(skill_registry.update_skills())
+            asyncio.create_task(learn_tool_chains())
+            asyncio.create_task(refresh_efficiency_cache())
 
             persona_prompt = await asyncio.to_thread(build_persona_prompt, user_settings)
 
             # All model selection goes through the router — single authority.
+            # Early cancellation guard — honour stop() calls that arrived before
+            # the run started, before we create any clients or background tasks.
+            if task_id in self._cancelled_tasks:
+                raise asyncio.CancelledError()
+
             agent_model = self.router.select_for_run(
                 query,
                 has_tools=bool(tool_schemas),
                 budget_remaining=budget_remaining,
             )
+
+            # Log model selection decision (fire-and-forget).
+            asyncio.create_task(decision_tracker.log_decision(
+                task_id=task_id,
+                decision_point="model_selection",
+                chosen=agent_model,
+                reasoning=f"router: has_tools={bool(tool_schemas)}, budget_remaining={budget_remaining:.2f}",
+                confidence=0.85,
+                options=list(self.router.FALLBACK_CHAIN),
+                user_id=user_id,
+            ))
+
+            # Accumulate tool names used during this run for reflection.
+            tools_used: list[str] = []
 
             # Reuse one client across planning, main loop, and summary calls.
             run_client = _openrouter_client()
@@ -232,7 +268,12 @@ class AgentOrchestrator:
                 yield ExecutionEvent(type=EventType.STATUS, content="searching memory and documents...")
 
             # Build initial system prompt with optional persona and retrieved context.
-            system = _build_system_prompt(retrieved_context, context, persona_prompt)
+            # Append tool hint after extra_context so it reads as a soft suggestion,
+            # not a hard constraint.
+            combined_context = context or ""
+            if tool_hint:
+                combined_context = (combined_context + "\n\n" + tool_hint).strip()
+            system = _build_system_prompt(retrieved_context, combined_context or None, persona_prompt)
 
             # ── Plan-then-execute for qualifying multi-step queries ───
             plan_prefix = ""
@@ -326,6 +367,27 @@ class AgentOrchestrator:
                     except Exception as e:
                         err = classify(e)
                         reason_key = err.reason.value
+
+                        # Log error pattern (fire-and-forget).
+                        if _db.db_pool:
+                            recovery = (
+                                "abort" if err.is_fatal
+                                else "compress" if err.should_compress
+                                else "rotate_model" if err.should_rotate_model
+                                else "retry"
+                            )
+                            asyncio.create_task(_db.execute(
+                                """
+                                INSERT INTO error_patterns
+                                    (error_type, task_id, model_used, query_snippet, recovery_strategy)
+                                VALUES ($1, $2, $3, $4, $5)
+                                """,
+                                err.reason.value,
+                                task_id,
+                                current_model,
+                                query[:200],
+                                recovery,
+                            ))
 
                         if err.is_fatal:
                             # Auth / billing / bad request — surface immediately
@@ -536,6 +598,18 @@ class AgentOrchestrator:
                     else:
                         logger.debug("Skipping memory extraction for low-value turn")
 
+                    # Post-task reflection + outcome marking (fire-and-forget).
+                    asyncio.create_task(post_task_reflection(
+                        task_id=task_id,
+                        query=query,
+                        result=final_text,
+                        success=True,
+                        model_used=agent_model,
+                        tools_used=list(tools_used),
+                        user_id=user_id,
+                    ))
+                    asyncio.create_task(decision_tracker.mark_outcome(task_id, "success"))
+
                     break  # Done
 
                 # ── Tool calls → execute each one ─────────────────────────────
@@ -579,6 +653,15 @@ class AgentOrchestrator:
                     err_str = None
                     truncated = False
                     result_str = ""
+                    tools_used.append(name)
+                    asyncio.create_task(decision_tracker.log_decision(
+                        task_id=task_id,
+                        decision_point="tool_selection",
+                        chosen=name,
+                        reasoning="agent selected via ReAct loop",
+                        confidence=0.75,
+                        user_id=user_id,
+                    ))
                     try:
                         result = await self.tools.call(name, **args)
                         result_str = str(result)
@@ -660,6 +743,7 @@ class AgentOrchestrator:
             state.status = TaskStatus.FAILED
             state.errors.append(str(e))
             logger.error(f"Agent execution failed: {e}", exc_info=True)
+            asyncio.create_task(decision_tracker.mark_outcome(task_id, "failure"))
             yield ExecutionEvent(type=EventType.ERROR, error=f"Execution failed: {e}")
 
         finally:

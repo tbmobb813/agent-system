@@ -15,6 +15,7 @@ import logging
 from typing import Optional
 
 from app.config import settings
+from app.agent import cost_learning
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,11 @@ class ModelRouter:
         }
         tier = tier_map.get(query_type, "balanced")
         model = self.MODELS[tier]["model"]
+
+        # Apply efficiency bias: swap to a cheaper model if it has proven
+        # better quality-per-dollar in past runs (reads in-memory cache, no I/O).
+        alternatives = [m["model"] for m in self.MODELS.values() if m["model"] != model]
+        model = cost_learning.suggest_model(model, alternatives)
 
         logger.info(f"Routing → {tier} ({model}) for query type: {query_type}")
         return model
