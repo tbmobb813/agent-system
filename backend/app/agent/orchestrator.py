@@ -29,6 +29,8 @@ from app.agent.error_classifier import classify, FailoverReason
 from app.tools.tool_registry import ToolRegistry
 from app.utils.persona_loader import build_persona_prompt
 from app.utils.settings_store import load_settings_dict
+from app.agent import decision_tracker
+from app.agent.reflection import post_task_reflection
 
 
 def _openrouter_client() -> AsyncOpenAI:
@@ -183,6 +185,20 @@ class AgentOrchestrator:
                 has_tools=bool(tool_schemas),
                 budget_remaining=budget_remaining,
             )
+
+            # Log model selection decision (fire-and-forget).
+            asyncio.create_task(decision_tracker.log_decision(
+                task_id=task_id,
+                decision_point="model_selection",
+                chosen=agent_model,
+                reasoning=f"router: has_tools={bool(tool_schemas)}, budget_remaining={budget_remaining:.2f}",
+                confidence=0.85,
+                options=list(self.router.FALLBACK_CHAIN),
+                user_id=user_id,
+            ))
+
+            # Accumulate tool names used during this run for reflection.
+            tools_used: list[str] = []
 
             # Reuse one client across planning, main loop, and summary calls.
             run_client = _openrouter_client()
@@ -536,6 +552,18 @@ class AgentOrchestrator:
                     else:
                         logger.debug("Skipping memory extraction for low-value turn")
 
+                    # Post-task reflection + outcome marking (fire-and-forget).
+                    asyncio.create_task(post_task_reflection(
+                        task_id=task_id,
+                        query=query,
+                        result=final_text,
+                        success=True,
+                        model_used=agent_model,
+                        tools_used=list(tools_used),
+                        user_id=user_id,
+                    ))
+                    asyncio.create_task(decision_tracker.mark_outcome(task_id, "success"))
+
                     break  # Done
 
                 # ── Tool calls → execute each one ─────────────────────────────
@@ -579,6 +607,15 @@ class AgentOrchestrator:
                     err_str = None
                     truncated = False
                     result_str = ""
+                    tools_used.append(name)
+                    asyncio.create_task(decision_tracker.log_decision(
+                        task_id=task_id,
+                        decision_point="tool_selection",
+                        chosen=name,
+                        reasoning="agent selected via ReAct loop",
+                        confidence=0.75,
+                        user_id=user_id,
+                    ))
                     try:
                         result = await self.tools.call(name, **args)
                         result_str = str(result)
@@ -660,6 +697,7 @@ class AgentOrchestrator:
             state.status = TaskStatus.FAILED
             state.errors.append(str(e))
             logger.error(f"Agent execution failed: {e}", exc_info=True)
+            asyncio.create_task(decision_tracker.mark_outcome(task_id, "failure"))
             yield ExecutionEvent(type=EventType.ERROR, error=f"Execution failed: {e}")
 
         finally:
