@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.config import settings
 from app.database import fetch, fetchval
 from app.utils.auth import verify_api_key
+from app.agent.skill_registry import get_agent_profile
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -251,3 +252,84 @@ async def get_budget_alerts(days: int = 30, api_key: str = Depends(verify_api_ke
         "delta": projected_total - budget,
         "alerts": alerts,
     }
+
+
+@router.get("/skills")
+async def get_skills_profile(api_key: str = Depends(verify_api_key)):
+    """Agent skill profile: competency levels and growth areas by task type."""
+    return await get_agent_profile()
+
+
+@router.get("/decisions")
+async def get_decision_analytics(days: int = 30, api_key: str = Depends(verify_api_key)):
+    """Decision patterns: most common choices and confidence by decision point."""
+    safe_days = min(max(days, 1), 180)
+    try:
+        rows = await fetch(
+            """
+            SELECT
+                decision_point,
+                chosen,
+                COUNT(*) AS times_chosen,
+                AVG(confidence) AS avg_confidence,
+                COUNT(*) FILTER (WHERE outcome = 'success') AS successes,
+                COUNT(*) FILTER (WHERE outcome = 'failure') AS failures
+            FROM decisions
+            WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
+            GROUP BY decision_point, chosen
+            ORDER BY decision_point, times_chosen DESC
+            """,
+            safe_days,
+        )
+    except Exception:
+        return {"days": safe_days, "decisions": []}
+
+    decisions = [
+        {
+            "decision_point": r["decision_point"],
+            "chosen": r["chosen"],
+            "times_chosen": int(r["times_chosen"] or 0),
+            "avg_confidence": round(float(r["avg_confidence"] or 0), 3),
+            "successes": int(r["successes"] or 0),
+            "failures": int(r["failures"] or 0),
+        }
+        for r in rows
+    ]
+    return {"days": safe_days, "decisions": decisions}
+
+
+@router.get("/errors")
+async def get_error_analytics(days: int = 30, api_key: str = Depends(verify_api_key)):
+    """Error pattern breakdown: frequency, models affected, recovery outcomes."""
+    safe_days = min(max(days, 1), 180)
+    try:
+        rows = await fetch(
+            """
+            SELECT
+                error_type,
+                recovery_strategy,
+                model_used,
+                COUNT(*) AS occurrences,
+                COUNT(*) FILTER (WHERE recovery_successful = true) AS recovered
+            FROM error_patterns
+            WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
+            GROUP BY error_type, recovery_strategy, model_used
+            ORDER BY occurrences DESC
+            LIMIT 50
+            """,
+            safe_days,
+        )
+    except Exception:
+        return {"days": safe_days, "patterns": []}
+
+    patterns = [
+        {
+            "error_type": r["error_type"],
+            "recovery_strategy": r["recovery_strategy"],
+            "model_used": r["model_used"],
+            "occurrences": int(r["occurrences"] or 0),
+            "recovered": int(r["recovered"] or 0),
+        }
+        for r in rows
+    ]
+    return {"days": safe_days, "patterns": patterns}
