@@ -59,6 +59,25 @@ class DummyStreamOrchestrator:
         return self.stop_ok
 
 
+class DummyRuntime:
+    def __init__(self):
+        self._items = []
+
+    async def enqueue_task(self, payload: dict):
+        self._items.append(payload)
+
+    class _Queue:
+        def __init__(self, parent):
+            self.parent = parent
+
+        def qsize(self):
+            return len(self.parent._items)
+
+    @property
+    def queue(self):
+        return self._Queue(self)
+
+
 async def test_run_agent_returns_completed_response():
     original_orch = getattr(app.state, "agent_orchestrator", None)
     original_cost = getattr(app.state, "cost_tracker", None)
@@ -356,6 +375,27 @@ async def test_list_models_returns_routing_info():
     payload = response.json()
     assert payload['routing_strategy'] == 'complexity_based'
     assert isinstance(payload['models'], dict)
+
+
+async def test_enqueue_agent_task_queues_payload():
+    original_runtime = getattr(app.state, "orchestration_runtime", None)
+    app.state.orchestration_runtime = DummyRuntime()
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.post(
+                '/agent/enqueue',
+                headers={'Authorization': 'Bearer sk-agent-local-dev'},
+                json={'query': 'run this later', 'user_id': 'u1'},
+            )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload['status'] == 'queued'
+        assert payload['queue_size'] == 1
+    finally:
+        app.state.orchestration_runtime = original_runtime
 
 
 def test_agent_request_reasoning_effort_normalizes():

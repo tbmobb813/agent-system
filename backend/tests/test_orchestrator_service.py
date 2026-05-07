@@ -1,7 +1,9 @@
 from types import SimpleNamespace
+from datetime import datetime
 
-from app.agent.orchestrator import AgentOrchestrator
+from app.agent.orchestrator import AgentOrchestrator, ExecutionState
 from app.models import EventType
+from app.models import TaskStatus
 
 
 class _FakeCompletions:
@@ -482,3 +484,50 @@ async def test_stream_skips_memory_extraction_for_transactional_followup(monkeyp
 
     assert events[-1].type == EventType.DONE
     assert saved['memory'] == 0
+
+
+async def test_run_sub_agent_returns_nested_result(monkeypatch):
+    orch = AgentOrchestrator(cost_tracker=None)
+
+    async def _fake_run(**kwargs):
+        return "nested ok", "conv-sub"
+
+    monkeypatch.setattr(orch, "run", _fake_run)
+
+    result = await orch.run_sub_agent(query="do nested task", user_id="u1")
+
+    assert result["result"] == "nested ok"
+    assert result["conversation_id"] == "conv-sub"
+    assert result["depth"] == 1
+
+
+async def test_run_sub_agent_rejects_depth_over_limit():
+    orch = AgentOrchestrator(cost_tracker=None)
+    try:
+        await orch.run_sub_agent(query="x", depth=3, max_depth=2)
+        assert False, "Expected ValueError"
+    except ValueError as e:
+        assert "max depth" in str(e)
+
+
+def test_execution_state_initializes_working_memory_independently():
+    first = ExecutionState(
+        task_id='t1',
+        status=TaskStatus.RUNNING,
+        current_step=0,
+        total_steps=2,
+        start_time=datetime.utcnow(),
+        last_update=datetime.utcnow(),
+    )
+    second = ExecutionState(
+        task_id='t2',
+        status=TaskStatus.RUNNING,
+        current_step=0,
+        total_steps=2,
+        start_time=datetime.utcnow(),
+        last_update=datetime.utcnow(),
+    )
+
+    first.working_memory.append({'note': 'x'})
+
+    assert second.working_memory == []

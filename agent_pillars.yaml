@@ -1,0 +1,421 @@
+# Agent System — 8-Pillar Configuration
+# This file is the single source of truth for your agent's architecture.
+# Each pillar maps directly to the 8-pillar framework.
+# The validator script (agent_pillar_validator.py) reads this and checks compliance.
+
+# ═══════════════════════════════════════════════════════════════════
+# PILLAR 1: Define Purpose & Scope
+# ═══════════════════════════════════════════════════════════════════
+purpose:
+  use_case: "Personal AI co-worker for research, coding, analysis, and automation"
+  user_type: "single_user"  # single_user | multi_user
+  
+  success_criteria:
+    max_monthly_budget_usd: 30.0
+    target_p95_latency_ms: 5000
+    target_uptime_percent: 99.0
+    track_task_completion: true
+  
+  constraints:
+    vps_cpu: 2
+    vps_ram_gb: 8
+    max_concurrent_tasks: 3
+    max_iterations_per_task: 10
+  
+  out_of_scope:
+    - "Generating harmful or illegal content"
+    - "Autonomous financial transactions"
+    - "Accessing systems without explicit authorization"
+    - "Long-running tasks exceeding 5 minutes without user confirmation"
+
+# ═══════════════════════════════════════════════════════════════════
+# PILLAR 2: System Prompt Design
+# ═══════════════════════════════════════════════════════════════════
+system_prompt:
+  persona:
+    name: "Agent"
+    role: "Personal AI co-worker"
+    personality: "Direct, concise, proactive. Explains reasoning when asked."
+    communication_style: "Professional but approachable"
+  
+  goals:
+    - "Complete user tasks efficiently with minimal cost"
+    - "Use the right tool for the job — don't over-engineer"
+    - "Remember user preferences and apply them consistently"
+    - "Be transparent about limitations and costs"
+  
+  instructions:
+    - "Use tools when you need current info or external interaction"
+    - "Answer from knowledge when confident — don't search unnecessarily"
+    - "Show your work: explain tool choices briefly"
+    - "If a task is ambiguous, ask one clarifying question max"
+  
+  guardrails:
+    - "Never exceed budget limits — check remaining budget before expensive operations"
+    - "Refuse tasks outside defined scope (see purpose.out_of_scope)"
+    - "Don't execute code that modifies system files outside sandbox"
+    - "Flag when confidence is low rather than guessing"
+    - "Cap tool call chains at max_iterations_per_task"
+  
+  # Dynamic sections injected at runtime
+  dynamic_context:
+    inject_user_preferences: true   # From memory system
+    inject_recent_memories: true    # Relevant past context
+    inject_budget_status: true      # Current spend / remaining
+    inject_document_context: true   # Relevant uploaded docs
+  
+  versioning:
+    current_version: "1.0.0"
+    track_prompt_versions: true
+    log_prompt_with_results: true
+
+# ═══════════════════════════════════════════════════════════════════
+# PILLAR 3: Choose LLM
+# ═══════════════════════════════════════════════════════════════════
+llm:
+  provider: "openrouter"
+  
+  model_tiers:
+    free:
+      model: "meta-llama/llama-3.1-8b-instruct:free"
+      temperature: 0.7
+      top_p: 0.9
+      use_for: ["greetings", "simple_chat", "quick_facts"]
+      supports_tools: false
+    
+    simple:
+      model: "deepseek/deepseek-chat"
+      temperature: 0.4
+      top_p: 0.9
+      use_for: ["lookups", "translations", "summaries"]
+      supports_tools: false
+    
+    coding:
+      model: "deepseek/deepseek-coder"
+      temperature: 0.2
+      top_p: 0.95
+      use_for: ["code_generation", "debugging", "refactoring"]
+      supports_tools: false
+    
+    research:
+      model: "google/gemini-flash-1.5"
+      temperature: 0.3
+      top_p: 0.9
+      use_for: ["long_context", "document_analysis", "deep_research"]
+      supports_tools: true
+    
+    agent:
+      model: "anthropic/claude-haiku"
+      temperature: 0.3
+      top_p: 0.9
+      use_for: ["tool_use", "react_loop", "multi_step_tasks"]
+      supports_tools: true
+    
+    advanced:
+      model: "anthropic/claude-haiku"
+      temperature: 0.4
+      top_p: 0.9
+      use_for: ["complex_reasoning", "quality_writing"]
+      supports_tools: true
+    
+    premium:
+      model: "anthropic/claude-sonnet-4"
+      temperature: 0.5
+      top_p: 0.9
+      use_for: ["best_quality", "critical_tasks"]
+      supports_tools: true
+  
+  fallback_chain:
+    - "anthropic/claude-haiku"
+    - "google/gemini-flash-1.5"
+    - "deepseek/deepseek-chat"
+    - "meta-llama/llama-3.1-8b-instruct:free"
+  
+  context_window:
+    max_tokens: 16000
+    compaction_trigger_percent: 75
+    keep_recent_turns: 4
+    summarization_model: "deepseek/deepseek-chat"
+  
+  tracking:
+    log_latency_per_model: true
+    log_tokens_per_request: true
+    enable_ab_testing: false  # Future: compare model quality
+
+# ═══════════════════════════════════════════════════════════════════
+# PILLAR 4: Tools & Integrations
+# ═══════════════════════════════════════════════════════════════════
+tools:
+  builtin:
+    web_search:
+      enabled: true
+      provider: "tavily"
+      api_key_env: "TAVILY_API_KEY"
+      health_check: true
+    
+    browser_automation:
+      enabled: false  # Set true when Playwright is configured
+      provider: "playwright"
+      sandbox: true
+      health_check: true
+    
+    code_execution:
+      enabled: false  # Set true when E2B key is configured
+      provider: "e2b"
+      api_key_env: "E2B_API_KEY"
+      timeout_seconds: 30
+      health_check: true
+    
+    file_operations:
+      enabled: true
+      sandbox_path: "/tmp/agent-workspace"
+      max_file_size_mb: 10
+    
+    api_call:
+      enabled: true
+      timeout_seconds: 15
+      max_response_size_kb: 500
+    
+    search_documents:
+      enabled: true
+      provider: "pgvector"
+  
+  mcp:
+    enabled: false  # Enable when MCP client is implemented
+    servers: []
+    # Example:
+    # - name: "github"
+    #   url: "https://mcp.github.com/sse"
+    # - name: "slack"
+    #   url: "https://mcp.slack.com/sse"
+  
+  agent_as_tool:
+    enabled: false  # Enable when sub-agent pattern is implemented
+    max_depth: 2    # Prevent infinite sub-agent recursion
+  
+  custom_functions:
+    directory: "backend/app/tools/custom/"
+    auto_register: true
+
+# ═══════════════════════════════════════════════════════════════════
+# PILLAR 5: Memory Systems
+# ═══════════════════════════════════════════════════════════════════
+memory:
+  episodic:
+    enabled: true
+    provider: "postgresql"
+    # Conversation-level memory with temporal context
+    track_session_id: true
+    track_timestamps: true
+    searchable_by_time_range: false  # TODO: implement
+  
+  working_memory:
+    enabled: false  # TODO: implement scratchpad in ExecutionState
+    max_items: 20
+    scope: "per_session"
+  
+  vector_database:
+    enabled: true
+    provider: "pgvector"
+    embedding_model: "text-embedding-3-small"
+    embedding_dimensions: 1536
+    similarity_metric: "cosine"
+    api_key_env: "OPENAI_API_KEY"
+  
+  structured_db:
+    enabled: true
+    provider: "postgresql"
+    tables:
+      - "memory"
+      - "conversations"
+      - "messages"
+      - "tasks"
+      - "cost_tracking"
+  
+  file_storage:
+    enabled: true
+    upload_path: "uploads/"
+    max_size_mb: 50
+    supported_types: ["pdf", "docx", "txt", "csv", "json", "md"]
+  
+  lifecycle:
+    auto_save_insights: true          # Extract insights after each conversation
+    insight_extraction_model: "deepseek/deepseek-chat"
+    decay_enabled: false              # TODO: implement relevance decay
+    decay_half_life_days: 90
+    consolidation_enabled: false      # TODO: merge facts into patterns
+    consolidation_frequency: "weekly"
+    max_memories_per_user: 10000
+    prune_below_relevance: 0.1
+
+# ═══════════════════════════════════════════════════════════════════
+# PILLAR 6: Orchestration
+# ═══════════════════════════════════════════════════════════════════
+orchestration:
+  execution:
+    mode: "react"  # react | plan_and_execute | simple
+    max_iterations: 10
+    parallel_tool_calls: true
+    plan_complex_queries: true
+    complexity_threshold: "keyword"  # keyword | llm_classifier
+  
+  triggers:
+    scheduled_tasks:
+      enabled: false  # TODO: implement APScheduler/Celery
+      # Example future tasks:
+      # - name: "daily_briefing"
+      #   cron: "0 8 * * *"
+      #   query: "Summarize today's AI news"
+      # - name: "memory_consolidation"
+      #   cron: "0 2 * * 0"  # Weekly Sunday 2am
+      #   action: "consolidate_memories"
+    
+    event_driven:
+      enabled: false
+      # Example future triggers:
+      # - event: "document_uploaded"
+      #   action: "auto_index_document"
+      # - event: "budget_80_percent"
+      #   action: "notify_user"
+  
+  message_queue:
+    enabled: false  # TODO: implement Redis queue
+    provider: "redis"
+    deferred_execution: false
+    dead_letter_logging: false
+  
+  agent2agent:
+    enabled: false  # TODO: implement sub-agent spawning
+    max_depth: 2
+    communication: "direct"  # direct | queue
+  
+  error_handling:
+    model_fallback: true
+    max_retries: 3
+    retry_backoff: "exponential"  # exponential | linear | none
+    circuit_breaker:
+      enabled: false
+      failure_threshold: 5
+      recovery_timeout_seconds: 60
+    dead_letter:
+      enabled: false
+      table: "failed_tasks"
+
+# ═══════════════════════════════════════════════════════════════════
+# PILLAR 7: User Interface
+# ═══════════════════════════════════════════════════════════════════
+user_interface:
+  chat_interface:
+    enabled: true
+    provider: "nextjs"
+    features:
+      - "real_time_streaming"
+      - "dark_light_mode"
+      - "cost_display"
+      - "history_browser"
+      - "settings_panel"
+      - "document_upload"
+  
+  web_app:
+    enabled: true
+    url: "http://localhost:3003"
+    pages:
+      - "dashboard"
+      - "agent"
+      - "history"
+      - "costs"
+      - "settings"
+      - "documents"
+      - "commands"
+  
+  api_endpoint:
+    enabled: true
+    provider: "fastapi"
+    docs_url: "/docs"
+    endpoints:
+      - "POST /agent/run"
+      - "POST /agent/stream"
+      - "POST /agent/stop"
+      - "GET /agent/tools"
+      - "GET /agent/models"
+      - "GET /health"
+      - "GET /status/costs"
+  
+  telegram_bot:
+    enabled: true
+    commands:
+      - "/ask"
+      - "/code"
+      - "/analyze"
+      - "/history"
+      - "/status"
+      - "/help"
+  
+  slack_discord_bot:
+    enabled: false  # Future
+  
+  feedback:
+    enabled: false  # TODO: implement
+    types: ["thumbs_up_down", "text_comment", "rating_1_5"]
+    store_in: "response_feedback"
+
+# ═══════════════════════════════════════════════════════════════════
+# PILLAR 8: Testing & Evals
+# ═══════════════════════════════════════════════════════════════════
+testing:
+  unit_tests:
+    enabled: false  # TODO: implement
+    framework: "pytest"
+    test_directory: "backend/tests/"
+    required_modules:
+      - "test_router"        # Query classification correctness
+      - "test_memory"        # Save/search/context retrieval
+      - "test_tools"         # Registry, schema gen, error handling
+      - "test_orchestrator"  # ReAct loop termination, failure handling
+      - "test_prompts"       # Prompt builder output validation
+    min_coverage_percent: 70
+  
+  latency_testing:
+    enabled: false  # TODO: instrument
+    track_p50: true
+    track_p95: true
+    track_p99: true
+    store_in: "latency_metrics"
+    alert_p95_above_ms: 5000
+  
+  quality_metrics:
+    enabled: false  # TODO: implement
+    judge_model: "anthropic/claude-haiku"
+    dimensions:
+      - "helpfulness"
+      - "accuracy"
+      - "conciseness"
+      - "tool_usage_appropriateness"
+    score_range: [1, 5]
+    store_in: "response_quality"
+    sample_rate: 0.1  # Score 10% of responses
+  
+  eval_harness:
+    enabled: false  # TODO: implement
+    test_cases_path: "backend/evals/test_cases.json"
+    # Test case format:
+    # {
+    #   "id": "routing_001",
+    #   "input": "What is 2+2?",
+    #   "expected_model_tier": "free",
+    #   "expected_tool_calls": [],
+    #   "expected_output_contains": ["4"]
+    # }
+    run_on: "manual"  # manual | push | nightly
+  
+  ci_cd:
+    enabled: false  # TODO: set up GitHub Actions
+    provider: "github_actions"
+    run_on_push: true
+    block_merge_on_failure: true
+    workflow_file: ".github/workflows/test.yml"
+  
+  iterate_and_improve:
+    prompt_versioning: true
+    track_quality_over_time: true
+    feedback_loop: false  # TODO: connect user feedback to eval scores

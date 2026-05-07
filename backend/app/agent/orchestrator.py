@@ -12,9 +12,9 @@ import asyncio
 import json
 import uuid
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, AsyncIterator, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 
 from app.config import settings
@@ -133,8 +133,9 @@ class ExecutionState(BaseModel):
     status: TaskStatus
     current_step: int
     total_steps: int
-    results: dict = {}
-    errors: list = []
+    results: dict = Field(default_factory=dict)
+    errors: list = Field(default_factory=list)
+    working_memory: list[dict[str, Any]] = Field(default_factory=list)
     start_time: datetime
     last_update: datetime
 
@@ -147,6 +148,24 @@ class AgentOrchestrator:
         self.active_tasks = {}
         self._cancelled_tasks: set[str] = set()
         self._active_conversations: dict[str, str] = {}  # conv_id → task_id
+        self._circuit_failure_threshold = 5
+        self._circuit_recovery_seconds = 60
+        self._circuit_failures = 0
+        self._circuit_open_until: Optional[datetime] = None
+
+    def _is_circuit_open(self) -> bool:
+        if self._circuit_open_until is None:
+            return False
+        return datetime.utcnow() < self._circuit_open_until
+
+    def _record_circuit_failure(self) -> None:
+        self._circuit_failures += 1
+        if self._circuit_failures >= self._circuit_failure_threshold:
+            self._circuit_open_until = datetime.utcnow() + timedelta(seconds=self._circuit_recovery_seconds)
+
+    def _record_circuit_success(self) -> None:
+        self._circuit_failures = 0
+        self._circuit_open_until = None
 
     async def run(
         self,
@@ -317,6 +336,8 @@ class AgentOrchestrator:
                 # Check for stop request before each LLM call
                 if task_id in self._cancelled_tasks:
                     raise asyncio.CancelledError()
+                if self._is_circuit_open():
+                    raise RuntimeError("Circuit breaker open: retry after recovery window")
 
                 state.current_step = iteration + 1
                 state.last_update = datetime.utcnow()
@@ -373,12 +394,14 @@ class AgentOrchestrator:
                         
                         if current_model != agent_model:
                             yield ExecutionEvent(type=EventType.STATUS, content=f"using fallback model: {current_model}")
+                        self._record_circuit_success()
                         break
 
                     except asyncio.CancelledError:
                         raise
 
                     except Exception as e:
+                        self._record_circuit_failure()
                         err = classify(e)
                         reason_key = err.reason.value
 
@@ -644,6 +667,12 @@ class AgentOrchestrator:
                     except json.JSONDecodeError:
                         args = {}
                     parsed_calls.append((tool_call["id"], name, args))
+                    state.working_memory.append({
+                        "iteration": iteration + 1,
+                        "type": "planned_tool_call",
+                        "tool": name,
+                        "args": args,
+                    })
                     yield ExecutionEvent(
                         type=EventType.TOOL_CALL,
                         tool_name=name,
@@ -697,8 +726,20 @@ class AgentOrchestrator:
 
                 for call_id, name, result_str, err in tool_results:
                     if err:
+                        state.working_memory.append({
+                            "iteration": iteration + 1,
+                            "type": "tool_error",
+                            "tool": name,
+                            "error": err,
+                        })
                         yield ExecutionEvent(type=EventType.ERROR, error=f"{name} failed: {err}")
                     else:
+                        state.working_memory.append({
+                            "iteration": iteration + 1,
+                            "type": "tool_result",
+                            "tool": name,
+                            "result_preview": result_str[:300],
+                        })
                         yield ExecutionEvent(
                             type=EventType.TOOL_RESULT,
                             tool_name=name,
@@ -942,3 +983,28 @@ class AgentOrchestrator:
 
     def get_available_tools(self) -> list[str]:
         return self.tools.list_tools()
+
+    async def run_sub_agent(
+        self,
+        *,
+        query: str,
+        user_id: Optional[str] = None,
+        max_iterations: int = 6,
+        depth: int = 1,
+        max_depth: int = 2,
+    ) -> dict[str, Any]:
+        """
+        Agent-as-tool pattern: run a constrained nested agent task.
+        """
+        if depth > max_depth:
+            raise ValueError("sub-agent max depth exceeded")
+        result, conversation_id = await self.run(
+            query=query,
+            user_id=user_id,
+            max_iterations=max_iterations,
+        )
+        return {
+            "depth": depth,
+            "conversation_id": conversation_id,
+            "result": result,
+        }

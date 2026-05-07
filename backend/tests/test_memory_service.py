@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -283,3 +284,39 @@ async def test_extract_insight_returns_none_without_openrouter_key(monkeypatch):
 
     result = await _extract_insight('q', 'r')
     assert result is None
+
+
+async def test_search_by_time_range_returns_rows(monkeypatch):
+    fake_conn = AsyncMock()
+    fake_conn.fetch = AsyncMock(return_value=[{'id': 'm4', 'category': 'context', 'content': 'z'}])
+
+    fake_pool = AsyncMock()
+    fake_pool.acquire = lambda: AsyncContextManager(fake_conn)
+    monkeypatch.setattr('app.agent.memory._db.db_pool', fake_pool)
+
+    mgr = MemoryManager()
+    rows = await mgr.search_by_time_range(
+        start_time=datetime.utcnow() - timedelta(days=7),
+        end_time=datetime.utcnow(),
+        user_id='u1',
+        query='context',
+        limit=5,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]['id'] == 'm4'
+
+
+async def test_apply_relevance_decay_updates_rows(monkeypatch):
+    fake_conn = AsyncMock()
+    fake_conn.execute = AsyncMock(return_value='UPDATE 3')
+
+    fake_pool = AsyncMock()
+    fake_pool.acquire = lambda: AsyncContextManager(fake_conn)
+    monkeypatch.setattr('app.agent.memory._db.db_pool', fake_pool)
+
+    mgr = MemoryManager()
+    updated = await mgr.apply_relevance_decay(user_id='u1', half_life_days=90.0, min_relevance=0.1)
+
+    assert updated == 3
+    fake_conn.execute.assert_awaited_once()
