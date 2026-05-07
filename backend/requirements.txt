@@ -17,6 +17,7 @@ openai
 # HTTP
 requests
 httpx
+mcp>=1.2.0
 
 # Utilities
 aiofiles
@@ -40,6 +41,7 @@ playwright
 
 # Rate limiting
 slowapi
+redis[hiredis]>=5.0.0
 
 # Document ingestion
 PyPDF2

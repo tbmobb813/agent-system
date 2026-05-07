@@ -49,7 +49,9 @@ def _cost_tracker(request: Request):
 def _runtime(request: Request):
     runtime = getattr(request.app.state, "orchestration_runtime", None)
     if not runtime:
-        raise HTTPException(status_code=503, detail="Orchestration runtime not initialized")
+        raise HTTPException(
+            status_code=503, detail="Orchestration runtime not initialized"
+        )
     return runtime
 
 
@@ -118,7 +120,9 @@ async def run_agent(
     cost_tracker = _cost_tracker(request)
 
     estimated_cost = await cost_tracker.estimate_cost(body.query)
-    remaining = settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_month()
+    remaining = (
+        settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_month()
+    )
 
     if estimated_cost > remaining:
         return JSONResponse(
@@ -198,7 +202,9 @@ async def stream_agent(
         try:
             await execute(
                 "UPDATE tasks SET status = $1, completed_at = $2 WHERE id = $3",
-                status, datetime.utcnow(), task_id,
+                status,
+                datetime.utcnow(),
+                task_id,
             )
         except Exception as e:
             logger.warning(f"Could not update task status: {e}")
@@ -208,19 +214,26 @@ async def stream_agent(
         stream_status = "completed"
         try:
             estimated_cost = await cost_tracker.estimate_cost(body.query)
-            remaining = settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_month()
+            remaining = (
+                settings.OPENROUTER_BUDGET_MONTHLY
+                - await cost_tracker.get_spent_month()
+            )
 
             if estimated_cost > remaining:
                 stream_status = "budget_exceeded"
-                yield format_sse_event({
-                    "type": "error",
-                    "error": "Insufficient budget",
-                    "spent": await cost_tracker.get_spent_month(),
-                    "budget": settings.OPENROUTER_BUDGET_MONTHLY,
-                })
+                yield format_sse_event(
+                    {
+                        "type": "error",
+                        "error": "Insufficient budget",
+                        "spent": await cost_tracker.get_spent_month(),
+                        "budget": settings.OPENROUTER_BUDGET_MONTHLY,
+                    }
+                )
                 return
 
-            yield format_sse_event({"type": "status", "content": "initializing", "task_id": task_id})
+            yield format_sse_event(
+                {"type": "status", "content": "initializing", "task_id": task_id}
+            )
 
             # Pre-insert task as running
             if _db.db_pool:
@@ -231,7 +244,10 @@ async def stream_agent(
                         VALUES ($1, $2, $3, 'running', 0, $4)
                         ON CONFLICT (id) DO NOTHING
                         """,
-                        task_id, user_id, body.query, started_at,
+                        task_id,
+                        user_id,
+                        body.query,
+                        started_at,
                     )
                 except Exception as e:
                     logger.warning(f"Could not pre-insert task: {e}")
@@ -274,11 +290,15 @@ async def stream_agent(
                         try:
                             await _stream.aclose()
                         except Exception as close_error:
-                            logger.debug(f"Failed to close timed out stream: {close_error}")
-                    yield format_sse_event({
-                        "type": "error",
-                        "error": f"Run timed out after {settings.MAX_STREAM_SECONDS}s",
-                    })
+                            logger.debug(
+                                f"Failed to close timed out stream: {close_error}"
+                            )
+                    yield format_sse_event(
+                        {
+                            "type": "error",
+                            "error": f"Run timed out after {settings.MAX_STREAM_SECONDS}s",
+                        }
+                    )
                     return
 
                 data = event.model_dump(mode="json")
@@ -366,7 +386,9 @@ async def stream_agent(
                 try:
                     pop_call_info(task_id)
                 except Exception as pop_error:
-                    logger.debug(f"Failed to cleanup call info for task {task_id}: {pop_error}")
+                    logger.debug(
+                        f"Failed to cleanup call info for task {task_id}: {pop_error}"
+                    )
 
     return StreamingResponse(
         generate(),
@@ -390,7 +412,9 @@ async def enqueue_agent_task(
     runtime = _runtime(request)
     cost_tracker = _cost_tracker(request)
     estimated_cost = await cost_tracker.estimate_cost(body.query)
-    remaining = settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_month()
+    remaining = (
+        settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_month()
+    )
     if estimated_cost > remaining:
         return JSONResponse(
             status_code=402,
@@ -430,10 +454,11 @@ async def enqueue_agent_task(
             "reasoning_effort": body.reasoning_effort,
         }
     )
+    qs = await runtime.pending_queue_size()
     return {
         "status": "queued",
         "task_id": task_id,
-        "queue_size": runtime.queue.qsize(),
+        "queue_size": qs,
     }
 
 
@@ -480,6 +505,7 @@ async def list_tools(request: Request, api_key: str = Depends(verify_api_key)):
 async def list_models(api_key: str = Depends(verify_api_key)):
     """List available models and routing strategy."""
     from app.agent.router import ModelRouter
+
     router_instance = ModelRouter()
     return {
         "models": router_instance.get_available_models(),

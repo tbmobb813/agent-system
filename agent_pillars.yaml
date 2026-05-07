@@ -124,7 +124,11 @@ llm:
       top_p: 0.9
       use_for: ["best_quality", "critical_tasks"]
       supports_tools: true
-  
+
+  # Used when orchestration.execution.complexity_threshold is "llm_classifier"
+  routing_classifier:
+    model: "meta-llama/llama-3.1-8b-instruct:free"
+
   fallback_chain:
     - "anthropic/claude-haiku"
     - "google/gemini-flash-1.5"
@@ -181,13 +185,20 @@ tools:
       provider: "pgvector"
   
   mcp:
-    enabled: true   # ToolRegistry loads MCP tools at startup (HTTP /rpc). Leave servers empty until you have endpoints.
+    enabled: true   # HTTP JSON-RPC (`url` + /rpc) and hub transports (sse, stdio) via ToolRegistry + McpConnectionHub
     servers: []
-    # Example:
-    # - name: "github"
-    #   url: "https://mcp.github.com/sse"
-    # - name: "slack"
-    #   url: "https://mcp.slack.com/sse"
+    # Examples:
+    # - name: "remote_http"
+    #   transport: http_json   # default when omitted; requires MCP HTTP bridge at url + /rpc
+    #   url: "https://your-mcp-bridge.example.com"
+    # - name: "github_sse"
+    #   transport: sse
+    #   url: "https://mcp.example.com/github/sse"
+    # - name: "local_stdio"
+    #   transport: stdio
+    #   command: "npx"
+    #   args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp/agent-workspace"]
+    #   env: { "FOO": "bar" }
   
   agent_as_tool:
     enabled: true   # SubAgentRunner + run_sub_agent; enable in pillars when exposed as LLM-callable tool
@@ -257,18 +268,21 @@ orchestration:
     max_iterations: 10
     parallel_tool_calls: true
     plan_complex_queries: true
-    complexity_threshold: "keyword"  # keyword | llm_classifier
+    complexity_threshold: "keyword"  # keyword | llm_classifier — latter uses llm.routing_classifier for planning gate
   
   triggers:
     scheduled_tasks:
-      enabled: true   # OrchestrationRuntime interval jobs (e.g. memory_decay); user cron TBD
-      # Example future tasks:
-      # - name: "daily_briefing"
-      #   cron: "0 8 * * *"
-      #   query: "Summarize today's AI news"
-      # - name: "memory_consolidation"
-      #   cron: "0 2 * * 0"  # Weekly Sunday 2am
+      enabled: true   # Interval jobs from this list + built-in memory_decay / memory_consolidation
+      tasks: []
+      # Examples:
+      # - name: "weekly_consolidate"
+      #   interval_seconds: 604800
       #   action: "consolidate_memories"
+      # - name: "daily_brief"
+      #   interval_seconds: 86400
+      #   query: "Summarize today's AI news in 5 bullets"
+      #   user_id: "optional-user-uuid"
+      #   max_iterations: 6
     
     event_driven:
       enabled: true   # register_event_handler / emit_event in OrchestrationRuntime (lightweight)
@@ -279,9 +293,10 @@ orchestration:
       #   action: "notify_user"
   
   message_queue:
-    enabled: true   # In-process asyncio queue + worker (OrchestrationRuntime), not Redis
-    provider: "asyncio"  # Redis deferred to multi-worker / durability work
-    deferred_execution: true          # POST /agent/enqueue uses in-process worker
+    enabled: true
+    provider: "asyncio"   # asyncio | redis — set redis + REDIS_URL for cross-process durable queue
+    redis_queue_key: "agent:deferred_tasks"
+    deferred_execution: true          # POST /agent/enqueue
     dead_letter_logging: false
   
   agent2agent:
@@ -298,7 +313,7 @@ orchestration:
       failure_threshold: 5
       recovery_timeout_seconds: 60
     dead_letter:
-      enabled: false
+      enabled: false   # When true + DB migration 015_failed_tasks, worker failures also insert into failed_tasks
       table: "failed_tasks"
 
 # ═══════════════════════════════════════════════════════════════════

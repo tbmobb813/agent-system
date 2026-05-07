@@ -19,6 +19,7 @@ from datetime import datetime
 from app.config import settings, CostTracker
 from app.agent.orchestrator import AgentOrchestrator
 from app.agent.orchestration_runtime import OrchestrationRuntime
+from app.tools.mcp_hub import McpConnectionHub, set_mcp_hub
 from app.database import init_db
 from app.models import CostStatus
 from app.utils.auth import verify_api_key
@@ -33,8 +34,7 @@ from app.routes.integrations import router as integrations_router
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -53,23 +53,36 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Cost tracker running without database: {e}")
     app.state.cost_tracker = cost_tracker
-    app.state.agent_orchestrator = AgentOrchestrator(cost_tracker=app.state.cost_tracker)
+    hub = McpConnectionHub()
+    set_mcp_hub(hub)
+    app.state.mcp_hub = hub
+    await hub.start_from_pillars()
+    app.state.agent_orchestrator = AgentOrchestrator(
+        cost_tracker=app.state.cost_tracker
+    )
     await app.state.agent_orchestrator.tools.load_mcp_tools()
-    app.state.agent_orchestrator.tools.register_sub_agent_tool(app.state.agent_orchestrator)
+    app.state.agent_orchestrator.tools.register_sub_agent_tool(
+        app.state.agent_orchestrator
+    )
     app.state.orchestration_runtime = OrchestrationRuntime(app.state.agent_orchestrator)
     await app.state.orchestration_runtime.start()
 
     # Playwright check
     try:
         from playwright.async_api import async_playwright
+
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=True)
             await browser.close()
         logger.info("✓ Playwright chromium ready")
     except ImportError:
-        logger.warning("Playwright not installed — browser_automation unavailable (pip install playwright && playwright install chromium)")
+        logger.warning(
+            "Playwright not installed — browser_automation unavailable (pip install playwright && playwright install chromium)"
+        )
     except Exception as e:
-        logger.warning(f"Playwright chromium not found — browser_automation unavailable: {e} (run: playwright install chromium)")
+        logger.warning(
+            f"Playwright chromium not found — browser_automation unavailable: {e} (run: playwright install chromium)"
+        )
 
     logger.info("✓ Agent system ready")
 
@@ -81,6 +94,13 @@ async def lifespan(app: FastAPI):
     runtime = getattr(app.state, "orchestration_runtime", None)
     if runtime is not None:
         await runtime.stop()
+    hub = getattr(app.state, "mcp_hub", None)
+    if hub is not None:
+        try:
+            await hub.stop()
+        except Exception as e:
+            logger.debug("MCP hub stop: %s", e)
+        set_mcp_hub(None)
     logger.info("✓ Clean shutdown")
 
 
@@ -131,13 +151,15 @@ app.include_router(integrations_router)
 # Health & Status Endpoints
 # ============================================================================
 
+
 @app.get("/health")
 async def health_check(request: Request):
     """Health check endpoint."""
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "agent_ready": getattr(request.app.state, "agent_orchestrator", None) is not None,
+        "agent_ready": getattr(request.app.state, "agent_orchestrator", None)
+        is not None,
         "cost_tracking": getattr(request.app.state, "cost_tracker", None) is not None,
     }
 
@@ -166,6 +188,7 @@ async def get_cost_breakdown(request: Request, api_key: str = Depends(verify_api
 # Tools & Models (convenience endpoints at root level)
 # ============================================================================
 
+
 @app.get("/tools")
 async def list_tools(request: Request, api_key: str = Depends(verify_api_key)):
     """List available tools."""
@@ -180,6 +203,7 @@ async def list_tools(request: Request, api_key: str = Depends(verify_api_key)):
 async def list_models(api_key: str = Depends(verify_api_key)):
     """List available models and their pricing."""
     from app.agent.router import ModelRouter
+
     router_instance = ModelRouter()
     return {
         "models": router_instance.get_available_models(),
@@ -191,6 +215,7 @@ async def list_models(api_key: str = Depends(verify_api_key)):
 # API Documentation
 # ============================================================================
 
+
 @app.get("/docs-info")
 async def docs_info():
     """Links to API documentation."""
@@ -200,6 +225,7 @@ async def docs_info():
 # ============================================================================
 # Error handler
 # ============================================================================
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -213,6 +239,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         app,
         host="0.0.0.0",

@@ -23,8 +23,8 @@ from app import database as _db
 logger = logging.getLogger(__name__)
 
 DEFAULT_USER = "default"
-MAX_MEMORY_CONTENT = 2000   # chars stored per memory
-MAX_CONTEXT_CHARS = 1500   # chars injected into system prompt
+MAX_MEMORY_CONTENT = 2000  # chars stored per memory
+MAX_CONTEXT_CHARS = 1500  # chars injected into system prompt
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -60,6 +60,7 @@ def _get_insight_client() -> AsyncOpenAI:
 # Embedding helper
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def _embed(text: str) -> Optional[list[float]]:
     """Generate a 1536-dim embedding via OpenAI. Returns None if key not set."""
     if not settings.OPENAI_API_KEY:
@@ -67,7 +68,7 @@ async def _embed(text: str) -> Optional[list[float]]:
     try:
         resp = await _get_embed_client().embeddings.create(
             model="text-embedding-3-small",
-            input=text[:8000],   # model limit
+            input=text[:8000],  # model limit
         )
         return resp.data[0].embedding
     except Exception as e:
@@ -86,6 +87,7 @@ _INSIGHT_CACHE_MAX = 256
 
 def _insight_key(query: str, response: str) -> str:
     return hashlib.md5(f"{query[:300]}|{response[:600]}".encode()).hexdigest()
+
 
 _INSIGHT_PROMPT = """\
 You are a memory filter for an AI assistant. Your job is to extract only what \
@@ -142,13 +144,17 @@ async def _extract_insight(query: str, response: str) -> Optional[str]:
 
     try:
         resp = await _get_insight_client().chat.completions.create(
-            model=settings.DEFAULT_MODEL_SIMPLE,   # cheapest tier
+            model=settings.DEFAULT_MODEL_SIMPLE,  # cheapest tier
             messages=[{"role": "user", "content": prompt}],
             max_tokens=80,
             temperature=0,
         )
         result = (resp.choices[0].message.content or "").strip()
-        insight = None if (not result or result.upper() == "NOTHING" or len(result) < 8) else result
+        insight = (
+            None
+            if (not result or result.upper() == "NOTHING" or len(result) < 8)
+            else result
+        )
     except Exception as e:
         logger.debug(f"Insight extraction failed: {e}")
         insight = None
@@ -172,6 +178,7 @@ def _classify_insight(insight: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 # MemoryManager
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class MemoryManager:
     """
@@ -220,9 +227,14 @@ class MemoryManager:
                            created_at, accessed_at, relevance_score)
                         VALUES ($1,$2,$3,$4,$5::vector,$6,$7,$8)
                         """,
-                        memory_id, user_id, category, content,
-                        str(embedding),   # asyncpg expects text cast for vector
-                        now, now, relevance_score,
+                        memory_id,
+                        user_id,
+                        category,
+                        content,
+                        str(embedding),  # asyncpg expects text cast for vector
+                        now,
+                        now,
+                        relevance_score,
                     )
                 else:
                     await conn.execute(
@@ -232,8 +244,13 @@ class MemoryManager:
                            created_at, accessed_at, relevance_score)
                         VALUES ($1,$2,$3,$4,$5,$6,$7)
                         """,
-                        memory_id, user_id, category, content,
-                        now, now, relevance_score,
+                        memory_id,
+                        user_id,
+                        category,
+                        content,
+                        now,
+                        now,
+                        relevance_score,
                     )
             logger.info(f"Saved memory {memory_id} ({category}) for user {user_id}")
             return memory_id
@@ -454,7 +471,7 @@ class MemoryManager:
         for m in memories:
             snippet = m["content"]
             if total + len(snippet) > MAX_CONTEXT_CHARS:
-                snippet = snippet[:MAX_CONTEXT_CHARS - total]
+                snippet = snippet[: MAX_CONTEXT_CHARS - total]
             lines.append(f"- [{m['category']}] {snippet}")
             total += len(snippet)
             if total >= MAX_CONTEXT_CHARS:
@@ -574,23 +591,23 @@ class MemoryManager:
 
     async def consolidate_duplicate_memories(self) -> int:
         """
-        Delete rows with identical (user_id, category, content), keeping the newest id.
+        Delete rows with the same normalized (user_id, category, content):
+        lowercase, trim, collapse internal whitespace. Keeps the newest id.
         Returns number of rows removed.
         """
         if not _db.db_pool:
             return 0
         try:
             async with _db.db_pool.acquire() as conn:
-                result = await conn.execute(
-                    """
+                result = await conn.execute("""
                     DELETE FROM memory AS a
                     USING memory AS b
                     WHERE a.id < b.id
                       AND a.user_id = b.user_id
                       AND a.category = b.category
-                      AND a.content = b.content
-                    """
-                )
+                      AND lower(trim(both from regexp_replace(a.content, '[[:space:]]+', ' ', 'g')))
+                          = lower(trim(both from regexp_replace(b.content, '[[:space:]]+', ' ', 'g')))
+                    """)
             parts = str(result).split()
             return int(parts[-1]) if parts else 0
         except Exception as e:

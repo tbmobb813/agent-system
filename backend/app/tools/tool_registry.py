@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 class Tool:
     """Definition of a single tool."""
-    
+
     def __init__(
         self,
         name: str,
@@ -38,12 +38,13 @@ class Tool:
         self.description = description
         self.required_args = required_args or []
         self.signature = signature(func)
-    
+
     async def call(self, **kwargs) -> Any:
         """Call the tool with given arguments."""
         try:
             # Support both async and sync functions
             import inspect
+
             if inspect.iscoroutinefunction(self.func):
                 return await self.func(**kwargs)
             else:
@@ -57,14 +58,14 @@ class ToolRegistry:
     Registry of all available tools.
     Tools are functions that the agent can call to perform actions.
     """
-    
+
     def __init__(self):
         self.tools: Dict[str, Tool] = {}
         self._dynamic_schemas: Dict[str, dict] = {}
         self._mcp_tool_names: list[str] = []
         self._sub_agent_registered: bool = False
         self._register_builtin_tools()
-    
+
     def _register_builtin_tools(self):
         """Register built-in tools."""
         # Web Search
@@ -74,7 +75,7 @@ class ToolRegistry:
             description="Search the web for information. Returns top results with titles, URLs, and snippets.",
             required_args=["query"],
         )
-        
+
         # Browser Automation
         self.register(
             name="browser_automation",
@@ -82,7 +83,7 @@ class ToolRegistry:
             description="Automate browser tasks: navigate pages, extract data, fill forms, take screenshots.",
             required_args=["action"],
         )
-        
+
         # File Operations
         self.register(
             name="file_operations",
@@ -90,7 +91,7 @@ class ToolRegistry:
             description="Read, write, and manage files within the workspace.",
             required_args=["operation"],
         )
-        
+
         # Code Execution
         self.register(
             name="code_execution",
@@ -136,10 +137,12 @@ class ToolRegistry:
 
     async def load_mcp_tools(self) -> None:
         """
-        Register tools from MCP servers listed in agent_pillars.yaml (tools.mcp).
-        Uses HTTP JSON-RPC against {url}/rpc — minimal transport; expand for stdio/SSE later.
+        Register tools from agent_pillars.yaml tools.mcp.servers:
+        - http_json (default): POST {url}/rpc
+        - sse / stdio: persistent sessions via app.tools.mcp_hub (start hub first)
         """
         from app.tools.mcp_client import MCPClient
+        from app.tools.mcp_hub import register_hub_servers_into_registry
         from app.utils.pillar_loader import get_pillar_config
 
         for name in self._mcp_tool_names:
@@ -156,16 +159,29 @@ class ToolRegistry:
             if not isinstance(srv, dict):
                 continue
             skey = str(srv.get("name") or "server").strip() or "server"
+            transport = str(srv.get("transport") or "http_json").strip().lower()
+            if transport in ("sse", "stdio"):
+                continue
+            if transport not in ("http", "http_json", "http_rpc", "rpc"):
+                logger.warning(
+                    "Unknown MCP transport %r for %s — skipping HTTP path",
+                    transport,
+                    skey,
+                )
+                continue
+
             base_url = str(srv.get("url") or "").strip().rstrip("/")
             if not base_url:
-                logger.warning("MCP server %s skipped — no url", skey)
+                logger.warning("MCP HTTP server %s skipped — no url", skey)
                 continue
 
             client = MCPClient(base_url)
             try:
                 remote_tools = await client.list_tools()
             except Exception as e:
-                logger.warning("MCP tools/list failed for %s (%s): %s", skey, base_url, e)
+                logger.warning(
+                    "MCP tools/list failed for %s (%s): %s", skey, base_url, e
+                )
                 continue
 
             for rt in remote_tools:
@@ -206,6 +222,15 @@ class ToolRegistry:
                         "parameters": oa,
                     },
                 }
+
+        try:
+            hub_more = await register_hub_servers_into_registry(
+                self, self._sanitize_mcp_function_name
+            )
+            self._mcp_tool_names.extend(hub_more)
+        except Exception as e:
+            logger.warning("MCP hub registration failed: %s", e)
+
         if self._mcp_tool_names:
             logger.info("Registered %s MCP tool(s)", len(self._mcp_tool_names))
 
@@ -281,7 +306,15 @@ class ToolRegistry:
             {
                 "tool": "web_search",
                 "ok": ws_ok,
-                "detail": "searxng" if searx_ok else ("brave_key_set" if brave_configured else searx_err or "no_provider"),
+                "detail": (
+                    "searxng"
+                    if searx_ok
+                    else (
+                        "brave_key_set"
+                        if brave_configured
+                        else searx_err or "no_provider"
+                    )
+                ),
             }
         )
 
@@ -293,13 +326,21 @@ class ToolRegistry:
             browser_ok = True
         except Exception as e:
             berr = str(e)
-        rows.append({"tool": "browser_automation", "ok": browser_ok, "detail": "playwright_import" if browser_ok else berr})
+        rows.append(
+            {
+                "tool": "browser_automation",
+                "ok": browser_ok,
+                "detail": "playwright_import" if browser_ok else berr,
+            }
+        )
 
         rows.append(
             {
                 "tool": "code_execution",
                 "ok": bool(settings.E2B_API_KEY),
-                "detail": "e2b_configured" if settings.E2B_API_KEY else "E2B_API_KEY unset",
+                "detail": (
+                    "e2b_configured" if settings.E2B_API_KEY else "E2B_API_KEY unset"
+                ),
             }
         )
 
@@ -318,12 +359,16 @@ class ToolRegistry:
             {
                 "tool": "search_documents",
                 "ok": doc_ok,
-                "detail": "openai_embeddings" if doc_ok else "fulltext_only_without_openai",
+                "detail": (
+                    "openai_embeddings" if doc_ok else "fulltext_only_without_openai"
+                ),
             }
         )
 
         if "delegate_sub_agent" in self.tools:
-            rows.append({"tool": "delegate_sub_agent", "ok": True, "detail": "registered"})
+            rows.append(
+                {"tool": "delegate_sub_agent", "ok": True, "detail": "registered"}
+            )
 
         mcp_cfg = (get_pillar_config().get("tools") or {}).get("mcp") or {}
         if mcp_cfg.get("enabled"):
@@ -359,25 +404,25 @@ class ToolRegistry:
         tool = Tool(name, func, description, required_args)
         self.tools[name] = tool
         logger.info(f"Registered tool: {name}")
-    
+
     async def call(self, tool_name: str, **kwargs) -> Any:
         """
         Call a registered tool.
         """
         if tool_name not in self.tools:
             raise ValueError(f"Tool not found: {tool_name}")
-        
+
         tool = self.tools[tool_name]
-        
+
         # Validate required args
         for arg in tool.required_args:
             if arg not in kwargs:
                 raise ValueError(f"Missing required argument: {arg}")
-        
+
         logger.info(f"Calling tool: {tool_name} with args: {list(kwargs.keys())}")
-        
+
         return await tool.call(**kwargs)
-    
+
     def list_tools(self) -> list[str]:
         """List all available tool names."""
         return list(self.tools.keys())
@@ -396,8 +441,15 @@ class ToolRegistry:
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "query": {"type": "string", "description": "The search query"},
-                            "max_results": {"type": "integer", "description": "Number of results (default 5)", "default": 5},
+                            "query": {
+                                "type": "string",
+                                "description": "The search query",
+                            },
+                            "max_results": {
+                                "type": "integer",
+                                "description": "Number of results (default 5)",
+                                "default": 5,
+                            },
                         },
                         "required": ["query"],
                     },
@@ -413,14 +465,36 @@ class ToolRegistry:
                         "properties": {
                             "action": {
                                 "type": "string",
-                                "enum": ["navigate", "extract", "scrape", "screenshot", "click", "fill"],
+                                "enum": [
+                                    "navigate",
+                                    "extract",
+                                    "scrape",
+                                    "screenshot",
+                                    "click",
+                                    "fill",
+                                ],
                                 "description": "Action to perform",
                             },
-                            "url": {"type": "string", "description": "URL to open (required for navigate/extract/scrape/screenshot/click/fill)"},
-                            "selector": {"type": "string", "description": "CSS selector for extract/scrape/click/fill"},
-                            "text": {"type": "string", "description": "Text to type into element (required for fill)"},
-                            "screenshot_path": {"type": "string", "description": "Where to save the screenshot"},
-                            "wait_for": {"type": "string", "description": "CSS selector to wait for before extracting"},
+                            "url": {
+                                "type": "string",
+                                "description": "URL to open (required for navigate/extract/scrape/screenshot/click/fill)",
+                            },
+                            "selector": {
+                                "type": "string",
+                                "description": "CSS selector for extract/scrape/click/fill",
+                            },
+                            "text": {
+                                "type": "string",
+                                "description": "Text to type into element (required for fill)",
+                            },
+                            "screenshot_path": {
+                                "type": "string",
+                                "description": "Where to save the screenshot",
+                            },
+                            "wait_for": {
+                                "type": "string",
+                                "description": "CSS selector to wait for before extracting",
+                            },
                         },
                         "required": ["action"],
                     },
@@ -439,8 +513,14 @@ class ToolRegistry:
                                 "enum": ["read", "write", "list", "delete"],
                                 "description": "Operation to perform",
                             },
-                            "path": {"type": "string", "description": "File path relative to workspace"},
-                            "content": {"type": "string", "description": "Content to write (required for write)"},
+                            "path": {
+                                "type": "string",
+                                "description": "File path relative to workspace",
+                            },
+                            "content": {
+                                "type": "string",
+                                "description": "Content to write (required for write)",
+                            },
                         },
                         "required": ["operation"],
                     },
@@ -454,8 +534,15 @@ class ToolRegistry:
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "code": {"type": "string", "description": "The code to execute"},
-                            "language": {"type": "string", "description": "Programming language (default: python)", "default": "python"},
+                            "code": {
+                                "type": "string",
+                                "description": "The code to execute",
+                            },
+                            "language": {
+                                "type": "string",
+                                "description": "Programming language (default: python)",
+                                "default": "python",
+                            },
                         },
                         "required": ["code"],
                     },
@@ -469,11 +556,27 @@ class ToolRegistry:
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "url": {"type": "string", "description": "Full URL including https://"},
-                            "method": {"type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"], "default": "GET"},
-                            "headers": {"type": "object", "description": "HTTP headers as key-value pairs"},
-                            "data": {"type": "object", "description": "JSON body for POST/PUT/PATCH"},
-                            "params": {"type": "object", "description": "URL query parameters"},
+                            "url": {
+                                "type": "string",
+                                "description": "Full URL including https://",
+                            },
+                            "method": {
+                                "type": "string",
+                                "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"],
+                                "default": "GET",
+                            },
+                            "headers": {
+                                "type": "object",
+                                "description": "HTTP headers as key-value pairs",
+                            },
+                            "data": {
+                                "type": "object",
+                                "description": "JSON body for POST/PUT/PATCH",
+                            },
+                            "params": {
+                                "type": "object",
+                                "description": "URL query parameters",
+                            },
                         },
                         "required": ["url"],
                     },
@@ -487,9 +590,19 @@ class ToolRegistry:
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "query": {"type": "string", "description": "What to search for"},
-                            "limit": {"type": "integer", "description": "Number of chunks to return (default 5)", "default": 5},
-                            "document_id": {"type": "string", "description": "Restrict search to a specific document ID (optional)"},
+                            "query": {
+                                "type": "string",
+                                "description": "What to search for",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Number of chunks to return (default 5)",
+                                "default": 5,
+                            },
+                            "document_id": {
+                                "type": "string",
+                                "description": "Restrict search to a specific document ID (optional)",
+                            },
                         },
                         "required": ["query"],
                     },
@@ -512,18 +625,18 @@ class ToolRegistry:
         """Get information about a tool."""
         if tool_name not in self.tools:
             return {}
-        
+
         tool = self.tools[tool_name]
         return {
             "name": tool.name,
             "description": tool.description,
             "required_args": tool.required_args,
         }
-    
+
     # ========================================================================
     # Built-in Tool Implementations (Placeholders)
     # ========================================================================
-    
+
     async def _web_search(self, query: str, max_results: int = 5) -> dict:
         """
         Search the web. Tries SearXNG first, falls back to Brave Search if unreachable.
@@ -562,7 +675,12 @@ class ToolRegistry:
                 }
                 for r in data.get("results", [])[:max_results]
             ]
-            return {"query": query, "results": results, "total": len(results), "provider": "searxng"}
+            return {
+                "query": query,
+                "results": results,
+                "total": len(results),
+                "provider": "searxng",
+            }
 
         except httpx.ConnectError:
             logger.error(f"SearXNG unreachable at {settings.SEARXNG_URL}")
@@ -574,8 +692,14 @@ class ToolRegistry:
     async def _brave_search(self, query: str, max_results: int = 5) -> dict:
         """Search via Brave Search API (fallback)."""
         if not settings.BRAVE_SEARCH_API_KEY:
-            logger.error("Brave Search fallback unavailable — BRAVE_SEARCH_API_KEY not set")
-            return {"query": query, "results": [], "error": "no_search_provider_available"}
+            logger.error(
+                "Brave Search fallback unavailable — BRAVE_SEARCH_API_KEY not set"
+            )
+            return {
+                "query": query,
+                "results": [],
+                "error": "no_search_provider_available",
+            }
 
         logger.info(f"Brave Search fallback: {query}")
         try:
@@ -601,12 +725,17 @@ class ToolRegistry:
                 }
                 for r in data.get("web", {}).get("results", [])[:max_results]
             ]
-            return {"query": query, "results": results, "total": len(results), "provider": "brave"}
+            return {
+                "query": query,
+                "results": results,
+                "total": len(results),
+                "provider": "brave",
+            }
 
         except Exception as e:
             logger.error(f"Brave Search failed: {e}")
             return {"query": query, "results": [], "error": str(e)}
-    
+
     async def _browser_automation(
         self,
         action: str,
@@ -658,10 +787,19 @@ class ToolRegistry:
                 page = await browser.new_page()
 
                 try:
-                    if action in ("navigate", "extract", "scrape", "screenshot", "click", "fill"):
+                    if action in (
+                        "navigate",
+                        "extract",
+                        "scrape",
+                        "screenshot",
+                        "click",
+                        "fill",
+                    ):
                         if not url:
                             return "Error: url is required"
-                        await page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+                        await page.goto(
+                            url, timeout=timeout, wait_until="domcontentloaded"
+                        )
                         if wait_for:
                             await page.wait_for_selector(wait_for, timeout=timeout)
 
@@ -684,10 +822,16 @@ class ToolRegistry:
                             t = await el.inner_text()
                             if t.strip():
                                 texts.append(t.strip())
-                        return "\n---\n".join(texts) if texts else "No elements matched selector"
+                        return (
+                            "\n---\n".join(texts)
+                            if texts
+                            else "No elements matched selector"
+                        )
 
                     elif action == "screenshot":
-                        path = screenshot_path or os.path.join(settings.AGENT_WORKSPACE_DIR, "screenshot.png")
+                        path = screenshot_path or os.path.join(
+                            settings.AGENT_WORKSPACE_DIR, "screenshot.png"
+                        )
                         os.makedirs(os.path.dirname(path), exist_ok=True)
                         await page.screenshot(path=path, full_page=True)
                         return f"Screenshot saved to {path}"
@@ -713,7 +857,7 @@ class ToolRegistry:
         except Exception as e:
             logger.error(f"Browser automation failed: {e}")
             return f"Browser automation error: {e}"
-    
+
     async def _file_operations(
         self,
         operation: str,
@@ -858,10 +1002,13 @@ class ToolRegistry:
     ) -> str:
         """Search ingested documents for relevant content."""
         from app.agent.documents import search_documents
+
         results = await search_documents(query, limit=limit, document_id=document_id)
         if not results:
             return "No relevant content found in your documents for that query."
         lines = []
         for r in results:
-            lines.append(f"[{r['filename']} — chunk {r['chunk_index']}]\n{r['content']}")
+            lines.append(
+                f"[{r['filename']} — chunk {r['chunk_index']}]\n{r['content']}"
+            )
         return "\n\n---\n\n".join(lines)
