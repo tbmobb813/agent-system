@@ -65,10 +65,10 @@ type AlertsPayload = {
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-      <p className="text-xs text-gray-500 mb-1">{label}</p>
-      <p className="text-2xl font-semibold text-gray-100">{value}</p>
-      {hint ? <p className="text-xs text-gray-500 mt-2">{hint}</p> : null}
+    <div className="panel p-4">
+      <p className="text-xs text-muted mb-1">{label}</p>
+      <p className="text-2xl font-semibold">{value}</p>
+      {hint ? <p className="text-xs text-muted mt-2">{hint}</p> : null}
     </div>
   )
 }
@@ -121,23 +121,23 @@ export default function AnalyticsDashboard() {
     return Math.max(...daily.map(p => p.cost))
   }, [daily])
 
-  if (loading) return <p className="text-gray-400">Loading analytics...</p>
-  if (error) return <p className="text-red-400">Error: {error}</p>
-  if (!overview) return <p className="text-gray-400">No analytics data yet.</p>
+  if (loading) return <p className="text-muted">Loading analytics...</p>
+  if (error) return <p className="text-[color:var(--danger)]">Error: {error}</p>
+  if (!overview) return <p className="text-muted">No analytics data yet.</p>
 
   const riskColor =
-    !alerts ? 'text-gray-400' :
-    alerts.risk_level === 'high' ? 'text-red-400' :
-    alerts.risk_level === 'medium' ? 'text-yellow-400' :
-    'text-green-400'
+    !alerts ? 'text-muted' :
+    alerts.risk_level === 'high' ? 'text-[color:var(--danger)]' :
+    alerts.risk_level === 'medium' ? 'text-[color:var(--warn)]' :
+    'text-[color:var(--success)]'
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Cost & Performance Analytics</h2>
+        <h2 className="section-title text-xl font-semibold">Cost & Performance Analytics</h2>
         <button
           onClick={load}
-          className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+          className="btn-ghost px-3 py-1.5 text-sm rounded-lg"
         >
           Refresh
         </button>
@@ -150,26 +150,26 @@ export default function AnalyticsDashboard() {
         <StatCard label="Projected Month End" value={formatCost(overview.projected_total)} />
       </div>
 
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div className="panel p-5">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-gray-300">7-Day Cost Trend</h3>
-          <span className="text-xs text-gray-500">{formatCost(overview.spent_today)} today</span>
+          <h3 className="text-sm font-semibold">7-Day Cost Trend</h3>
+          <span className="text-xs text-muted">{formatCost(overview.spent_today)} today</span>
         </div>
         {!daily.length ? (
-          <p className="text-sm text-gray-500">No daily trend data yet.</p>
+          <p className="text-sm text-muted">No daily trend data yet.</p>
         ) : (
           <div className="space-y-2">
             {daily.map(point => {
               const width = maxDaily > 0 ? (point.cost / maxDaily) * 100 : 0
               return (
                 <div key={point.date} className="grid grid-cols-[96px_1fr_72px] items-center gap-3">
-                  <span className="text-xs text-gray-500">{new Date(point.date).toLocaleDateString()}</span>
+                  <span className="text-xs text-muted">{new Date(point.date).toLocaleDateString()}</span>
                   <progress
-                    className="w-full h-2 [&::-webkit-progress-bar]:bg-gray-800 [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-value]:bg-indigo-500 [&::-webkit-progress-value]:rounded-full [&::-moz-progress-bar]:bg-indigo-500"
+                    className="budget-progress"
                     max={100}
-                    value={Math.max(width, 1)}
+                    value={width}
                   />
-                  <span className="text-xs text-gray-300 text-right">{formatCost(point.cost)}</span>
+                  <span className="text-xs text-right">{formatCost(point.cost)}</span>
                 </div>
               )
             })}
@@ -177,15 +177,15 @@ export default function AnalyticsDashboard() {
         )}
       </div>
 
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-        <h3 className="text-sm font-semibold text-gray-300 mb-3">Model Performance (30 Days)</h3>
+      <div className="panel p-5">
+        <h3 className="text-sm font-semibold mb-3">Model Performance (30 Days)</h3>
         {!models.length ? (
-          <p className="text-sm text-gray-500">No model performance data yet.</p>
+          <p className="text-sm text-muted">No model performance data yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-gray-500 border-b border-gray-800">
+                <tr className="text-left text-muted border-b border-[color:var(--border)]">
                   <th className="py-2 pr-3">Model</th>
                   <th className="py-2 pr-3">Tasks</th>
                   <th className="py-2 pr-3">Success</th>
@@ -196,7 +196,7 @@ export default function AnalyticsDashboard() {
               </thead>
               <tbody>
                 {models.map(row => (
-                  <tr key={row.model} className="border-b border-gray-800/60 text-gray-200">
+                  <tr key={row.model} className="border-b border-[color:var(--border)]/60">
                     <td className="py-2 pr-3 font-mono text-xs">{shortModel(row.model)}</td>
                     <td className="py-2 pr-3">{row.tasks}</td>
                     <td className="py-2 pr-3">{row.success_rate.toFixed(1)}%</td>
@@ -212,16 +212,16 @@ export default function AnalyticsDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">Tool Usage (30 Days)</h3>
+        <div className="panel p-5">
+          <h3 className="text-sm font-semibold mb-3">Tool Usage (30 Days)</h3>
           {!tools.length ? (
-            <p className="text-sm text-gray-500">No tool call data yet.</p>
+            <p className="text-sm text-muted">No tool call data yet.</p>
           ) : (
             <ul className="space-y-2">
               {tools.slice(0, 8).map(tool => (
                 <li key={tool.tool_name} className="flex items-center justify-between text-sm">
-                  <span className="font-mono text-xs text-gray-300 truncate pr-2">{tool.tool_name}</span>
-                  <span className="text-gray-400">
+                  <span className="font-mono text-xs truncate pr-2">{tool.tool_name}</span>
+                  <span className="text-muted">
                     {tool.uses} uses • {formatCost(tool.total_task_cost)}
                   </span>
                 </li>
@@ -230,22 +230,22 @@ export default function AnalyticsDashboard() {
           )}
         </div>
 
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-gray-300 mb-2">Budget Alerts</h3>
+        <div className="panel p-5">
+          <h3 className="text-sm font-semibold mb-2">Budget Alerts</h3>
           <p className={`text-sm font-semibold mb-2 ${riskColor}`}>
             Risk: {alerts?.risk_level.toUpperCase() ?? 'UNKNOWN'}
           </p>
-          <p className="text-xs text-gray-500 mb-3">
+          <p className="text-xs text-muted mb-3">
             Projected {formatCost(alerts?.projected_total ?? overview.projected_total)} against budget {formatCost(alerts?.budget ?? overview.budget)}
           </p>
           {!alerts?.alerts?.length ? (
-            <p className="text-sm text-gray-500">No recorded alert events in the last 30 days.</p>
+            <p className="text-sm text-muted">No recorded alert events in the last 30 days.</p>
           ) : (
             <ul className="space-y-2 max-h-44 overflow-auto pr-1">
               {alerts.alerts.map((alert, index) => (
-                <li key={`${alert.type}-${index}`} className="text-xs text-gray-300 border border-gray-800 rounded-md px-2 py-1.5">
-                  <p className="font-medium text-gray-200">{alert.type}</p>
-                  <p className="text-gray-400">{alert.message}</p>
+                <li key={`${alert.type}-${index}`} className="text-xs border border-[color:var(--border)] rounded-md px-2 py-1.5 bg-[color:var(--surface-soft)]">
+                  <p className="font-medium">{alert.type}</p>
+                  <p className="text-muted">{alert.message}</p>
                 </li>
               ))}
             </ul>

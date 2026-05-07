@@ -12,18 +12,18 @@ function ToolCallEvent({ event }: { event: StreamEvent }) {
   const [open, setOpen] = useState(false)
   const hasInput = !!event.tool_input && Object.keys(event.tool_input).length > 0
   return (
-    <div className="bg-gray-800 rounded p-2 text-xs">
+    <div className="bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded p-2 text-xs">
       <button
         onClick={() => setOpen(o => !o)}
         className="flex items-center gap-2 w-full text-left"
       >
-        <span className="text-yellow-400 font-medium">⚙ {event.tool_name}</span>
+        <span className="text-[color:var(--warn)] font-medium">⚙ {event.tool_name}</span>
         {hasInput && (
-          <span className="text-gray-500 ml-auto">{open ? '▲ hide' : '▼ show'}</span>
+          <span className="text-muted ml-auto">{open ? '▲ hide' : '▼ show'}</span>
         )}
       </button>
       {open && hasInput && (
-        <pre className="mt-2 text-gray-400 overflow-x-auto whitespace-pre-wrap">
+        <pre className="mt-2 text-muted overflow-x-auto whitespace-pre-wrap">
           {JSON.stringify(event.tool_input, null, 2)}
         </pre>
       )}
@@ -37,7 +37,7 @@ function ToolResultEvent({ event }: { event: StreamEvent }) {
   const truncated = text.length > 300
   const preview = truncated ? text.slice(0, 300) + '…' : text
   return (
-    <div className="text-green-400 text-xs bg-gray-800 rounded p-2">
+    <div className="text-[color:var(--success)] text-xs bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded p-2">
       <button
         onClick={() => setOpen(o => !o)}
         className="flex items-center gap-2 w-full text-left"
@@ -45,7 +45,7 @@ function ToolResultEvent({ event }: { event: StreamEvent }) {
       >
         <span>✓ {open ? text : preview}</span>
         {truncated && (
-          <span className="text-gray-500 ml-auto shrink-0">{open ? '▲ less' : '▼ more'}</span>
+          <span className="text-muted ml-auto shrink-0">{open ? '▲ less' : '▼ more'}</span>
         )}
       </button>
     </div>
@@ -57,7 +57,7 @@ function EventLine({ event }: { event: StreamEvent }) {
     case 'user_message':
       return (
         <div className="flex justify-end">
-          <div className="max-w-[85%] bg-indigo-600/20 border border-indigo-500/40 rounded-2xl rounded-br-md px-3 py-2 text-sm text-indigo-100">
+          <div className="max-w-[85%] bg-[color:var(--accent-2)]/15 border border-[color:var(--accent-2)]/35 rounded-2xl rounded-br-md px-3 py-2 text-sm text-[color:var(--text)]">
             <MarkdownContent content={event.content ?? ''} />
           </div>
         </div>
@@ -65,16 +65,16 @@ function EventLine({ event }: { event: StreamEvent }) {
     case 'turn_divider':
       return (
         <div className="relative py-2">
-          <div className="h-px bg-gray-800" />
-          <span className="absolute left-1/2 -translate-x-1/2 -top-1 bg-gray-900 px-2 text-[10px] tracking-wide uppercase text-gray-500">
+          <div className="h-px bg-[color:var(--border)]" />
+          <span className="absolute left-1/2 -translate-x-1/2 -top-1 bg-[color:var(--bg)] px-2 text-[10px] tracking-wide uppercase text-muted">
             {event.content ?? 'Follow-up run'}
           </span>
         </div>
       )
     case 'status':
-      return <p className="text-gray-400 text-sm">▷ {event.content ?? event.message}</p>
+      return <p className="text-muted text-sm">▷ {event.content ?? event.message}</p>
     case 'thinking':
-      return <p className="text-purple-400 text-sm italic">💭 {event.content}</p>
+      return <p className="text-[color:var(--accent-2)] text-sm italic">💭 {event.content}</p>
     case 'tool_call':
       return <ToolCallEvent event={event} />
     case 'tool_result':
@@ -82,19 +82,19 @@ function EventLine({ event }: { event: StreamEvent }) {
     case 'text_delta':
       return (
         <div className="flex justify-start">
-          <div className="max-w-[85%] bg-gray-800/70 border border-gray-700 rounded-2xl rounded-bl-md px-3 py-2 text-gray-100 text-sm">
+          <div className="max-w-[85%] bg-[color:var(--surface-soft)] border border-[color:var(--border)] rounded-2xl rounded-bl-md px-3 py-2 text-[color:var(--text)] text-sm">
             <MarkdownContent content={event.content ?? ''} />
           </div>
         </div>
       )
     case 'done':
       return (
-        <p className="text-green-400 text-sm border-t border-gray-800 pt-2 mt-1">
+        <p className="text-[color:var(--success)] text-sm border-t border-[color:var(--border)] pt-2 mt-1">
           ✓ Done{event.cost != null ? ` — cost: ${formatCost(event.cost)}` : ''}
         </p>
       )
     case 'error':
-      return <p className="text-red-400 text-sm">✗ {event.error}</p>
+      return <p className="text-[color:var(--danger)] text-sm">✗ {event.error}</p>
     default:
       return null
   }
@@ -111,7 +111,7 @@ function ContextBar({ events }: { events: StreamEvent[] }) {
   if (!ctx || ctx.context_percent == null) return null
 
   const pct = ctx.context_percent
-  const color = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-yellow-500' : 'bg-indigo-500'
+  const color = pct >= 90 ? 'bg-[color:var(--danger)]' : pct >= 70 ? 'bg-[color:var(--warn)]' : 'bg-[color:var(--accent-2)]'
   const label = pct >= 70 ? (pct >= 90 ? 'critical' : 'compacting soon') : 'ok'
   const widthClass = (() => {
     const clamped = Math.max(0, Math.min(pct, 100))
@@ -131,14 +131,14 @@ function ContextBar({ events }: { events: StreamEvent[] }) {
   })()
 
   return (
-    <div className="flex items-center gap-2 text-xs text-gray-400">
+    <div className="flex items-center gap-2 text-xs text-muted">
       <span>context</span>
-      <div className="flex-1 max-w-32 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+      <div className="flex-1 max-w-32 h-1.5 bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded-full overflow-hidden">
         <div className={`h-full rounded-full transition-all ${color} ${widthClass}`} />
       </div>
-      <span className={pct >= 70 ? 'text-yellow-400' : ''}>{pct.toFixed(0)}% — {label}</span>
+      <span className={pct >= 70 ? 'text-[color:var(--warn)]' : ''}>{pct.toFixed(0)}% — {label}</span>
       {ctx.context_tokens_used != null && (
-        <span className="text-gray-600">{ctx.context_tokens_used.toLocaleString()} / {ctx.context_tokens_max?.toLocaleString()} tokens</span>
+        <span className="text-muted/80">{ctx.context_tokens_used.toLocaleString()} / {ctx.context_tokens_max?.toLocaleString()} tokens</span>
       )}
     </div>
   )
@@ -430,45 +430,47 @@ export default function AgentExecutor() {
               <div className="space-y-3 mb-2 shrink-0">
                 <div className="flex gap-2 justify-end">
                   <button
+                    type="button"
                     onClick={handleCopy}
-                    className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300 transition-colors"
+                    className="btn-ghost px-3 py-1.5 rounded-lg text-xs"
                   >
                     {copyLabel}
                   </button>
                   <button
+                    type="button"
                     onClick={handleDownload}
-                    className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300 transition-colors"
+                    className="btn-ghost px-3 py-1.5 rounded-lg text-xs"
                   >
                     Download .txt
                   </button>
                 </div>
 
                 {latestTaskId && (
-                  <div className="bg-gray-900/60 border border-gray-800 rounded-lg p-3 space-y-3">
+                  <div className="panel panel-soft rounded-lg p-3 space-y-3">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <p className="text-xs text-gray-400">Teach the agent from this response</p>
-                      <span className="text-xs text-gray-600 font-mono">task: {latestTaskId.slice(0, 8)}…</span>
+                      <p className="text-xs text-muted">Teach the agent from this response</p>
+                      <span className="text-xs text-muted font-mono">task: {latestTaskId.slice(0, 8)}…</span>
                     </div>
 
                     <div className="flex gap-2 flex-wrap">
                       <button
                         type="button"
                         onClick={() => setFeedbackSignal('up')}
-                        className={`px-3 py-1.5 rounded text-xs transition-colors ${feedbackSignal === 'up' ? 'bg-green-900/60 text-green-300 border border-green-700' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+                        className={`px-3 py-1.5 rounded text-xs transition-colors ${feedbackSignal === 'up' ? 'border border-[color:var(--success)]/50 bg-[color:var(--success)]/15 text-[color:var(--success)]' : 'btn-ghost text-muted'}`}
                       >
                         Helpful
                       </button>
                       <button
                         type="button"
                         onClick={() => setFeedbackSignal('down')}
-                        className={`px-3 py-1.5 rounded text-xs transition-colors ${feedbackSignal === 'down' ? 'bg-red-900/60 text-red-300 border border-red-700' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+                        className={`px-3 py-1.5 rounded text-xs transition-colors ${feedbackSignal === 'down' ? 'border border-[color:var(--danger)]/50 bg-[color:var(--danger)]/15 text-[color:var(--danger)]' : 'btn-ghost text-muted'}`}
                       >
                         Needs work
                       </button>
                     </div>
 
                     <div>
-                      <label htmlFor="live-feedback-notes" className="block text-xs text-gray-400 mb-1">
+                      <label htmlFor="live-feedback-notes" className="block text-xs text-muted mb-1">
                         Notes for future behavior
                       </label>
                       <textarea
@@ -477,7 +479,7 @@ export default function AgentExecutor() {
                         onChange={e => setFeedbackNotes(e.target.value)}
                         rows={3}
                         placeholder="What should the agent repeat or avoid next time?"
-                        className="w-full bg-gray-800 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:outline-none focus:border-indigo-500 resize-none"
+                        className="w-full bg-[color:var(--bg-elev)] rounded-lg px-3 py-2 text-sm border border-[color:var(--border)] focus:outline-none focus:border-[color:var(--accent)] resize-none"
                       />
                     </div>
 
@@ -486,12 +488,12 @@ export default function AgentExecutor() {
                         type="button"
                         onClick={handleSaveFeedback}
                         disabled={feedbackSaving}
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded text-xs font-medium disabled:opacity-50 transition-colors"
+                        className="btn-accent px-3 py-1.5 rounded text-xs disabled:opacity-50"
                       >
                         {feedbackSaving ? 'Saving…' : 'Save feedback'}
                       </button>
-                      {feedbackSaved && <span className="text-xs text-green-400">Feedback saved</span>}
-                      {feedbackError && <span className="text-xs text-red-400">{feedbackError}</span>}
+                      {feedbackSaved && <span className="text-xs text-[color:var(--success)]">Feedback saved</span>}
+                      {feedbackError && <span className="text-xs text-[color:var(--danger)]">{feedbackError}</span>}
                     </div>
                   </div>
                 )}
@@ -500,7 +502,7 @@ export default function AgentExecutor() {
             <div
               ref={eventsContainerRef}
               onScroll={handleEventsScroll}
-              className="flex-1 min-h-0 overflow-y-auto bg-gray-900 rounded-xl border border-gray-800 p-4 space-y-2 font-mono text-sm relative"
+              className="flex-1 min-h-0 overflow-y-auto bg-[color:var(--bg-elev)] rounded-xl border border-[color:var(--border)] p-4 space-y-2 font-mono text-sm relative"
             >
               {turnItems.map((item, i) => {
                 if (item.kind === 'divider') {
@@ -515,7 +517,7 @@ export default function AgentExecutor() {
                 return (
                   <div key={`turn-${item.id}`} className="space-y-2">
                     {(turnStartedAt || turnDuration) && (
-                      <div className="flex items-center gap-2 text-[10px] text-gray-500 ml-1">
+                      <div className="flex items-center gap-2 text-[10px] text-muted ml-1">
                         {turnStartedAt ? <span>{formatTs(turnStartedAt)}</span> : null}
                         {turnDuration != null ? <span>• {formatDuration(turnDuration)}</span> : null}
                       </div>
@@ -531,15 +533,15 @@ export default function AgentExecutor() {
                     ))}
 
                     {item.thinking.length > 0 && (
-                      <div className="ml-1 mr-8 bg-gray-900/60 border border-gray-800 rounded-lg p-2 space-y-2">
+                      <div className="ml-1 mr-8 panel panel-soft rounded-lg p-2 space-y-2">
                         <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <p className="text-xs text-gray-400">
+                          <p className="text-xs text-muted">
                             Reasoning for this turn: {item.thinking.length} {item.thinking.length === 1 ? 'event' : 'events'}
                           </p>
                           <button
                             type="button"
                             onClick={() => toggleTurnThinking(item.id)}
-                            className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-300 transition-colors"
+                            className="btn-ghost px-2 py-1 rounded text-xs"
                           >
                             {openThinkingByTurn[item.id] ? 'Hide reasoning' : 'View reasoning'}
                           </button>
@@ -548,8 +550,8 @@ export default function AgentExecutor() {
                         {openThinkingByTurn[item.id] && (
                           <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
                             {item.thinking.map((ev, idx) => (
-                              <div key={`turn-${item.id}-thinking-${idx}`} className="bg-gray-800/80 border border-gray-700 rounded px-2 py-1.5 text-xs text-purple-200">
-                                <span className="text-purple-400 mr-1">💭</span>
+                              <div key={`turn-${item.id}-thinking-${idx}`} className="bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded px-2 py-1.5 text-xs text-[color:var(--text)]">
+                                <span className="text-[color:var(--accent-2)] mr-1">💭</span>
                                 {ev.content || '(empty reasoning event)'}
                               </div>
                             ))}
@@ -562,13 +564,13 @@ export default function AgentExecutor() {
               })}
               {isRunning && (
                 <div className="flex justify-start">
-                  <div className="max-w-[85%] bg-gray-800/70 border border-gray-700 rounded-2xl rounded-bl-md px-3 py-2 text-gray-300 text-sm">
+                  <div className="max-w-[85%] bg-[color:var(--surface-soft)] border border-[color:var(--border)] rounded-2xl rounded-bl-md px-3 py-2 text-muted text-sm">
                     <span className="inline-flex items-center gap-2">
                       <span>Assistant is typing</span>
                       <span className="inline-flex gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce [animation-delay:-0.2s]" />
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce [animation-delay:-0.1s]" />
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-[color:var(--accent-2)] animate-bounce [animation-delay:-0.2s]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-[color:var(--accent-2)] animate-bounce [animation-delay:-0.1s]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-[color:var(--accent-2)] animate-bounce" />
                       </span>
                     </span>
                   </div>
@@ -579,7 +581,7 @@ export default function AgentExecutor() {
                 <button
                   type="button"
                   onClick={jumpToLatest}
-                  className="absolute bottom-3 right-3 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-full text-xs font-medium text-white shadow-lg transition-colors"
+                  className="absolute bottom-3 right-3 btn-accent px-3 py-1.5 rounded-full text-xs shadow-lg"
                 >
                   Jump to latest
                 </button>
@@ -588,26 +590,26 @@ export default function AgentExecutor() {
             </div>
           </div>
         ) : (
-          <div className="flex-1 min-h-0 flex items-center justify-center text-gray-600 text-sm select-none text-center px-6">
+          <div className="flex-1 min-h-0 flex items-center justify-center text-muted text-sm select-none text-center px-6">
             <div>
               <p>Start chatting to see responses here.</p>
-              <p className="text-xs text-gray-500 mt-2">Enter to send, Shift+Enter for newline. Reasoning can stay hidden until you need it.</p>
+              <p className="text-xs text-muted/90 mt-2">Enter to send, Shift+Enter for newline. Reasoning can stay hidden until you need it.</p>
             </div>
           </div>
         )}
       </div>
 
       {/* ── Bottom controls — pinned ── */}
-      <div className="shrink-0 space-y-3 sticky bottom-0 bg-gray-950/95 backdrop-blur-sm pt-2 border-t border-gray-800">
+      <div className="shrink-0 space-y-3 sticky bottom-0 bg-[color:var(--bg)]/95 backdrop-blur-sm pt-2 border-t border-[color:var(--border)]">
         <ContextBar events={events} />
 
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-2 text-xs text-gray-400">
+          <label className="flex items-center gap-2 text-xs text-muted">
             <input
               type="checkbox"
               checked={showThinkingLive}
               onChange={e => setShowThinkingLive(e.target.checked)}
-              className="w-3.5 h-3.5 accent-indigo-500"
+              className="w-3.5 h-3.5 accent-[color:var(--accent)]"
             />
             Show reasoning while streaming
           </label>
@@ -618,7 +620,7 @@ export default function AgentExecutor() {
             <button
               type="button"
               onClick={handleRegenerate}
-              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300 transition-colors"
+              className="btn-ghost px-3 py-1.5 rounded-lg text-xs"
             >
               Regenerate last response
             </button>
@@ -628,7 +630,7 @@ export default function AgentExecutor() {
                 setEditLastOpen(v => !v)
                 setEditLastText(lastUserMessage)
               }}
-              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300 transition-colors"
+              className="btn-ghost px-3 py-1.5 rounded-lg text-xs"
             >
               {editLastOpen ? 'Close edit' : 'Edit & resend last message'}
             </button>
@@ -636,21 +638,21 @@ export default function AgentExecutor() {
         )}
 
         {editLastOpen && !isRunning && (
-          <div className="bg-gray-900/70 border border-gray-800 rounded-lg p-3 space-y-2">
-            <label htmlFor="edit-last-message" className="block text-xs text-gray-400">Edit last user message</label>
+          <div className="panel panel-soft rounded-lg p-3 space-y-2">
+            <label htmlFor="edit-last-message" className="block text-xs text-muted">Edit last user message</label>
             <textarea
               id="edit-last-message"
               value={editLastText}
               onChange={e => setEditLastText(e.target.value)}
               rows={3}
-              className="w-full bg-gray-900 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:outline-none focus:border-indigo-500 resize-none"
+              className="w-full bg-[color:var(--bg-elev)] rounded-lg px-3 py-2 text-sm border border-[color:var(--border)] focus:outline-none focus:border-[color:var(--accent)] resize-none"
             />
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={handleResendEdited}
                 disabled={!editLastText.trim()}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded text-xs font-medium disabled:opacity-50 transition-colors"
+                className="btn-accent px-3 py-1.5 rounded text-xs disabled:opacity-50"
               >
                 Resend edited message
               </button>
@@ -659,25 +661,25 @@ export default function AgentExecutor() {
         )}
 
         {error && (
-          <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 text-red-400 text-sm">
+          <div className="border border-[color:var(--danger)]/45 bg-[color:var(--danger)]/10 rounded-lg p-3 text-[color:var(--danger)] text-sm">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Context <span className="text-gray-600">(optional)</span></label>
+            <label className="block text-sm text-muted mb-1">Context <span className="text-muted/70">(optional)</span></label>
             <textarea
               value={context}
               onChange={e => setContext(e.target.value)}
               placeholder="Additional context or constraints..."
               rows={2}
               disabled={isRunning}
-              className="w-full bg-gray-900 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:outline-none focus:border-indigo-500 resize-none disabled:opacity-50"
+              className="w-full bg-[color:var(--bg-elev)] rounded-lg px-3 py-2 text-sm border border-[color:var(--border)] focus:outline-none focus:border-[color:var(--accent)] resize-none disabled:opacity-50"
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Query</label>
+            <label className="block text-sm text-muted mb-1">Query</label>
             <textarea
               value={query}
               onChange={e => setQuery(e.target.value)}
@@ -685,14 +687,14 @@ export default function AgentExecutor() {
               placeholder="Message the agent (Enter to send, Shift+Enter for newline)"
               rows={3}
               disabled={isRunning}
-              className="w-full bg-gray-900 rounded-lg px-3 py-2 text-sm border border-gray-700 focus:outline-none focus:border-indigo-500 resize-none disabled:opacity-50"
+              className="w-full bg-[color:var(--bg-elev)] rounded-lg px-3 py-2 text-sm border border-[color:var(--border)] focus:outline-none focus:border-[color:var(--accent)] resize-none disabled:opacity-50"
             />
           </div>
           <div className="flex gap-3 items-center flex-wrap">
             <button
               type="submit"
               disabled={isRunning || !query.trim()}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium disabled:opacity-50 transition-colors"
+              className="btn-accent px-4 py-2 rounded-lg text-sm disabled:opacity-50"
             >
               {isRunning ? 'Running…' : 'Run Agent'}
             </button>
@@ -700,7 +702,7 @@ export default function AgentExecutor() {
               <button
                 type="button"
                 onClick={stop}
-                className="px-4 py-2 bg-red-900/60 hover:bg-red-800 text-red-300 rounded-lg text-sm transition-colors"
+                className="px-4 py-2 border border-[color:var(--danger)]/50 bg-[color:var(--danger)]/15 text-[color:var(--danger)] rounded-lg text-sm transition-colors hover:bg-[color:var(--danger)]/25"
               >
                 Stop
               </button>
@@ -709,7 +711,7 @@ export default function AgentExecutor() {
               <button
                 type="button"
                 onClick={reset}
-                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition-colors"
+                className="btn-ghost px-4 py-2 rounded-lg text-sm"
               >
                 Clear
               </button>
@@ -718,13 +720,13 @@ export default function AgentExecutor() {
               <button
                 type="button"
                 onClick={newConversation}
-                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition-colors"
+                className="btn-ghost px-4 py-2 rounded-lg text-sm"
               >
                 New Conversation
               </button>
             )}
             {conversationId && (
-              <span className="text-xs text-gray-500 font-mono">
+              <span className="text-xs text-muted font-mono">
                 thread: {conversationId.slice(0, 8)}…
               </span>
             )}

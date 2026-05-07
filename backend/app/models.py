@@ -89,6 +89,11 @@ class CostStatus(BaseModel):
 
 class Settings(BaseModel):
     """User settings and preferences."""
+    display_name: Optional[str] = Field(
+        default=None,
+        max_length=80,
+        description="First name or nickname for dashboard greetings.",
+    )
     preferred_model: Optional[str] = None
     max_monthly_cost: float = Field(default=30.0)
     enable_notifications: bool = Field(default=True)

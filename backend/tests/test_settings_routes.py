@@ -16,6 +16,7 @@ async def test_get_settings_returns_defaults_when_store_empty(monkeypatch):
     assert response.status_code == 200
     payload = response.json()
     assert payload['max_monthly_cost'] == 30.0
+    assert payload.get('display_name') is None
     assert payload['timezone'] == 'UTC'
     assert payload['agent_persona_enabled'] is True
     assert payload['agent_persona_path'] == 'data/persona'
@@ -55,6 +56,7 @@ async def test_update_settings_persists_and_returns_updated(monkeypatch):
     monkeypatch.setattr('app.routes.settings._save', fake_save)
 
     body = {
+        'display_name': 'Pat',
         'preferred_model': 'deepseek/deepseek-chat',
         'max_monthly_cost': 45.0,
         'enable_notifications': True,
@@ -79,6 +81,7 @@ async def test_update_settings_persists_and_returns_updated(monkeypatch):
     payload = response.json()
     assert payload['status'] == 'updated'
     assert captured['data']['max_monthly_cost'] == 45.0
+    assert captured['data']['display_name'] == 'Pat'
     assert captured['data']['agent_persona_enabled'] is True
     assert payload['settings']['preferred_model'] == 'deepseek/deepseek-chat'
 

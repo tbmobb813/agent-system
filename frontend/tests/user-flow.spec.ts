@@ -47,6 +47,26 @@ test('full user flow: dashboard to agent execution', async ({ page }) => {
     })
   })
 
+  await page.route('**/api/backend/settings', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        display_name: null,
+        preferred_model: null,
+        max_monthly_cost: 30,
+        enable_notifications: true,
+        auto_save_results: true,
+        context_window_target_percent: 0.75,
+        default_tools: null,
+        timezone: 'UTC',
+        agent_persona_enabled: true,
+        agent_persona_path: 'data/persona',
+        metadata: {},
+      }),
+    })
+  })
+
   const sseBody = [
     'data: {"type":"status","content":"initializing","task_id":"task-999"}',
     'data: {"type":"text_delta","content":"Flow completed."}',
@@ -67,8 +87,8 @@ test('full user flow: dashboard to agent execution', async ({ page }) => {
 
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
-  await page.getByRole('link', { name: '🤖 Run Agent Execute tasks with real-time streaming output.' }).click()
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Good (morning|afternoon|evening|night)/)
+  await page.getByRole('link', { name: /Run Agent/ }).first().click()
 
   await expect(page).toHaveURL(/\/agent$/)
   await page

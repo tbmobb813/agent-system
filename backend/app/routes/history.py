@@ -37,10 +37,23 @@ async def get_history(
         pattern = f"%{q.strip()}%"
         tasks = await fetch(
             """
-            SELECT id, query, status, created_at, cost, model_used
-            FROM tasks
-            WHERE query ILIKE $3 OR result ILIKE $3
-            ORDER BY created_at DESC
+            SELECT
+                t.id,
+                t.query,
+                t.status,
+                t.created_at,
+                t.cost,
+                t.model_used,
+                (
+                    SELECT tf.signal
+                    FROM task_feedback tf
+                    WHERE tf.task_id = t.id
+                    ORDER BY tf.created_at DESC
+                    LIMIT 1
+                ) AS feedback_signal
+            FROM tasks t
+            WHERE t.query ILIKE $3 OR t.result ILIKE $3
+            ORDER BY t.created_at DESC
             LIMIT $1 OFFSET $2
             """,
             limit, offset, pattern,
@@ -52,9 +65,22 @@ async def get_history(
     else:
         tasks = await fetch(
             """
-            SELECT id, query, status, created_at, cost, model_used
-            FROM tasks
-            ORDER BY created_at DESC
+            SELECT
+                t.id,
+                t.query,
+                t.status,
+                t.created_at,
+                t.cost,
+                t.model_used,
+                (
+                    SELECT tf.signal
+                    FROM task_feedback tf
+                    WHERE tf.task_id = t.id
+                    ORDER BY tf.created_at DESC
+                    LIMIT 1
+                ) AS feedback_signal
+            FROM tasks t
+            ORDER BY t.created_at DESC
             LIMIT $1 OFFSET $2
             """,
             limit, offset,
