@@ -27,9 +27,13 @@ type SettingsData = {
   max_monthly_cost: number
   enable_notifications: boolean
   auto_save_results: boolean
+  context_window_target_percent: number
+  default_tools: string[] | null
   timezone: string
   agent_persona_enabled: boolean
   agent_persona_path: string
+  agent_show_thinking_while_streaming: boolean
+  metadata: Record<string, unknown>
 }
 
 export default function SettingsPage() {
@@ -50,7 +54,25 @@ export default function SettingsPage() {
 
   useEffect(() => {
     getSettings()
-      .then(setSettings)
+      .then((data: Record<string, unknown>) => {
+        setSettings({
+          display_name: (data.display_name as string | null) ?? null,
+          preferred_model: (data.preferred_model as string | null) ?? null,
+          max_monthly_cost: typeof data.max_monthly_cost === 'number' ? data.max_monthly_cost : 30,
+          enable_notifications: data.enable_notifications !== false,
+          auto_save_results: data.auto_save_results !== false,
+          context_window_target_percent:
+            typeof data.context_window_target_percent === 'number' ? data.context_window_target_percent : 0.75,
+          default_tools: Array.isArray(data.default_tools) ? (data.default_tools as string[]) : null,
+          timezone: typeof data.timezone === 'string' ? data.timezone : 'UTC',
+          agent_persona_enabled: data.agent_persona_enabled !== false,
+          agent_persona_path: typeof data.agent_persona_path === 'string' ? data.agent_persona_path : 'data/persona',
+          agent_show_thinking_while_streaming: data.agent_show_thinking_while_streaming !== false,
+          metadata: (data.metadata as Record<string, unknown>) && typeof data.metadata === 'object'
+            ? (data.metadata as Record<string, unknown>)
+            : {},
+        })
+      })
       .catch(err => setLoadError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false))
   }, [])
@@ -227,6 +249,28 @@ export default function SettingsPage() {
           <label htmlFor="autosave" className="text-sm">
             Auto-save results
           </label>
+        </div>
+
+        <div className="pt-2 border-t border-[color:var(--border)]">
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="agent-show-thinking-stream"
+              checked={settings.agent_show_thinking_while_streaming}
+              onChange={e =>
+                setSettings({ ...settings, agent_show_thinking_while_streaming: e.target.checked })
+              }
+              className="w-4 h-4 accent-[color:var(--accent)] mt-0.5 shrink-0"
+            />
+            <div>
+              <label htmlFor="agent-show-thinking-stream" className="text-sm cursor-pointer">
+                Show planning stream in agent chat
+              </label>
+              <p className="text-xs text-muted mt-1 leading-relaxed">
+                When enabled, status and thinking before each reply appear in the transcript (details depend on the model). Turn off for a minimal transcript; your chat session picks this up when you return to the Agent page.
+              </p>
+            </div>
+          </div>
         </div>
 
         {autostart !== null && (

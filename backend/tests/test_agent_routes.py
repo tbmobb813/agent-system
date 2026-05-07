@@ -1,5 +1,8 @@
+import pytest
 from httpx import ASGITransport, AsyncClient
-from app.models import ExecutionEvent, EventType
+from pydantic import ValidationError
+
+from app.models import AgentRequest, ExecutionEvent, EventType
 
 from app.main import app
 
@@ -353,3 +356,36 @@ async def test_list_models_returns_routing_info():
     payload = response.json()
     assert payload['routing_strategy'] == 'complexity_based'
     assert isinstance(payload['models'], dict)
+
+
+def test_agent_request_reasoning_effort_normalizes():
+    assert AgentRequest(query='x').reasoning_effort is None
+    assert AgentRequest(query='x', reasoning_effort='Medium').reasoning_effort == 'medium'
+    assert AgentRequest(query='x', reasoning_effort='DISABLE').reasoning_effort == 'off'
+
+
+def test_agent_request_reasoning_effort_rejects_unknown():
+    with pytest.raises(ValidationError):
+        AgentRequest(query='x', reasoning_effort='bogus')
+
+
+async def test_run_agent_returns_422_for_invalid_reasoning_effort():
+    original_orch = getattr(app.state, "agent_orchestrator", None)
+    original_cost = getattr(app.state, "cost_tracker", None)
+
+    app.state.agent_orchestrator = DummyOrchestrator()
+    app.state.cost_tracker = DummyCostTracker(estimate=0.01, spent=0.0, last_cost=0.0025)
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.post(
+                '/agent/run',
+                headers={'Authorization': 'Bearer sk-agent-local-dev'},
+                json={'query': 'Say hello', 'reasoning_effort': 'not-a-level'},
+            )
+
+        assert response.status_code == 422
+    finally:
+        app.state.agent_orchestrator = original_orch
+        app.state.cost_tracker = original_cost

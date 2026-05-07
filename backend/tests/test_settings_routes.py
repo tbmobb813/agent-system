@@ -20,6 +20,7 @@ async def test_get_settings_returns_defaults_when_store_empty(monkeypatch):
     assert payload['timezone'] == 'UTC'
     assert payload['agent_persona_enabled'] is True
     assert payload['agent_persona_path'] == 'data/persona'
+    assert payload.get('agent_show_thinking_while_streaming') is True
 
 
 async def test_get_settings_returns_saved_values(monkeypatch):
@@ -66,6 +67,7 @@ async def test_update_settings_persists_and_returns_updated(monkeypatch):
         'timezone': 'UTC',
         'agent_persona_enabled': True,
         'agent_persona_path': 'data/persona',
+        'agent_show_thinking_while_streaming': True,
         'metadata': {'env': 'test'},
     }
 

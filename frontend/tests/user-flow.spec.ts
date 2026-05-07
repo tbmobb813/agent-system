@@ -62,6 +62,7 @@ test('full user flow: dashboard to agent execution', async ({ page }) => {
         timezone: 'UTC',
         agent_persona_enabled: true,
         agent_persona_path: 'data/persona',
+        agent_show_thinking_while_streaming: true,
         metadata: {},
       }),
     })
@@ -70,7 +71,7 @@ test('full user flow: dashboard to agent execution', async ({ page }) => {
   const sseBody = [
     'data: {"type":"status","content":"initializing","task_id":"task-999"}',
     'data: {"type":"text_delta","content":"Flow completed."}',
-    'data: {"type":"done","cost":0.002,"conversation_id":"conv-999"}',
+    'data: {"type":"done","cost":0.002,"conversation_id":"conv-999","task_id":"task-999"}',
     '',
   ].join('\n\n')
 
@@ -92,11 +93,11 @@ test('full user flow: dashboard to agent execution', async ({ page }) => {
 
   await expect(page).toHaveURL(/\/agent$/)
   await page
-    .getByPlaceholder('Message the agent (Enter to send, Shift+Enter for newline)')
+    .getByPlaceholder(/Message —/)
     .fill('Run a full flow test')
-  await page.getByRole('button', { name: 'Run Agent' }).click()
+  await page.getByPlaceholder(/Message —/).press('Enter')
 
   await expect(page.getByText('Flow completed.')).toBeVisible()
   await expect(page.getByText('thread: conv-999…')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Copy response' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Copy this reply' })).toBeVisible()
 })

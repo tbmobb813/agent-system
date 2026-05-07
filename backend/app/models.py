@@ -2,7 +2,7 @@
 Pydantic models for the AI agent system.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from typing import Optional, Any, Literal
 from enum import Enum
@@ -19,10 +19,13 @@ class TaskStatus(str, Enum):
 
 class EventType(str, Enum):
     """Types of events streamed from agent."""
+
     STATUS = "status"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
     TEXT_DELTA = "text_delta"
+    # Model/vendor reasoning stream (OpenRouter reasoning_details / delta.reasoning); not orchestrator plan.
+    REASONING_DELTA = "reasoning_delta"
     THINKING = "thinking"
     ERROR = "error"
     DONE = "done"
@@ -41,6 +44,31 @@ class AgentRequest(BaseModel):
     user_id: Optional[str] = Field(None, description="User identifier")
     conversation_id: Optional[str] = Field(None, description="Continue an existing conversation")
     metadata: Optional[dict] = Field(default_factory=dict, description="Custom metadata")
+    reasoning_effort: Optional[str] = Field(
+        default=None,
+        description=(
+            "OpenRouter reasoning effort override: off disables extra_body; "
+            "minimal|low|medium|high|xhigh|none set reasoning.effort; omit for OPENROUTER_REASONING_EFFORT env default."
+        ),
+    )
+
+    @field_validator("reasoning_effort", mode="before")
+    @classmethod
+    def normalize_reasoning_effort(cls, v: object) -> Optional[str]:
+        if v is None or v == "":
+            return None
+        if not isinstance(v, str):
+            raise ValueError("reasoning_effort must be a string or null")
+        s = v.strip().lower()
+        if s in ("disable",):
+            s = "off"
+        allowed = frozenset({"off", "minimal", "low", "medium", "high", "xhigh", "none"})
+        if s not in allowed:
+            raise ValueError(
+                "reasoning_effort must be one of: off, minimal, low, medium, high, xhigh, none "
+                "(or omit for server env default)"
+            )
+        return s
 
 
 class ExecutionEvent(BaseModel):
@@ -103,6 +131,10 @@ class Settings(BaseModel):
     timezone: str = Field(default="UTC")
     agent_persona_enabled: bool = Field(default=True)
     agent_persona_path: str = Field(default="data/persona")
+    agent_show_thinking_while_streaming: bool = Field(
+        default=True,
+        description="When true, show planning/status/thinking before the assistant reply in the chat transcript.",
+    )
     metadata: dict = Field(default_factory=dict)
 
 

@@ -144,6 +144,12 @@ export async function getTools() {
   return res.json()
 }
 
+export async function getAgentModels() {
+  const res = await fetchWithTimeout(`${API_URL}/agent/models`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch models (${res.status})`)
+  return res.json()
+}
+
 export async function stopAgent(taskId: string) {
   const res = await fetchWithTimeout(`${API_URL}/agent/stop?task_id=${taskId}`, {
     method: 'POST',
@@ -154,11 +160,27 @@ export async function stopAgent(taskId: string) {
 }
 
 /** Returns raw Response with SSE body for streaming. */
-export function streamAgent(query: string, context?: string, tools?: string[], conversationId?: string) {
+export function streamAgent(
+  query: string,
+  context?: string,
+  tools?: string[],
+  conversationId?: string,
+  /** When set, sent as `reasoning_effort` (e.g. `off`, `medium`). When omitted, server uses env default. */
+  reasoningEffort?: string,
+) {
+  const body: Record<string, unknown> = {
+    query,
+    context: context ?? null,
+    tools: tools ?? null,
+    conversation_id: conversationId ?? null,
+  }
+  if (reasoningEffort !== undefined) {
+    body.reasoning_effort = reasoningEffort
+  }
   return fetch(`${API_URL}/agent/stream`, {
     method: 'POST',
     headers: headers(),
-    body: JSON.stringify({ query, context, tools, conversation_id: conversationId ?? null }),
+    body: JSON.stringify(body),
   })
 }
 

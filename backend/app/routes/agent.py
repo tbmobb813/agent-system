@@ -79,6 +79,7 @@ async def run_agent(
         user_id=body.user_id,
         max_iterations=body.max_iterations,
         conversation_id=body.conversation_id,
+        reasoning_effort=body.reasoning_effort,
     )
     elapsed = time.monotonic() - t0
 
@@ -165,6 +166,7 @@ async def stream_agent(
                 max_iterations=body.max_iterations,
                 task_id=task_id,
                 conversation_id=body.conversation_id,
+                reasoning_effort=body.reasoning_effort,
             )
             while True:
                 try:
@@ -195,6 +197,8 @@ async def stream_agent(
                     return
 
                 data = event.model_dump(mode="json")
+                # Always attach task id so the client can rate the correct row after a run completes.
+                data["task_id"] = str(task_id)
                 if event.type.value == "text_delta" and event.content:
                     result_parts.append(event.content)
                     if event.model and not model_used:

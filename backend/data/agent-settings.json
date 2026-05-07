@@ -1,5 +1,5 @@
 {
-  "display_name": null,
+  "display_name": "Jason",
   "preferred_model": null,
   "max_monthly_cost": 30.0,
   "enable_notifications": true,
@@ -9,5 +9,6 @@
   "timezone": "UTC",
   "agent_persona_enabled": true,
   "agent_persona_path": "data/persona",
+  "agent_show_thinking_while_streaming": true,
   "metadata": {}
 }
