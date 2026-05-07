@@ -388,7 +388,36 @@ async def enqueue_agent_task(
 ):
     """Queue a deferred task for background execution."""
     runtime = _runtime(request)
+    cost_tracker = _cost_tracker(request)
+    estimated_cost = await cost_tracker.estimate_cost(body.query)
+    remaining = settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_month()
+    if estimated_cost > remaining:
+        return JSONResponse(
+            status_code=402,
+            content={
+                "error": "Insufficient budget",
+                "spent_month": await cost_tracker.get_spent_month(),
+                "budget": settings.OPENROUTER_BUDGET_MONTHLY,
+                "estimated_cost": estimated_cost,
+            },
+        )
+
     task_id = str(uuid.uuid4())
+    if _db.db_pool:
+        try:
+            await execute(
+                """
+                INSERT INTO tasks (id, user_id, query, status, cost, created_at)
+                VALUES ($1, $2, $3, 'queued', 0, $4)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                task_id,
+                body.user_id,
+                body.query,
+                datetime.utcnow(),
+            )
+        except Exception as e:
+            logger.warning(f"Could not pre-insert queued task: {e}")
     await runtime.enqueue_task(
         {
             "task_id": task_id,

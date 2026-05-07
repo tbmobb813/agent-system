@@ -23,6 +23,8 @@ async def slack_webhook(
     challenge = payload.get("challenge")
     if challenge:
         return {"challenge": challenge}
+    if not slack_discord_bot.verify_webhook_secret(x_bot_secret):
+        raise HTTPException(status_code=401, detail="Invalid webhook secret")
 
     if not slack_discord_bot.verify_webhook_secret(x_bot_secret):
         raise HTTPException(status_code=401, detail="Invalid webhook secret")

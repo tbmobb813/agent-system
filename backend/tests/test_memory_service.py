@@ -319,3 +319,18 @@ async def test_apply_relevance_decay_updates_rows(monkeypatch):
 
     assert updated == 3
     fake_conn.execute.assert_awaited_once()
+
+
+async def test_apply_relevance_decay_without_user_id_updates_all_rows(monkeypatch):
+    fake_conn = AsyncMock()
+    fake_conn.execute = AsyncMock(return_value='UPDATE 7')
+
+    fake_pool = AsyncMock()
+    fake_pool.acquire = lambda: AsyncContextManager(fake_conn)
+    monkeypatch.setattr('app.agent.memory._db.db_pool', fake_pool)
+
+    mgr = MemoryManager()
+    updated = await mgr.apply_relevance_decay(half_life_days=90.0, min_relevance=0.1)
+
+    assert updated == 7
+    fake_conn.execute.assert_awaited_once()

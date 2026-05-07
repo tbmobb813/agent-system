@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     # OpenRouter: optional reasoning/thinking token stream (extra_body.reasoning). Billed as output tokens.
     # Examples: "medium", "high", "low". Unset = omit parameter (provider default; many models still stream reasoning when supported).
     OPENROUTER_REASONING_EFFORT: Optional[str] = Field(default=None)
+    QUALITY_SCORING_ENABLED: bool = Field(default=False)
+    QUALITY_SCORING_SAMPLE_RATE: float = Field(default=0.10)
+    QUALITY_SCORING_MODEL: str = Field(default="anthropic/claude-3.5-haiku")
 
     # Context limits
     MAX_CONTEXT_TOKENS: int = Field(default=128000)

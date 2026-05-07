@@ -531,25 +531,40 @@ class MemoryManager:
         if half_life_days <= 0:
             raise ValueError("half_life_days must be > 0")
 
-        user_id = user_id or DEFAULT_USER
         try:
             async with _db.db_pool.acquire() as conn:
-                result = await conn.execute(
-                    """
-                    UPDATE memory
-                    SET relevance_score = GREATEST(
-                        $3::float8,
-                        relevance_score * EXP(
-                            -LN(2) * (EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0) / $2::float8
-                        )
-                    ),
-                    accessed_at = accessed_at
-                    WHERE user_id = $1
-                    """,
-                    user_id,
-                    half_life_days,
-                    min_relevance,
-                )
+                if user_id:
+                    result = await conn.execute(
+                        """
+                        UPDATE memory
+                        SET relevance_score = GREATEST(
+                            $3::float8,
+                            relevance_score * EXP(
+                                -LN(2) * (EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0) / $2::float8
+                            )
+                        ),
+                        accessed_at = accessed_at
+                        WHERE user_id = $1
+                        """,
+                        user_id,
+                        half_life_days,
+                        min_relevance,
+                    )
+                else:
+                    result = await conn.execute(
+                        """
+                        UPDATE memory
+                        SET relevance_score = GREATEST(
+                            $2::float8,
+                            relevance_score * EXP(
+                                -LN(2) * (EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0) / $1::float8
+                            )
+                        ),
+                        accessed_at = accessed_at
+                        """,
+                        half_life_days,
+                        min_relevance,
+                    )
             # result format: "UPDATE <count>"
             updated = int(str(result).split()[-1])
             return updated

@@ -378,7 +378,9 @@ async def test_list_models_returns_routing_info():
 
 async def test_enqueue_agent_task_queues_payload():
     original_runtime = getattr(app.state, "orchestration_runtime", None)
+    original_cost = getattr(app.state, "cost_tracker", None)
     app.state.orchestration_runtime = DummyRuntime()
+    app.state.cost_tracker = DummyCostTracker(estimate=0.01, spent=0.0)
 
     try:
         transport = ASGITransport(app=app)
@@ -395,6 +397,30 @@ async def test_enqueue_agent_task_queues_payload():
         assert payload['queue_size'] == 1
     finally:
         app.state.orchestration_runtime = original_runtime
+        app.state.cost_tracker = original_cost
+
+
+async def test_enqueue_agent_task_rejects_when_budget_exceeded():
+    original_runtime = getattr(app.state, "orchestration_runtime", None)
+    original_cost = getattr(app.state, "cost_tracker", None)
+    app.state.orchestration_runtime = DummyRuntime()
+    app.state.cost_tracker = DummyCostTracker(estimate=5.0, spent=29.5)
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.post(
+                '/agent/enqueue',
+                headers={'Authorization': 'Bearer sk-agent-local-dev'},
+                json={'query': 'run this later', 'user_id': 'u1'},
+            )
+
+        assert response.status_code == 402
+        payload = response.json()
+        assert payload['error'] == 'Insufficient budget'
+    finally:
+        app.state.orchestration_runtime = original_runtime
+        app.state.cost_tracker = original_cost
 
 
 def test_agent_request_reasoning_effort_normalizes():

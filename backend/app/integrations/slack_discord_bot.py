@@ -20,11 +20,16 @@ class SlackDiscordBot:
         self.slack_bot_token = os.getenv("SLACK_BOT_TOKEN", "")
         self.discord_bot_token = os.getenv("DISCORD_BOT_TOKEN", "")
         self.webhook_secret = os.getenv("BOT_WEBHOOK_SECRET", "")
+        self.allow_insecure_webhooks = os.getenv("BOT_WEBHOOK_ALLOW_INSECURE", "").lower() in {
+            "1",
+            "true",
+            "yes",
+        }
 
     def verify_webhook_secret(self, provided: str | None) -> bool:
-        # If no secret is configured, accept for local development.
+        # Fail closed by default. Local development can opt in explicitly.
         if not self.webhook_secret:
-            return True
+            return self.allow_insecure_webhooks
         return bool(provided) and provided == self.webhook_secret
 
     async def handle_slack_event(self, payload: dict[str, Any]) -> dict[str, Any]:

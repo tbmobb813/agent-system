@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable
 
 from app.agent.memory import memory_manager
+from app.database import execute
+from app import database as _db
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +100,18 @@ class OrchestrationRuntime:
     async def _queue_worker(self) -> None:
         while self._running:
             payload = await self.queue.get()
+            task_id = payload.get("task_id")
+            started_at = datetime.utcnow()
             try:
-                task_id = payload.get("task_id")
+                if _db.db_pool and task_id:
+                    await execute(
+                        """
+                        UPDATE tasks
+                        SET status = 'running'
+                        WHERE id = $1
+                        """,
+                        task_id,
+                    )
                 result, conversation_id = await self.orchestrator.run(
                     query=payload["query"],
                     context=payload.get("context"),
@@ -109,6 +121,22 @@ class OrchestrationRuntime:
                     conversation_id=payload.get("conversation_id"),
                     reasoning_effort=payload.get("reasoning_effort"),
                 )
+                if _db.db_pool and task_id:
+                    elapsed = (datetime.utcnow() - started_at).total_seconds()
+                    await execute(
+                        """
+                        UPDATE tasks
+                        SET status = 'completed',
+                            result = $2,
+                            completed_at = $3,
+                            execution_time = $4
+                        WHERE id = $1
+                        """,
+                        task_id,
+                        (result or "")[:10000],
+                        datetime.utcnow(),
+                        elapsed,
+                    )
                 self.emit_event(
                     "task_completed",
                     {
@@ -119,6 +147,22 @@ class OrchestrationRuntime:
                 )
             except Exception as e:
                 logger.warning("Deferred task failed: %s", e)
+                if _db.db_pool and task_id:
+                    elapsed = (datetime.utcnow() - started_at).total_seconds()
+                    await execute(
+                        """
+                        UPDATE tasks
+                        SET status = 'failed',
+                            result = $2,
+                            completed_at = $3,
+                            execution_time = $4
+                        WHERE id = $1
+                        """,
+                        task_id,
+                        str(e)[:10000],
+                        datetime.utcnow(),
+                        elapsed,
+                    )
                 self.emit_event("task_failed", {"error": str(e)})
             finally:
                 self.queue.task_done()

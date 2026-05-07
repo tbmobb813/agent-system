@@ -12,16 +12,11 @@ from typing import Any, Optional
 from openai import AsyncOpenAI
 
 from app.config import settings
-from app.database import execute
+from app.database import execute, fetchval
 from app import database as _db
 
 logger = logging.getLogger(__name__)
-
-# Keep defaults local so we can ship this without environment changes.
-QUALITY_SCORING_ENABLED = True
-QUALITY_SCORING_SAMPLE_RATE = 0.10
-QUALITY_SCORING_MODEL = "anthropic/claude-3.5-haiku"
-
+_response_quality_table_exists: bool | None = None
 
 def _judge_client() -> AsyncOpenAI:
     return AsyncOpenAI(
@@ -35,11 +30,11 @@ def _judge_client() -> AsyncOpenAI:
 
 
 def _should_sample() -> bool:
-    if not QUALITY_SCORING_ENABLED:
+    if not settings.QUALITY_SCORING_ENABLED:
         return False
     if not settings.OPENROUTER_API_KEY:
         return False
-    return random.random() <= QUALITY_SCORING_SAMPLE_RATE
+    return random.random() <= settings.QUALITY_SCORING_SAMPLE_RATE
 
 
 def _extract_json_object(text: str) -> Optional[dict[str, Any]]:
@@ -66,6 +61,21 @@ def _extract_json_object(text: str) -> Optional[dict[str, Any]]:
         return None
 
 
+async def _quality_table_available() -> bool:
+    global _response_quality_table_exists
+    if _response_quality_table_exists is not None:
+        return _response_quality_table_exists
+    if not _db.db_pool:
+        _response_quality_table_exists = False
+        return False
+    try:
+        exists = await fetchval("SELECT to_regclass('public.response_quality') IS NOT NULL")
+        _response_quality_table_exists = bool(exists)
+    except Exception:
+        _response_quality_table_exists = False
+    return _response_quality_table_exists
+
+
 async def score_response_quality(
     *,
     query: str,
@@ -78,6 +88,8 @@ async def score_response_quality(
     if not _should_sample():
         return
     if not response.strip():
+        return
+    if not await _quality_table_available():
         return
 
     prompt = (
@@ -99,7 +111,7 @@ async def score_response_quality(
     try:
         client = _judge_client()
         resp = await client.chat.completions.create(
-            model=QUALITY_SCORING_MODEL,
+            model=settings.QUALITY_SCORING_MODEL,
             temperature=0,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=200,
@@ -127,8 +139,6 @@ async def score_response_quality(
         tool_usage = _clamp(tool_usage)
         overall = _clamp(overall)
 
-        if not _db.db_pool:
-            return
         await execute(
             """
             INSERT INTO response_quality (

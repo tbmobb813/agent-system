@@ -5,6 +5,7 @@ Minimal MCP client for external MCP-compatible servers.
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any
 
 import httpx
@@ -28,7 +29,7 @@ class MCPClient:
     async def call_tool(self, tool_name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         payload = {
             "jsonrpc": "2.0",
-            "id": "agent-system",
+            "id": str(uuid.uuid4()),
             "method": "tools/call",
             "params": {
                 "name": tool_name,
@@ -46,7 +47,7 @@ class MCPClient:
     async def list_tools(self) -> list[dict[str, Any]]:
         payload = {
             "jsonrpc": "2.0",
-            "id": "agent-system",
+            "id": str(uuid.uuid4()),
             "method": "tools/list",
             "params": {},
         }

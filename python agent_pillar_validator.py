@@ -10,6 +10,9 @@ Usage:
     python agent_pillar_validator.py --check-code       # Also scan codebase
     python agent_pillar_validator.py --json              # JSON output
     python agent_pillar_validator.py --ci                # Exit code 1 if score < threshold
+
+Legacy path (kept for compatibility):
+    python "python agent_pillar_validator.py"
 """
 
 import argparse
