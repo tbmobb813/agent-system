@@ -564,8 +564,7 @@ class OrchestrationRuntime:
 
         await self.enqueue_task(replay_payload)
 
-        if delete_on_success:
-                if delete_immediately:
+        if delete_immediately:
             try:
                 await execute(
                     "DELETE FROM failed_tasks WHERE id = $1::uuid",

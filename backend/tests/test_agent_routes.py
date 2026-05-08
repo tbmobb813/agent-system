@@ -72,7 +72,7 @@ class DummyRuntime:
         return len(self._items)
 
     async def replay_failed_task(
-        self, failed_task_id: str, *, delete_on_success: bool = True
+        self, failed_task_id: str, *, delete_immediately: bool = True
     ):
         task_id = "33333333-3333-3333-3333-333333333333"
         self._items.append({"task_id": task_id, "query": "replayed"})
@@ -80,7 +80,7 @@ class DummyRuntime:
             "failed_task_id": failed_task_id,
             "task_id": task_id,
             "status": "queued",
-            "delete_on_success": delete_on_success,
+            "delete_immediately": delete_immediately,
         }
 
     class _Queue:

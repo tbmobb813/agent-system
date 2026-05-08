@@ -580,7 +580,10 @@ async def _reload_mcp_runtime(request: Request) -> None:
 
 @router.get("/mcp/servers")
 @limiter.limit("60/minute")
-async def list_mcp_servers(api_key: str = Depends(verify_api_key)):
+async def list_mcp_servers(
+    request: Request,
+    api_key: str = Depends(verify_api_key),
+):
     cfg = get_pillar_config(force_reload=True)
     if not cfg:
         return {"servers": [], "total": 0}
@@ -707,6 +710,7 @@ async def delete_mcp_server(
 @router.post("/mcp/servers/test")
 @limiter.limit("30/minute")
 async def test_mcp_server_config(
+    request: Request,
     body: McpServerTest,
     api_key: str = Depends(verify_api_key),
 ):
