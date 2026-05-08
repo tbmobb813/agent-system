@@ -1388,10 +1388,10 @@ export default function AgentExecutor() {
   }, [quickActionsOpen, reasoningArgModal, helpModalOpen, modelsModalOpen, opsModalOpen])
 
   useEffect(() => {
-    if (reasoningArgModal || helpModalOpen || modelsModalOpen) {
+    if (reasoningArgModal || helpModalOpen || modelsModalOpen || opsModalOpen) {
       setQuickActionsOpen(false)
     }
-  }, [reasoningArgModal, helpModalOpen, modelsModalOpen])
+  }, [reasoningArgModal, helpModalOpen, modelsModalOpen, opsModalOpen])
 
   const commitReasoningArg = useCallback((opt: string, range: { from: number; to: number }) => {
     skipReasoningModalSig.current = null
