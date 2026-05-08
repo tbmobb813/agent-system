@@ -1274,6 +1274,30 @@ export default function AgentExecutor() {
   const [modelsModalState, setModelsModalState] = useState<
     'loading' | { ok: Record<string, unknown> } | { err: string }
   >('loading')
+  const [opsModalOpen, setOpsModalOpen] = useState(false)
+  const [opsPanel, setOpsPanel] = useState<OpsPanel>('tools')
+  const [mcpCreateOpen, setMcpCreateOpen] = useState(false)
+  const [mcpCreateBusy, setMcpCreateBusy] = useState(false)
+  const [mcpCreateError, setMcpCreateError] = useState<string | null>(null)
+  const [mcpEditName, setMcpEditName] = useState<string | null>(null)
+  const [mcpEditBusy, setMcpEditBusy] = useState(false)
+  const [mcpDeleteBusyName, setMcpDeleteBusyName] = useState<string | null>(null)
+  const [mcpTestBusyName, setMcpTestBusyName] = useState<string | null>(null)
+  const [mcpTestResultByName, setMcpTestResultByName] = useState<Record<string, { ok: boolean; detail: string }>>({})
+  const [mcpDraftTestBusy, setMcpDraftTestBusy] = useState(false)
+  const [mcpDraftTestResult, setMcpDraftTestResult] = useState<{ ok: boolean; detail: string } | null>(null)
+  const [mcpNewName, setMcpNewName] = useState('')
+  const [mcpNewTransport, setMcpNewTransport] = useState<'http_json' | 'sse' | 'stdio'>('http_json')
+  const [mcpNewUrl, setMcpNewUrl] = useState('')
+  const [mcpNewCommand, setMcpNewCommand] = useState('')
+  const [mcpNewArgs, setMcpNewArgs] = useState('')
+  const [opsModalState, setOpsModalState] = useState<OpsModalState>({
+    tools: 'loading',
+    skills: 'loading',
+    mcp: 'loading',
+    stats: 'loading',
+    history: 'loading',
+  })
   const quickActionsRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
   const { events, isRunning, error, conversationId, run, reset, stop, newConversation } = useAgentStream()
