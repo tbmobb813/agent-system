@@ -80,6 +80,12 @@ export async function getAnalyticsAlerts(days = 30) {
   return res.json()
 }
 
+export async function getAnalyticsSkills() {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/skills`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch analytics skills (${res.status})`)
+  return res.json()
+}
+
 export async function getHistory(limit = 20, offset = 0, q?: string) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   if (q && q.trim()) params.set('q', q.trim())
@@ -141,6 +147,94 @@ export async function getPersonaPreview() {
 export async function getTools() {
   const res = await fetchWithTimeout(`${API_URL}/tools`, { headers: headers() })
   if (!res.ok) throw new Error(`Failed to fetch tools (${res.status})`)
+  return res.json()
+}
+
+export async function getAgentToolsHealth() {
+  const res = await fetchWithTimeout(`${API_URL}/agent/tools/health`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch tools health (${res.status})`)
+  return res.json()
+}
+
+export async function getAgentStats(days = 7) {
+  const res = await fetchWithTimeout(`${API_URL}/agent/stats?days=${days}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch agent stats (${res.status})`)
+  return res.json()
+}
+
+export async function addMcpServer(data: {
+  name: string
+  transport: 'http_json' | 'sse' | 'stdio'
+  url?: string
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+}) {
+  const res = await fetchWithTimeout(`${API_URL}/agent/mcp/servers`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to add MCP server (${res.status})` }))
+    throw new Error(String(err.detail ?? `Failed to add MCP server (${res.status})`))
+  }
+  return res.json()
+}
+
+export async function getMcpServers() {
+  const res = await fetchWithTimeout(`${API_URL}/agent/mcp/servers`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch MCP servers (${res.status})`)
+  return res.json()
+}
+
+export async function updateMcpServer(name: string, data: {
+  transport: 'http_json' | 'sse' | 'stdio'
+  url?: string
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+}) {
+  const res = await fetchWithTimeout(`${API_URL}/agent/mcp/servers/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: headers(),
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to update MCP server (${res.status})` }))
+    throw new Error(String(err.detail ?? `Failed to update MCP server (${res.status})`))
+  }
+  return res.json()
+}
+
+export async function deleteMcpServer(name: string) {
+  const res = await fetchWithTimeout(`${API_URL}/agent/mcp/servers/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+    headers: headers(),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to delete MCP server (${res.status})` }))
+    throw new Error(String(err.detail ?? `Failed to delete MCP server (${res.status})`))
+  }
+  return res.json()
+}
+
+export async function testMcpServer(data: {
+  transport: 'http_json' | 'sse' | 'stdio'
+  url?: string
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+}) {
+  const res = await fetchWithTimeout(`${API_URL}/agent/mcp/servers/test`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to test MCP server (${res.status})` }))
+    throw new Error(String(err.detail ?? `Failed to test MCP server (${res.status})`))
+  }
   return res.json()
 }
 
