@@ -34,6 +34,7 @@ except ImportError:
 # Data structures
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class Check:
     name: str
@@ -65,30 +66,50 @@ class PillarReport:
 # Pillar validators
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def validate_pillar_1(cfg: dict) -> PillarReport:
     """Define Purpose & Scope"""
     report = PillarReport(1, "Define Purpose & Scope", 0)
     p = cfg.get("purpose", {})
 
     checks = [
-        Check("Use case defined", bool(p.get("use_case")),
-              p.get("use_case", "MISSING")),
-        Check("User type defined", p.get("user_type") in ("single_user", "multi_user"),
-              f"user_type={p.get('user_type', 'MISSING')}"),
-        Check("Success criteria defined", bool(p.get("success_criteria")),
-              f"{len(p.get('success_criteria', {}))} criteria"),
-        Check("Budget limit set", p.get("success_criteria", {}).get("max_monthly_budget_usd", 0) > 0,
-              f"${p.get('success_criteria', {}).get('max_monthly_budget_usd', 'MISSING')}/month"),
-        Check("Latency target set", p.get("success_criteria", {}).get("target_p95_latency_ms", 0) > 0,
-              f"{p.get('success_criteria', {}).get('target_p95_latency_ms', 'MISSING')}ms",
-              severity="warning",
-              action="Set target_p95_latency_ms in success_criteria"),
-        Check("Constraints defined", bool(p.get("constraints")),
-              f"{len(p.get('constraints', {}))} constraints"),
-        Check("Out of scope defined", len(p.get("out_of_scope", [])) > 0,
-              f"{len(p.get('out_of_scope', []))} exclusions",
-              severity="warning",
-              action="Define what the agent should NOT do"),
+        Check(
+            "Use case defined", bool(p.get("use_case")), p.get("use_case", "MISSING")
+        ),
+        Check(
+            "User type defined",
+            p.get("user_type") in ("single_user", "multi_user"),
+            f"user_type={p.get('user_type', 'MISSING')}",
+        ),
+        Check(
+            "Success criteria defined",
+            bool(p.get("success_criteria")),
+            f"{len(p.get('success_criteria', {}))} criteria",
+        ),
+        Check(
+            "Budget limit set",
+            p.get("success_criteria", {}).get("max_monthly_budget_usd", 0) > 0,
+            f"${p.get('success_criteria', {}).get('max_monthly_budget_usd', 'MISSING')}/month",
+        ),
+        Check(
+            "Latency target set",
+            p.get("success_criteria", {}).get("target_p95_latency_ms", 0) > 0,
+            f"{p.get('success_criteria', {}).get('target_p95_latency_ms', 'MISSING')}ms",
+            severity="warning",
+            action="Set target_p95_latency_ms in success_criteria",
+        ),
+        Check(
+            "Constraints defined",
+            bool(p.get("constraints")),
+            f"{len(p.get('constraints', {}))} constraints",
+        ),
+        Check(
+            "Out of scope defined",
+            len(p.get("out_of_scope", [])) > 0,
+            f"{len(p.get('out_of_scope', []))} exclusions",
+            severity="warning",
+            action="Define what the agent should NOT do",
+        ),
     ]
 
     report.checks = checks
@@ -105,29 +126,60 @@ def validate_pillar_2(cfg: dict) -> PillarReport:
 
     persona = sp.get("persona", {})
     checks = [
-        Check("Persona name defined", bool(persona.get("name")),
-              persona.get("name", "MISSING"),
-              severity="warning", action="Give the agent a name/identity"),
-        Check("Role defined", bool(persona.get("role")),
-              persona.get("role", "MISSING")),
-        Check("Personality defined", bool(persona.get("personality")),
-              persona.get("personality", "MISSING")[:50],
-              severity="warning"),
-        Check("Goals defined", len(sp.get("goals", [])) >= 2,
-              f"{len(sp.get('goals', []))} goals"),
-        Check("Instructions defined", len(sp.get("instructions", [])) >= 2,
-              f"{len(sp.get('instructions', []))} instructions"),
-        Check("Guardrails defined", len(sp.get("guardrails", [])) >= 3,
-              f"{len(sp.get('guardrails', []))} guardrails",
-              severity="critical",
-              action="Add guardrails for safety and scope enforcement"),
-        Check("Dynamic context injection", sp.get("dynamic_context", {}).get("inject_user_preferences", False),
-              "User preferences injected" if sp.get("dynamic_context", {}).get("inject_user_preferences") else "Static prompt only",
-              severity="warning"),
-        Check("Prompt versioning", sp.get("versioning", {}).get("track_prompt_versions", False),
-              "Versioning enabled" if sp.get("versioning", {}).get("track_prompt_versions") else "No versioning",
-              severity="warning",
-              action="Enable prompt versioning to track quality changes"),
+        Check(
+            "Persona name defined",
+            bool(persona.get("name")),
+            persona.get("name", "MISSING"),
+            severity="warning",
+            action="Give the agent a name/identity",
+        ),
+        Check(
+            "Role defined", bool(persona.get("role")), persona.get("role", "MISSING")
+        ),
+        Check(
+            "Personality defined",
+            bool(persona.get("personality")),
+            persona.get("personality", "MISSING")[:50],
+            severity="warning",
+        ),
+        Check(
+            "Goals defined",
+            len(sp.get("goals", [])) >= 2,
+            f"{len(sp.get('goals', []))} goals",
+        ),
+        Check(
+            "Instructions defined",
+            len(sp.get("instructions", [])) >= 2,
+            f"{len(sp.get('instructions', []))} instructions",
+        ),
+        Check(
+            "Guardrails defined",
+            len(sp.get("guardrails", [])) >= 3,
+            f"{len(sp.get('guardrails', []))} guardrails",
+            severity="critical",
+            action="Add guardrails for safety and scope enforcement",
+        ),
+        Check(
+            "Dynamic context injection",
+            sp.get("dynamic_context", {}).get("inject_user_preferences", False),
+            (
+                "User preferences injected"
+                if sp.get("dynamic_context", {}).get("inject_user_preferences")
+                else "Static prompt only"
+            ),
+            severity="warning",
+        ),
+        Check(
+            "Prompt versioning",
+            sp.get("versioning", {}).get("track_prompt_versions", False),
+            (
+                "Versioning enabled"
+                if sp.get("versioning", {}).get("track_prompt_versions")
+                else "No versioning"
+            ),
+            severity="warning",
+            action="Enable prompt versioning to track quality changes",
+        ),
     ]
 
     report.checks = checks
@@ -143,28 +195,69 @@ def validate_pillar_3(cfg: dict) -> PillarReport:
     llm = cfg.get("llm", {})
     tiers = llm.get("model_tiers", {})
 
+    complexity_mode = (
+        (cfg.get("orchestration", {}) or {})
+        .get("execution", {})
+        .get("complexity_threshold", "keyword")
+    )
     checks = [
-        Check("Provider configured", bool(llm.get("provider")),
-              llm.get("provider", "MISSING")),
-        Check("Multiple model tiers", len(tiers) >= 3,
-              f"{len(tiers)} tiers defined"),
-        Check("Temperature configured per tier",
-              all("temperature" in t for t in tiers.values()),
-              "All tiers have temperature" if all("temperature" in t for t in tiers.values()) else "Some tiers missing temperature",
-              severity="warning"),
-        Check("Fallback chain defined", len(llm.get("fallback_chain", [])) >= 2,
-              f"{len(llm.get('fallback_chain', []))} models in chain"),
-        Check("Context window configured", llm.get("context_window", {}).get("max_tokens", 0) > 0,
-              f"{llm.get('context_window', {}).get('max_tokens', 'MISSING')} tokens"),
-        Check("Compaction strategy", llm.get("context_window", {}).get("compaction_trigger_percent", 0) > 0,
-              f"Triggers at {llm.get('context_window', {}).get('compaction_trigger_percent', 'MISSING')}%"),
-        Check("Latency tracking enabled", llm.get("tracking", {}).get("log_latency_per_model", False),
-              "Enabled" if llm.get("tracking", {}).get("log_latency_per_model") else "Disabled",
-              severity="warning",
-              action="Enable latency tracking per model"),
-        Check("Tool-capable tiers identified",
-              any(t.get("supports_tools") for t in tiers.values()),
-              f"{sum(1 for t in tiers.values() if t.get('supports_tools'))} tiers support tools"),
+        Check(
+            "Provider configured",
+            bool(llm.get("provider")),
+            llm.get("provider", "MISSING"),
+        ),
+        Check("Multiple model tiers", len(tiers) >= 3, f"{len(tiers)} tiers defined"),
+        Check(
+            "Temperature configured per tier",
+            all("temperature" in t for t in tiers.values()),
+            (
+                "All tiers have temperature"
+                if all("temperature" in t for t in tiers.values())
+                else "Some tiers missing temperature"
+            ),
+            severity="warning",
+        ),
+        Check(
+            "Fallback chain defined",
+            len(llm.get("fallback_chain", [])) >= 2,
+            f"{len(llm.get('fallback_chain', []))} models in chain",
+        ),
+        Check(
+            "Context window configured",
+            llm.get("context_window", {}).get("max_tokens", 0) > 0,
+            f"{llm.get('context_window', {}).get('max_tokens', 'MISSING')} tokens",
+        ),
+        Check(
+            "Compaction strategy",
+            llm.get("context_window", {}).get("compaction_trigger_percent", 0) > 0,
+            f"Triggers at {llm.get('context_window', {}).get('compaction_trigger_percent', 'MISSING')}%",
+        ),
+        Check(
+            "Latency tracking enabled",
+            llm.get("tracking", {}).get("log_latency_per_model", False),
+            (
+                "Enabled"
+                if llm.get("tracking", {}).get("log_latency_per_model")
+                else "Disabled"
+            ),
+            severity="warning",
+            action="Enable latency tracking per model",
+        ),
+        Check(
+            "Tool-capable tiers identified",
+            any(t.get("supports_tools") for t in tiers.values()),
+            f"{sum(1 for t in tiers.values() if t.get('supports_tools'))} tiers support tools",
+        ),
+        Check(
+            "Routing classifier configured for llm_classifier mode",
+            complexity_mode != "llm_classifier"
+            or bool(llm.get("routing_classifier", {}).get("model")),
+            llm.get("routing_classifier", {}).get(
+                "model", "not required (keyword mode)"
+            ),
+            severity="warning",
+            action="Set llm.routing_classifier.model when using complexity_threshold=llm_classifier",
+        ),
     ]
 
     report.checks = checks
@@ -187,25 +280,53 @@ def validate_pillar_4(cfg: dict) -> PillarReport:
     has_health = [k for k, v in builtin.items() if v.get("health_check")]
 
     checks = [
-        Check("Builtin tools defined", len(builtin) >= 3,
-              f"{len(builtin)} tools defined"),
-        Check("Tools enabled", len(enabled_tools) >= 2,
-              f"{len(enabled_tools)} enabled: {', '.join(enabled_tools)}",
-              severity="warning",
-              action="Enable more tools (browser_automation, code_execution)"),
-        Check("Health checks configured", len(has_health) >= 1,
-              f"{len(has_health)} tools with health checks",
-              severity="warning"),
-        Check("MCP integration", tools.get("mcp", {}).get("enabled", False) or discovered_mcp,
-              "Enabled" if (tools.get("mcp", {}).get("enabled", False) or discovered_mcp) else "Not yet implemented",
-              severity="warning",
-              action="Implement MCP client for external service integration"),
-        Check("Agent-as-tool", tools.get("agent_as_tool", {}).get("enabled", False) or discovered_agent_tool,
-              "Enabled" if (tools.get("agent_as_tool", {}).get("enabled", False) or discovered_agent_tool) else "Not yet implemented",
-              severity="warning",
-              action="Implement sub-agent pattern"),
-        Check("Custom functions directory", bool(tools.get("custom_functions", {}).get("directory")),
-              tools.get("custom_functions", {}).get("directory", "MISSING")),
+        Check(
+            "Builtin tools defined", len(builtin) >= 3, f"{len(builtin)} tools defined"
+        ),
+        Check(
+            "Tools enabled",
+            len(enabled_tools) >= 2,
+            f"{len(enabled_tools)} enabled: {', '.join(enabled_tools)}",
+            severity="warning",
+            action="Enable more tools (browser_automation, code_execution)",
+        ),
+        Check(
+            "Health checks configured",
+            len(has_health) >= 1,
+            f"{len(has_health)} tools with health checks",
+            severity="warning",
+        ),
+        Check(
+            "MCP integration",
+            tools.get("mcp", {}).get("enabled", False) or discovered_mcp,
+            (
+                "Enabled (HTTP and/or stdio/SSE hub)"
+                if (tools.get("mcp", {}).get("enabled", False) or discovered_mcp)
+                else "Not yet implemented"
+            ),
+            severity="warning",
+            action="Implement MCP tool loading (HTTP bridge and/or persistent stdio/SSE sessions)",
+        ),
+        Check(
+            "Agent-as-tool",
+            tools.get("agent_as_tool", {}).get("enabled", False)
+            or discovered_agent_tool,
+            (
+                "Enabled"
+                if (
+                    tools.get("agent_as_tool", {}).get("enabled", False)
+                    or discovered_agent_tool
+                )
+                else "Not yet implemented"
+            ),
+            severity="warning",
+            action="Implement sub-agent pattern",
+        ),
+        Check(
+            "Custom functions directory",
+            bool(tools.get("custom_functions", {}).get("directory")),
+            tools.get("custom_functions", {}).get("directory", "MISSING"),
+        ),
     ]
 
     report.checks = checks
@@ -225,28 +346,79 @@ def validate_pillar_5(cfg: dict) -> PillarReport:
     discovered_decay = bool(code.get("memory_decay_present", False))
 
     checks = [
-        Check("Episodic memory", mem.get("episodic", {}).get("enabled", False),
-              "Enabled" if mem.get("episodic", {}).get("enabled") else "Disabled"),
-        Check("Episodic temporal search", mem.get("episodic", {}).get("searchable_by_time_range", False) or discovered_temporal,
-              "Temporal queries supported" if (mem.get("episodic", {}).get("searchable_by_time_range", False) or discovered_temporal) else "No temporal search",
-              severity="warning",
-              action="Enable time-range queries on episodic memory"),
-        Check("Working memory", mem.get("working_memory", {}).get("enabled", False) or discovered_working_memory,
-              "Enabled" if (mem.get("working_memory", {}).get("enabled", False) or discovered_working_memory) else "Not implemented",
-              severity="warning",
-              action="Implement session scratchpad in ExecutionState"),
-        Check("Vector database", mem.get("vector_database", {}).get("enabled", False),
-              f"pgvector {mem.get('vector_database', {}).get('embedding_dimensions', '?')}d"),
-        Check("Structured DB", mem.get("structured_db", {}).get("enabled", False),
-              f"{len(mem.get('structured_db', {}).get('tables', []))} tables"),
-        Check("File storage", mem.get("file_storage", {}).get("enabled", False),
-              f"Max {mem.get('file_storage', {}).get('max_size_mb', '?')}MB"),
-        Check("Auto insight extraction", mem.get("lifecycle", {}).get("auto_save_insights", False),
-              "Enabled" if mem.get("lifecycle", {}).get("auto_save_insights") else "Disabled"),
-        Check("Memory decay", mem.get("lifecycle", {}).get("decay_enabled", False) or discovered_decay,
-              f"Half-life {mem.get('lifecycle', {}).get('decay_half_life_days', 'N/A')} days" if (mem.get("lifecycle", {}).get("decay_enabled", False) or discovered_decay) else "No decay — memories grow forever",
-              severity="warning",
-              action="Implement relevance decay to prevent memory bloat"),
+        Check(
+            "Episodic memory",
+            mem.get("episodic", {}).get("enabled", False),
+            "Enabled" if mem.get("episodic", {}).get("enabled") else "Disabled",
+        ),
+        Check(
+            "Episodic temporal search",
+            mem.get("episodic", {}).get("searchable_by_time_range", False)
+            or discovered_temporal,
+            (
+                "Temporal queries supported"
+                if (
+                    mem.get("episodic", {}).get("searchable_by_time_range", False)
+                    or discovered_temporal
+                )
+                else "No temporal search"
+            ),
+            severity="warning",
+            action="Enable time-range queries on episodic memory",
+        ),
+        Check(
+            "Working memory",
+            mem.get("working_memory", {}).get("enabled", False)
+            or discovered_working_memory,
+            (
+                "Enabled"
+                if (
+                    mem.get("working_memory", {}).get("enabled", False)
+                    or discovered_working_memory
+                )
+                else "Not implemented"
+            ),
+            severity="warning",
+            action="Implement session scratchpad in ExecutionState",
+        ),
+        Check(
+            "Vector database",
+            mem.get("vector_database", {}).get("enabled", False),
+            f"pgvector {mem.get('vector_database', {}).get('embedding_dimensions', '?')}d",
+        ),
+        Check(
+            "Structured DB",
+            mem.get("structured_db", {}).get("enabled", False),
+            f"{len(mem.get('structured_db', {}).get('tables', []))} tables",
+        ),
+        Check(
+            "File storage",
+            mem.get("file_storage", {}).get("enabled", False),
+            f"Max {mem.get('file_storage', {}).get('max_size_mb', '?')}MB",
+        ),
+        Check(
+            "Auto insight extraction",
+            mem.get("lifecycle", {}).get("auto_save_insights", False),
+            (
+                "Enabled"
+                if mem.get("lifecycle", {}).get("auto_save_insights")
+                else "Disabled"
+            ),
+        ),
+        Check(
+            "Memory decay",
+            mem.get("lifecycle", {}).get("decay_enabled", False) or discovered_decay,
+            (
+                f"Half-life {mem.get('lifecycle', {}).get('decay_half_life_days', 'N/A')} days"
+                if (
+                    mem.get("lifecycle", {}).get("decay_enabled", False)
+                    or discovered_decay
+                )
+                else "No decay — memories grow forever"
+            ),
+            severity="warning",
+            action="Implement relevance decay to prevent memory bloat",
+        ),
     ]
 
     report.checks = checks
@@ -266,33 +438,118 @@ def validate_pillar_6(cfg: dict) -> PillarReport:
     discovered_queue = bool(code.get("message_queue_present", False))
     discovered_agent2agent = bool(code.get("agent2agent_present", False))
     discovered_circuit_breaker = bool(code.get("circuit_breaker_present", False))
+    discovered_dead_letter = bool(code.get("dead_letter_present", False))
 
     checks = [
-        Check("Execution mode defined", orch.get("execution", {}).get("mode") in ("react", "plan_and_execute", "simple"),
-              f"Mode: {orch.get('execution', {}).get('mode', 'MISSING')}"),
-        Check("Parallel tool calls", orch.get("execution", {}).get("parallel_tool_calls", False),
-              "Enabled" if orch.get("execution", {}).get("parallel_tool_calls") else "Sequential only"),
-        Check("Plan complex queries", orch.get("execution", {}).get("plan_complex_queries", False),
-              "Enabled"),
-        Check("Scheduled triggers", orch.get("triggers", {}).get("scheduled_tasks", {}).get("enabled", False) or discovered_scheduler,
-              "Enabled" if (orch.get("triggers", {}).get("scheduled_tasks", {}).get("enabled") or discovered_scheduler) else "No scheduled tasks",
-              severity="warning",
-              action="Implement scheduled task runner (APScheduler/Celery)"),
-        Check("Event triggers", orch.get("triggers", {}).get("event_driven", {}).get("enabled", False) or discovered_events,
-              "Enabled" if (orch.get("triggers", {}).get("event_driven", {}).get("enabled") or discovered_events) else "No event triggers",
-              severity="warning"),
-        Check("Message queue", orch.get("message_queue", {}).get("enabled", False) or discovered_queue,
-              "Enabled" if (orch.get("message_queue", {}).get("enabled") or discovered_queue) else "No queue — all synchronous",
-              severity="warning",
-              action="Add Redis queue for deferred execution"),
-        Check("Agent2Agent", orch.get("agent2agent", {}).get("enabled", False) or discovered_agent2agent,
-              "Enabled" if (orch.get("agent2agent", {}).get("enabled") or discovered_agent2agent) else "Single agent only",
-              severity="warning"),
-        Check("Model fallback chain", orch.get("error_handling", {}).get("model_fallback", False),
-              "Enabled"),
-        Check("Circuit breaker", orch.get("error_handling", {}).get("circuit_breaker", {}).get("enabled", False) or discovered_circuit_breaker,
-              "Enabled" if (orch.get("error_handling", {}).get("circuit_breaker", {}).get("enabled") or discovered_circuit_breaker) else "No circuit breaker",
-              severity="warning"),
+        Check(
+            "Execution mode defined",
+            orch.get("execution", {}).get("mode")
+            in ("react", "plan_and_execute", "simple"),
+            f"Mode: {orch.get('execution', {}).get('mode', 'MISSING')}",
+        ),
+        Check(
+            "Parallel tool calls",
+            orch.get("execution", {}).get("parallel_tool_calls", False),
+            (
+                "Enabled"
+                if orch.get("execution", {}).get("parallel_tool_calls")
+                else "Sequential only"
+            ),
+        ),
+        Check(
+            "Plan complex queries",
+            orch.get("execution", {}).get("plan_complex_queries", False),
+            "Enabled",
+        ),
+        Check(
+            "Scheduled triggers",
+            orch.get("triggers", {}).get("scheduled_tasks", {}).get("enabled", False)
+            or discovered_scheduler,
+            (
+                "Enabled"
+                if (
+                    orch.get("triggers", {}).get("scheduled_tasks", {}).get("enabled")
+                    or discovered_scheduler
+                )
+                else "No scheduled tasks"
+            ),
+            severity="warning",
+            action="Implement scheduled task runner (APScheduler/Celery)",
+        ),
+        Check(
+            "Event triggers",
+            orch.get("triggers", {}).get("event_driven", {}).get("enabled", False)
+            or discovered_events,
+            (
+                "Enabled"
+                if (
+                    orch.get("triggers", {}).get("event_driven", {}).get("enabled")
+                    or discovered_events
+                )
+                else "No event triggers"
+            ),
+            severity="warning",
+        ),
+        Check(
+            "Message queue",
+            orch.get("message_queue", {}).get("enabled", False) or discovered_queue,
+            (
+                "Enabled"
+                if (orch.get("message_queue", {}).get("enabled") or discovered_queue)
+                else "No queue — all synchronous"
+            ),
+            severity="warning",
+            action="Add Redis queue for deferred execution",
+        ),
+        Check(
+            "Agent2Agent",
+            orch.get("agent2agent", {}).get("enabled", False) or discovered_agent2agent,
+            (
+                "Enabled"
+                if (
+                    orch.get("agent2agent", {}).get("enabled") or discovered_agent2agent
+                )
+                else "Single agent only"
+            ),
+            severity="warning",
+        ),
+        Check(
+            "Model fallback chain",
+            orch.get("error_handling", {}).get("model_fallback", False),
+            "Enabled",
+        ),
+        Check(
+            "Circuit breaker",
+            orch.get("error_handling", {})
+            .get("circuit_breaker", {})
+            .get("enabled", False)
+            or discovered_circuit_breaker,
+            (
+                "Enabled"
+                if (
+                    orch.get("error_handling", {})
+                    .get("circuit_breaker", {})
+                    .get("enabled")
+                    or discovered_circuit_breaker
+                )
+                else "No circuit breaker"
+            ),
+            severity="warning",
+        ),
+        Check(
+            "Dead-letter persistence",
+            orch.get("error_handling", {}).get("dead_letter", {}).get("enabled", False)
+            or discovered_dead_letter,
+            (
+                "Enabled"
+                if (
+                    orch.get("error_handling", {}).get("dead_letter", {}).get("enabled")
+                    or discovered_dead_letter
+                )
+                else "Disabled"
+            ),
+            severity="info",
+        ),
     ]
 
     report.checks = checks
@@ -311,21 +568,51 @@ def validate_pillar_7(cfg: dict) -> PillarReport:
     discovered_slack_discord = bool(code.get("slack_discord_bot_present", False))
 
     checks = [
-        Check("Chat interface", ui.get("chat_interface", {}).get("enabled", False),
-              ui.get("chat_interface", {}).get("provider", "MISSING")),
-        Check("Web app", ui.get("web_app", {}).get("enabled", False),
-              f"{len(ui.get('web_app', {}).get('pages', []))} pages"),
-        Check("API endpoint", ui.get("api_endpoint", {}).get("enabled", False),
-              f"{len(ui.get('api_endpoint', {}).get('endpoints', []))} endpoints"),
-        Check("Telegram bot", ui.get("telegram_bot", {}).get("enabled", False),
-              f"{len(ui.get('telegram_bot', {}).get('commands', []))} commands"),
-        Check("Slack/Discord bot", ui.get("slack_discord_bot", {}).get("enabled", False) or discovered_slack_discord,
-              "Enabled" if (ui.get("slack_discord_bot", {}).get("enabled", False) or discovered_slack_discord) else "Not implemented",
-              severity="info"),
-        Check("User feedback collection", ui.get("feedback", {}).get("enabled", False) or discovered_feedback,
-              "Enabled" if (ui.get("feedback", {}).get("enabled") or discovered_feedback) else "No feedback mechanism",
-              severity="warning",
-              action="Add thumbs up/down + comments on responses"),
+        Check(
+            "Chat interface",
+            ui.get("chat_interface", {}).get("enabled", False),
+            ui.get("chat_interface", {}).get("provider", "MISSING"),
+        ),
+        Check(
+            "Web app",
+            ui.get("web_app", {}).get("enabled", False),
+            f"{len(ui.get('web_app', {}).get('pages', []))} pages",
+        ),
+        Check(
+            "API endpoint",
+            ui.get("api_endpoint", {}).get("enabled", False),
+            f"{len(ui.get('api_endpoint', {}).get('endpoints', []))} endpoints",
+        ),
+        Check(
+            "Telegram bot",
+            ui.get("telegram_bot", {}).get("enabled", False),
+            f"{len(ui.get('telegram_bot', {}).get('commands', []))} commands",
+        ),
+        Check(
+            "Slack/Discord bot",
+            ui.get("slack_discord_bot", {}).get("enabled", False)
+            or discovered_slack_discord,
+            (
+                "Enabled"
+                if (
+                    ui.get("slack_discord_bot", {}).get("enabled", False)
+                    or discovered_slack_discord
+                )
+                else "Not implemented"
+            ),
+            severity="info",
+        ),
+        Check(
+            "User feedback collection",
+            ui.get("feedback", {}).get("enabled", False) or discovered_feedback,
+            (
+                "Enabled"
+                if (ui.get("feedback", {}).get("enabled") or discovered_feedback)
+                else "No feedback mechanism"
+            ),
+            severity="warning",
+            action="Add thumbs up/down + comments on responses",
+        ),
     ]
 
     report.checks = checks
@@ -347,9 +634,12 @@ def validate_pillar_8(cfg: dict) -> PillarReport:
     discovered_eval_harness = bool(code.get("eval_harness_present", False))
     discovered_quality = bool(code.get("quality_scoring_present", False))
     discovered_ci = bool(code.get("ci_pipeline_present", False))
+    discovered_cov_gate = bool(code.get("coverage_gate_present", False))
     discovered_feedback_loop = bool(code.get("feedback_loop_present", False))
     unit_tests_enabled = test.get("unit_tests", {}).get("enabled", False)
-    effective_unit_tests_enabled = unit_tests_enabled or (discovered_pytest and discovered_tests > 0)
+    effective_unit_tests_enabled = unit_tests_enabled or (
+        discovered_pytest and discovered_tests > 0
+    )
     unit_test_detail = (
         f"pytest in {test.get('unit_tests', {}).get('test_directory', 'N/A')}"
         if effective_unit_tests_enabled
@@ -359,32 +649,98 @@ def validate_pillar_8(cfg: dict) -> PillarReport:
         unit_test_detail += f" (detected {discovered_tests} test files)"
 
     checks = [
-        Check("Unit tests", effective_unit_tests_enabled,
-              unit_test_detail,
-              severity="critical",
-              action="Create backend/tests/ with pytest tests for all core modules"),
-        Check("Min coverage target", test.get("unit_tests", {}).get("min_coverage_percent", 0) >= 50,
-              f"{test.get('unit_tests', {}).get('min_coverage_percent', 0)}% target",
-              severity="critical"),
-        Check("Latency tracking", test.get("latency_testing", {}).get("enabled", False) or discovered_latency,
-              "p50/p95/p99 tracked" if (test.get("latency_testing", {}).get("enabled", False) or discovered_latency) else "No latency metrics",
-              severity="critical",
-              action="Instrument endpoints with latency tracking"),
-        Check("Quality metrics", test.get("quality_metrics", {}).get("enabled", False) or discovered_quality,
-              "LLM judge scoring" if (test.get("quality_metrics", {}).get("enabled", False) or discovered_quality) else "No quality measurement",
-              severity="critical",
-              action="Implement judge-LLM scoring on sample of responses"),
-        Check("Eval harness", test.get("eval_harness", {}).get("enabled", False) or discovered_eval_harness,
-              "Automated evals" if (test.get("eval_harness", {}).get("enabled", False) or discovered_eval_harness) else "No eval framework",
-              severity="critical",
-              action="Create test cases with expected outputs, run against agent"),
-        Check("CI/CD pipeline", test.get("ci_cd", {}).get("enabled", False) or discovered_ci,
-              f"{test.get('ci_cd', {}).get('provider', 'N/A')}" if (test.get("ci_cd", {}).get("enabled", False) or discovered_ci) else "No CI/CD",
-              severity="warning",
-              action="Set up GitHub Actions to run tests on push"),
-        Check("Feedback loop", test.get("iterate_and_improve", {}).get("feedback_loop", False) or discovered_feedback_loop,
-              "Connected" if (test.get("iterate_and_improve", {}).get("feedback_loop", False) or discovered_feedback_loop) else "User feedback not connected to evals",
-              severity="warning"),
+        Check(
+            "Unit tests",
+            effective_unit_tests_enabled,
+            unit_test_detail,
+            severity="critical",
+            action="Create backend/tests/ with pytest tests for all core modules",
+        ),
+        Check(
+            "Min coverage target",
+            test.get("unit_tests", {}).get("min_coverage_percent", 0) >= 50,
+            f"{test.get('unit_tests', {}).get('min_coverage_percent', 0)}% target",
+            severity="critical",
+        ),
+        Check(
+            "Latency tracking",
+            test.get("latency_testing", {}).get("enabled", False) or discovered_latency,
+            (
+                "p50/p95/p99 tracked"
+                if (
+                    test.get("latency_testing", {}).get("enabled", False)
+                    or discovered_latency
+                )
+                else "No latency metrics"
+            ),
+            severity="critical",
+            action="Instrument endpoints with latency tracking",
+        ),
+        Check(
+            "Quality metrics",
+            test.get("quality_metrics", {}).get("enabled", False) or discovered_quality,
+            (
+                "LLM judge scoring"
+                if (
+                    test.get("quality_metrics", {}).get("enabled", False)
+                    or discovered_quality
+                )
+                else "No quality measurement"
+            ),
+            severity="critical",
+            action="Implement judge-LLM scoring on sample of responses",
+        ),
+        Check(
+            "Eval harness",
+            test.get("eval_harness", {}).get("enabled", False)
+            or discovered_eval_harness,
+            (
+                "Automated evals"
+                if (
+                    test.get("eval_harness", {}).get("enabled", False)
+                    or discovered_eval_harness
+                )
+                else "No eval framework"
+            ),
+            severity="critical",
+            action="Create test cases with expected outputs, run against agent",
+        ),
+        Check(
+            "CI/CD pipeline",
+            test.get("ci_cd", {}).get("enabled", False) or discovered_ci,
+            (
+                f"{test.get('ci_cd', {}).get('provider', 'N/A')}"
+                if (test.get("ci_cd", {}).get("enabled", False) or discovered_ci)
+                else "No CI/CD"
+            ),
+            severity="warning",
+            action="Set up GitHub Actions to run tests on push",
+        ),
+        Check(
+            "Coverage gate enforced in CI",
+            discovered_cov_gate,
+            (
+                "Detected --cov-fail-under"
+                if discovered_cov_gate
+                else "No fail-under gate detected"
+            ),
+            severity="warning",
+            action="Add --cov-fail-under to CI pytest command",
+        ),
+        Check(
+            "Feedback loop",
+            test.get("iterate_and_improve", {}).get("feedback_loop", False)
+            or discovered_feedback_loop,
+            (
+                "Connected"
+                if (
+                    test.get("iterate_and_improve", {}).get("feedback_loop", False)
+                    or discovered_feedback_loop
+                )
+                else "User feedback not connected to evals"
+            ),
+            severity="warning",
+        ),
     ]
 
     report.checks = checks
@@ -397,6 +753,7 @@ def validate_pillar_8(cfg: dict) -> PillarReport:
 # ─────────────────────────────────────────────────────────────────────────────
 # Report generation
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _discover_code_facts(config_path: str) -> dict:
     """Collect lightweight codebase facts used by --check-code."""
@@ -414,7 +771,9 @@ def _discover_code_facts(config_path: str) -> dict:
     if agent_route.exists():
         try:
             content = agent_route.read_text(encoding="utf-8")
-            latency_present = "latency_metrics" in content and "_record_latency_metric" in content
+            latency_present = (
+                "latency_metrics" in content and "_record_latency_metric" in content
+            )
         except Exception:
             latency_present = False
 
@@ -481,7 +840,9 @@ def _discover_code_facts(config_path: str) -> dict:
     if memory_module.exists():
         try:
             memory_content = memory_module.read_text(encoding="utf-8")
-            memory_temporal_search_present = "def search_by_time_range" in memory_content
+            memory_temporal_search_present = (
+                "def search_by_time_range" in memory_content
+            )
             memory_decay_present = "def apply_relevance_decay" in memory_content
         except Exception:
             memory_temporal_search_present = False
@@ -506,7 +867,9 @@ def _discover_code_facts(config_path: str) -> dict:
                 continue
 
             has_push_trigger = "on:" in content and "push:" in content
-            has_test_signal = ("pytest" in content) or ("backend tests" in content.lower())
+            has_test_signal = ("pytest" in content) or (
+                "backend tests" in content.lower()
+            )
             if has_push_trigger and has_test_signal:
                 ci_pipeline_present = True
                 break
@@ -518,8 +881,10 @@ def _discover_code_facts(config_path: str) -> dict:
     message_queue_present = False
     agent2agent_present = False
     circuit_breaker_present = False
+    dead_letter_present = False
 
     mcp_module = backend_dir / "app" / "tools" / "mcp_client.py"
+    mcp_hub_module = backend_dir / "app" / "tools" / "mcp_hub.py"
     sub_agent_module = backend_dir / "app" / "agent" / "sub_agent.py"
     runtime_module = backend_dir / "app" / "agent" / "orchestration_runtime.py"
     orchestrator_module = backend_dir / "app" / "agent" / "orchestrator.py"
@@ -529,33 +894,63 @@ def _discover_code_facts(config_path: str) -> dict:
     if mcp_module.exists():
         try:
             mcp_content = mcp_module.read_text(encoding="utf-8")
-            mcp_integration_present = "class MCPClient" in mcp_content and "call_tool" in mcp_content
+            mcp_integration_present = (
+                "class MCPClient" in mcp_content and "call_tool" in mcp_content
+            )
         except Exception:
             mcp_integration_present = False
+    if mcp_hub_module.exists():
+        try:
+            hub_content = mcp_hub_module.read_text(encoding="utf-8")
+            mcp_integration_present = mcp_integration_present or (
+                "class McpConnectionHub" in hub_content
+                and "register_hub_servers_into_registry" in hub_content
+            )
+        except Exception:
+            pass
 
     if sub_agent_module.exists():
         try:
             sub_content = sub_agent_module.read_text(encoding="utf-8")
-            agent_as_tool_present = "class SubAgentRunner" in sub_content and "run_sub_agent" in sub_content
+            agent_as_tool_present = (
+                "class SubAgentRunner" in sub_content and "run_sub_agent" in sub_content
+            )
         except Exception:
             agent_as_tool_present = False
 
     if runtime_module.exists():
         try:
             runtime_content = runtime_module.read_text(encoding="utf-8")
-            scheduled_triggers_present = "add_interval_job" in runtime_content and "_scheduler_loop" in runtime_content
-            event_triggers_present = "register_event_handler" in runtime_content and "emit_event" in runtime_content
-            message_queue_present = "asyncio.Queue" in runtime_content and "enqueue_task" in runtime_content
+            scheduled_triggers_present = (
+                "add_interval_job" in runtime_content
+                and "_scheduler_loop" in runtime_content
+            )
+            event_triggers_present = (
+                "register_event_handler" in runtime_content
+                and "emit_event" in runtime_content
+            )
+            message_queue_present = "enqueue_task" in runtime_content and (
+                "asyncio.Queue" in runtime_content
+                or "redis.from_url" in runtime_content
+            )
+            dead_letter_present = (
+                "INSERT INTO failed_tasks" in runtime_content
+                and "_dead_letter_enabled" in runtime_content
+            )
         except Exception:
             scheduled_triggers_present = False
             event_triggers_present = False
             message_queue_present = False
+            dead_letter_present = False
 
     if orchestrator_module.exists():
         try:
             orch_content = orchestrator_module.read_text(encoding="utf-8")
             agent2agent_present = "def run_sub_agent" in orch_content
-            circuit_breaker_present = "_is_circuit_open" in orch_content and "_record_circuit_failure" in orch_content
+            circuit_breaker_present = (
+                "_is_circuit_open" in orch_content
+                and "_record_circuit_failure" in orch_content
+            )
         except Exception:
             agent2agent_present = False
             circuit_breaker_present = False
@@ -564,7 +959,10 @@ def _discover_code_facts(config_path: str) -> dict:
         try:
             main_content = main_module.read_text(encoding="utf-8")
             # Runtime must be wired into app lifecycle to count as active.
-            runtime_wired = "OrchestrationRuntime" in main_content and "orchestration_runtime" in main_content
+            runtime_wired = (
+                "OrchestrationRuntime" in main_content
+                and "orchestration_runtime" in main_content
+            )
             scheduled_triggers_present = scheduled_triggers_present and runtime_wired
             event_triggers_present = event_triggers_present and runtime_wired
             message_queue_present = message_queue_present and runtime_wired
@@ -574,7 +972,9 @@ def _discover_code_facts(config_path: str) -> dict:
     if agent_route_module.exists():
         try:
             route_content = agent_route_module.read_text(encoding="utf-8")
-            message_queue_present = message_queue_present and "/enqueue" in route_content
+            message_queue_present = (
+                message_queue_present and "/enqueue" in route_content
+            )
         except Exception:
             pass
 
@@ -593,9 +993,22 @@ def _discover_code_facts(config_path: str) -> dict:
         except Exception:
             slack_discord_bot_present = False
 
+    coverage_gate_present = False
+    if workflows_dir.exists():
+        for workflow_file in workflows_dir.glob("*.yml"):
+            try:
+                content = workflow_file.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            if "--cov-fail-under" in content:
+                coverage_gate_present = True
+                break
+
     return {
         "pytest_test_files": len(test_files),
-        "pytest_config_present": (repo_root / "pytest.ini").exists(),
+        "pytest_config_present": (
+            (repo_root / "pytest.ini").exists() or (backend_dir / "pytest.ini").exists()
+        ),
         "latency_instrumentation_present": latency_present,
         "eval_harness_present": eval_harness_present,
         "quality_scoring_present": quality_scoring_present,
@@ -613,6 +1026,8 @@ def _discover_code_facts(config_path: str) -> dict:
         "agent2agent_present": agent2agent_present,
         "circuit_breaker_present": circuit_breaker_present,
         "slack_discord_bot_present": slack_discord_bot_present,
+        "dead_letter_present": dead_letter_present,
+        "coverage_gate_present": coverage_gate_present,
     }
 
 
@@ -624,9 +1039,14 @@ def generate_report(config_path: str, check_code: bool = False) -> dict:
         cfg["__code_facts__"] = _discover_code_facts(config_path)
 
     validators = [
-        validate_pillar_1, validate_pillar_2, validate_pillar_3,
-        validate_pillar_4, validate_pillar_5, validate_pillar_6,
-        validate_pillar_7, validate_pillar_8,
+        validate_pillar_1,
+        validate_pillar_2,
+        validate_pillar_3,
+        validate_pillar_4,
+        validate_pillar_5,
+        validate_pillar_6,
+        validate_pillar_7,
+        validate_pillar_8,
     ]
 
     pillars = [v(cfg) for v in validators]
@@ -665,9 +1085,11 @@ def print_report(report: dict):
     for p in report["pillars"]:
         bar = "█" * p.score + "░" * (10 - p.score)
         print(f"  {p.number}. {p.name:<30} [{bar}] {p.score}/10  {p.status}")
-    
+
     print()
-    print(f"  Overall: {report['total_score']}/{report['max_score']} ({report['overall_percent']}%)")
+    print(
+        f"  Overall: {report['total_score']}/{report['max_score']} ({report['overall_percent']}%)"
+    )
     print()
 
     if report["critical_actions"]:
@@ -732,13 +1154,27 @@ def print_json_report(report: dict):
 # CLI
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Validate agent system against 8-pillar framework")
-    parser.add_argument("--config", default="agent_pillars.yaml", help="Path to YAML config")
-    parser.add_argument("--check-code", action="store_true", help="Also scan codebase for compliance")
+    parser = argparse.ArgumentParser(
+        description="Validate agent system against 8-pillar framework"
+    )
+    parser.add_argument(
+        "--config", default="agent_pillars.yaml", help="Path to YAML config"
+    )
+    parser.add_argument(
+        "--check-code", action="store_true", help="Also scan codebase for compliance"
+    )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
-    parser.add_argument("--ci", action="store_true", help="Exit 1 if score below threshold")
-    parser.add_argument("--threshold", type=int, default=60, help="Minimum score %% for CI pass (default: 60)")
+    parser.add_argument(
+        "--ci", action="store_true", help="Exit 1 if score below threshold"
+    )
+    parser.add_argument(
+        "--threshold",
+        type=int,
+        default=60,
+        help="Minimum score %% for CI pass (default: 60)",
+    )
     args = parser.parse_args()
 
     if not os.path.exists(args.config):
@@ -754,7 +1190,9 @@ def main():
         print_report(report)
 
     if args.ci and report["overall_percent"] < args.threshold:
-        print(f"CI FAIL: Score {report['overall_percent']}% < threshold {args.threshold}%")
+        print(
+            f"CI FAIL: Score {report['overall_percent']}% < threshold {args.threshold}%"
+        )
         sys.exit(1)
 
 

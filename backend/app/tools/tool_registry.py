@@ -285,6 +285,7 @@ class ToolRegistry:
     async def tool_health_snapshot(self) -> list[dict[str, Any]]:
         """Lightweight readiness checks for builtins + configured MCP servers."""
         from app.tools.mcp_client import MCPClient
+        from app.tools.mcp_hub import get_mcp_hub
         from app.utils.pillar_loader import get_pillar_config
 
         rows: list[dict[str, Any]] = []
@@ -376,7 +377,9 @@ class ToolRegistry:
             servers = [
                 s
                 for s in (mcp_cfg.get("servers") or [])
-                if isinstance(s, dict) and str(s.get("url") or "").strip()
+                if isinstance(s, dict)
+                and s.get("transport", "http_json") == "http_json"
+                and str(s.get("url") or "").strip()
             ]
 
             async def _check_mcp(srv: dict) -> dict:
@@ -390,6 +393,14 @@ class ToolRegistry:
 
             mcp_results = await asyncio.gather(*[_check_mcp(s) for s in servers])
             rows.extend(mcp_results)
+
+            # Also report persistent hub server state (sse/stdio)
+            try:
+                hub = get_mcp_hub()
+                if hub:
+                    rows.extend(hub.health_snapshot())
+            except Exception as e:
+                rows.append({"tool": "mcp:hub", "ok": False, "detail": str(e)})
 
         return rows
 

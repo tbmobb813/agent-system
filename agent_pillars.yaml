@@ -374,7 +374,7 @@ user_interface:
     enabled: true   # Webhook routes + integration module (parity with Telegram optional)
   
   feedback:
-    enabled: true   # POST /history/{task_id}/feedback + task_feedback; chat UI thumbs optional
+    enabled: true   # POST /history/{task_id}/feedback + task_feedback + in-chat thumbs
     types: ["thumbs_up_down", "text_comment", "rating_1_5"]
     store_in: "task_feedback"
 
@@ -392,7 +392,7 @@ testing:
       - "test_tools"         # Registry, schema gen, error handling
       - "test_orchestrator"  # ReAct loop termination, failure handling
       - "test_prompts"       # Prompt builder output validation
-    min_coverage_percent: 70
+    min_coverage_percent: 55  # Current enforced CI gate (--cov-fail-under=55)
   
   latency_testing:
     enabled: true   # latency_metrics + _record_latency_metric on agent routes

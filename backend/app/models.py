@@ -41,6 +41,37 @@ class WorkflowRunRequest(BaseModel):
     )
 
 
+class McpServerCreate(BaseModel):
+    """Add a server entry under tools.mcp.servers in agent_pillars.yaml."""
+
+    name: str = Field(..., min_length=1, max_length=80)
+    transport: Literal["http_json", "sse", "stdio"] = Field(default="http_json")
+    url: Optional[str] = Field(default=None, max_length=2000)
+    command: Optional[str] = Field(default=None, max_length=300)
+    args: Optional[list[str]] = None
+    env: Optional[dict[str, str]] = None
+
+
+class McpServerUpdate(BaseModel):
+    """Update an existing MCP server entry in tools.mcp.servers."""
+
+    transport: Literal["http_json", "sse", "stdio"] = Field(default="http_json")
+    url: Optional[str] = Field(default=None, max_length=2000)
+    command: Optional[str] = Field(default=None, max_length=300)
+    args: Optional[list[str]] = None
+    env: Optional[dict[str, str]] = None
+
+
+class McpServerTest(BaseModel):
+    """Validate and probe an MCP server config without persisting it."""
+
+    transport: Literal["http_json", "sse", "stdio"] = Field(default="http_json")
+    url: Optional[str] = Field(default=None, max_length=2000)
+    command: Optional[str] = Field(default=None, max_length=300)
+    args: Optional[list[str]] = None
+    env: Optional[dict[str, str]] = None
+
+
 class ScheduledTaskCreate(BaseModel):
     """Create a cron-driven deferred agent run."""
 
