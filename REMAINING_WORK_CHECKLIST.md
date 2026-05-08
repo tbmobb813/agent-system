@@ -31,9 +31,9 @@ The checklist below is **stricter than the validator**: it lists gaps the automa
 | Latency | Was `enabled: false` | `latency_metrics` + `_record_latency_metric` in `agent.py` | Partial — persist works; dashboards/alerts optional |
 | Quality / judge | Was `enabled: false` | `quality.score_response_quality`, `_schedule_quality_scoring` | Partial — sampling/ops tuning optional |
 | Eval harness | Was `enabled: false` | `backend/evals/run_eval_harness.py`, `test_cases.json` | Starter harness exists; expand cases + CI gate optional |
-| Task feedback | Was `enabled: false` | `POST /history/{task_id}/feedback`, `task_feedback`, `save_feedback_learning` | API exists; chat UI thumbs optional |
+| Task feedback | Was `enabled: false` | `POST /history/{task_id}/feedback`, `task_feedback`, `save_feedback_learning`, in-chat thumbs | Implemented; tune UX copy if needed |
 | Temporal memory | `searchable_by_time_range: true` | `GET /memory/range` + `search_by_time_range` | Implemented |
-| MCP | `mcp.enabled: true` | `load_mcp_tools()` + HTTP `MCPClient` | HTTP `/rpc` bridge; stdio/SSE MCP TBD |
+| MCP | `mcp.enabled: true` | `load_mcp_tools()` + HTTP `MCPClient` + `McpConnectionHub` (stdio/SSE) | Implemented transports; add real server configs when ready |
 | Agent-as-tool | `delegate_sub_agent` | `register_sub_agent_tool` on startup | Exposed as LLM tool |
 
 ---
@@ -41,12 +41,15 @@ The checklist below is **stricter than the validator**: it lists gaps the automa
 ## Recently implemented (2026-05 update)
 
 - **Router sampling** — `ModelRouter.sampling_params_for_model` + orchestrator injects `temperature` / `top_p` on streaming ReAct calls (plan/summary stay at `temperature=0`).
-- **MCP (HTTP)** — `ToolRegistry.load_mcp_tools()` at startup; configure `tools.mcp.servers` with `{name, url}` (JSON-RPC at `{url}/rpc`). Stdio/SSE-native MCP still a follow-up.
+- **MCP (HTTP + stdio/SSE)** — `ToolRegistry.load_mcp_tools()` + `McpConnectionHub`; supports HTTP JSON-RPC bridges and long-lived stdio/SSE sessions from `tools.mcp.servers`.
 - **Sub-agent tool** — `delegate_sub_agent` on the main tool registry.
 - **`GET /agent/tools/health`** — builtin + MCP readiness snapshot.
 - **`GET /memory/range`** — episodic time window (`start` / `end` ISO8601, optional `q`).
 - **Memory consolidation** — weekly dedupe job when `memory.lifecycle.consolidation_enabled` is true.
-- **CI** — `pytest-cov` + `pytest --cov=app` in GitHub Actions.
+- **Memory consolidation (richer)** — normalization-based dedupe (trim/lower/collapsed whitespace) + optional semantic near-duplicate pass.
+- **CI** — `pytest-cov` + `pytest --cov=app --cov-fail-under=55` in GitHub Actions.
+- **Queue/runtime** — optional Redis-backed deferred queue, dead-letter persistence (`failed_tasks`), and schedule-dispatch runtime coverage tests.
+- **Planner gate** — optional `llm_classifier` planning decision path (with fallback to keyword mode).
 
 ## Work still worth doing (by theme)
 
@@ -54,42 +57,41 @@ The checklist below is **stricter than the validator**: it lists gaps the automa
 
 | Priority | Task | Where |
 |----------|------|--------|
-| Medium | Full MCP transports (stdio/SSE) + session management | `mcp_client.py`, `tool_registry.py` |
+| Done | Reconnect/backoff policy for long-lived stdio/SSE MCP sessions | `mcp_hub.py` |
 | Medium | Enable `browser_automation` / `code_execution` in prod (keys + Playwright/E2B) | `tool_registry.py`, env |
 
 ### Pillar 5 — Memory
 
 | Priority | Task | Where |
 |----------|------|--------|
-| Low | Richer consolidation (semantic merge, not just exact duplicates) | `memory.py`, jobs |
+| Low | Tune semantic consolidation thresholds and sampling cadence | `memory.py`, jobs |
 
 ### Pillar 3 — LLM router
 
 | Priority | Task | Where |
 |----------|------|--------|
-| Low | Optional LLM-based routing classifier | `router.py` |
+| Low | Tune / monitor LLM classifier quality-vs-latency tradeoff | `router.py`, analytics |
 
 ### Pillar 6 — Orchestration
 
 | Priority | Task | Where |
 |----------|------|--------|
-| Medium | User-defined scheduled tasks (cron), not only internal decay job | `orchestration_runtime.py` or APScheduler/Celery, `schemas/migrations` |
-| Medium | Redis-backed queue if you need cross-process durability | New infra; `message_queue` in YAML |
-| Low | Dead-letter / `failed_tasks` persistence | `agent_pillars.yaml` `dead_letter`, DB migration |
+| Low | Promote schedule dispatch to dedicated worker if load grows | `orchestration_runtime.py`, infra |
+| Done | Retry / replay flow over `failed_tasks` dead-letter rows | `POST /agent/dead-letter/{id}/replay` + runtime helper |
 | Low | Declarative workflows (YAML pipelines) | New module (e.g. `workflows.py`) |
 
 ### Pillar 7 — UI
 
 | Priority | Task | Where |
 |----------|------|--------|
-| Medium | In-chat feedback (thumbs) calling `POST /history/.../feedback` | `frontend/` |
+| Low | Improve feedback discoverability/copy and analytics instrumentation | `frontend/`, `history` APIs |
 | Low | Slack/Discord parity with Telegram | `integrations/slack_discord_bot.py` |
 
 ### Pillar 8 — Testing & evals
 
 | Priority | Task | Where |
 |----------|------|--------|
-| Medium | Coverage target enforcement in CI (`pytest-cov`) | `.github/workflows/ci.yml`, `pytest.ini` |
+| Low | Raise coverage gate gradually (e.g. 55 → 60) after baseline stabilizes | `.github/workflows/ci.yml`, `pytest.ini` |
 | Medium | Expand eval cases + optional merge gate | `backend/evals/test_cases.json`, CI job |
 | Low | Latency SLO dashboards / alerts | `latency_metrics` + Grafana or analytics UI |
 
@@ -124,7 +126,7 @@ The checklist below is **stricter than the validator**: it lists gaps the automa
 
 ## Suggested next steps
 
-1. Add real **MCP server URLs** (or bridge) under `tools.mcp.servers` when you have HTTP JSON-RPC endpoints.  
-2. Tune **CI coverage** (`--cov-fail-under=N` in `pytest.ini` or workflow) once baseline is stable.  
-3. **User cron / Redis queue** when you outgrow the in-process worker.  
-4. **Frontend feedback** wired to `POST /history/.../feedback`.
+1. Add real **MCP server URLs/commands** under `tools.mcp.servers` (HTTP bridge, SSE, and/or stdio).  
+2. Expand **eval harness** cases and add an optional CI merge gate for regressions.  
+3. Add **dead-letter replay tooling** (admin endpoint + safe retry semantics).  
+4. Raise **coverage gate** incrementally once flaky areas are stabilized.

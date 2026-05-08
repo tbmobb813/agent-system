@@ -5,7 +5,23 @@ import dynamic from 'next/dynamic'
 import { useAgentStream, StreamEvent } from '@/lib/hooks'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { getAgentModels, getSettings, getTools, submitTaskFeedback } from '@/lib/api'
+import {
+  addMcpServer,
+  deleteMcpServer,
+  getAgentStats,
+  getAgentModels,
+  getAgentToolsHealth,
+  getAnalyticsSkills,
+  getCostStatus,
+  getHistory,
+  getMcpServers,
+  getSettings,
+  getTools,
+  submitTaskFeedback,
+  testMcpServer as testMcpServerDraft,
+  updateMcpServer,
+  updateSettings,
+} from '@/lib/api'
 import { formatCost } from '@/lib/utils'
 
 const MarkdownContent = dynamic(() => import('./MarkdownContent'), { ssr: false })
@@ -46,6 +62,7 @@ type SuggestPick =
   | { type: 'action_copy_thread' }
   | { type: 'action_download_thread' }
   | { type: 'action_models_modal' }
+  | { type: 'action_ops_modal'; panel: 'tools' | 'skills' | 'mcp' | 'stats' | 'history' }
   | { type: 'action_navigate'; path: string }
 
 type SuggestRow = {
@@ -182,6 +199,14 @@ type SlashRootDef =
       key: string
       label: string
       hint: string
+      kind: 'action_ops_modal'
+      panel: 'tools' | 'skills' | 'mcp' | 'stats' | 'history'
+    }
+  | {
+      id: string
+      key: string
+      label: string
+      hint: string
       kind: 'action_navigate'
       path: string
     }
@@ -241,17 +266,33 @@ const SLASH_ROOT: SlashRootDef[] = [
     id: 'slash-costs',
     key: 'costs',
     label: '/costs',
-    hint: 'Open budget page',
-    kind: 'action_navigate',
-    path: '/costs',
+    hint: 'Budget and latency summary',
+    kind: 'action_ops_modal',
+    panel: 'stats',
+  },
+  {
+    id: 'slash-stats',
+    key: 'stats',
+    label: '/stats',
+    hint: 'Latency and endpoint stats',
+    kind: 'action_ops_modal',
+    panel: 'stats',
+  },
+  {
+    id: 'slash-skills',
+    key: 'skills',
+    label: '/skills',
+    hint: 'Skills menu (used/available)',
+    kind: 'action_ops_modal',
+    panel: 'skills',
   },
   {
     id: 'slash-history',
     key: 'history',
     label: '/history',
-    hint: 'Open run history',
-    kind: 'action_navigate',
-    path: '/history',
+    hint: 'Recent run history in chat',
+    kind: 'action_ops_modal',
+    panel: 'history',
   },
   {
     id: 'slash-new',
@@ -266,6 +307,22 @@ const SLASH_ROOT: SlashRootDef[] = [
     label: '/stop',
     hint: 'Stop the current agent run',
     kind: 'action_stop',
+  },
+  {
+    id: 'slash-tools',
+    key: 'tools',
+    label: '/tools',
+    hint: 'Tools menu (enable/disable)',
+    kind: 'action_ops_modal',
+    panel: 'tools',
+  },
+  {
+    id: 'slash-mcp',
+    key: 'mcp',
+    label: '/mcp',
+    hint: 'MCP menu (health & readiness)',
+    kind: 'action_ops_modal',
+    panel: 'mcp',
   },
 ]
 
@@ -291,6 +348,8 @@ function slashRootToPick(r: SlashRootDef): SuggestPick {
       return { type: 'action_download_thread' }
     case 'action_models_modal':
       return { type: 'action_models_modal' }
+    case 'action_ops_modal':
+      return { type: 'action_ops_modal', panel: r.panel }
     case 'action_navigate':
       return { type: 'action_navigate', path: r.path }
   }
@@ -359,6 +418,35 @@ const REASONING_SUB_HINTS: Record<(typeof REASONING_SUB_KEYS)[number], string> =
   minimal: 'Minimal',
   xhigh: 'Extra high',
   none: 'Send effort none (provider)',
+}
+
+type OpsPanel = 'tools' | 'skills' | 'mcp' | 'stats' | 'history'
+
+type OpsModalState = {
+  tools: 'loading' | { ok: { tools: Array<{ name: string; description?: string }>; enabledSet: Set<string> } } | { err: string }
+  skills: 'loading' | { ok: { skills: Array<{ task_type: string; success_rate: number; total_uses: number }>; growthAreas: string[] } } | { err: string }
+  mcp: 'loading' | {
+    ok: {
+      checks: Array<{ name: string; ok: boolean; note?: string; error?: string }>
+      healthyCount: number
+      total: number
+      servers: Array<{
+        name: string
+        transport: 'http_json' | 'sse' | 'stdio'
+        url?: string
+        command?: string
+        args?: string[]
+      }>
+    }
+  } | { err: string }
+  stats: 'loading' | { ok: { budget: { spentToday: number; spentMonth: number; remaining: number; percentUsed: number; status: string }; latency: Array<{ endpoint: string; p50: number; p95: number; p99: number; count: number }> } } | { err: string }
+  history: 'loading' | { ok: { tasks: Array<{ id: string; query: string; status: string; cost: number; createdAt: string }>; total: number } } | { err: string }
+}
+
+function isToolsOkState(
+  state: OpsModalState['tools'],
+): state is { ok: { tools: Array<{ name: string; description?: string }>; enabledSet: Set<string> } } {
+  return typeof state === 'object' && state !== null && 'ok' in state
 }
 
 function SuggestPrimaryLabel({ row }: { row: SuggestRow }) {
@@ -1243,14 +1331,14 @@ export default function AgentExecutor() {
   }, [query, queryCursor])
 
   useLayoutEffect(() => {
-    if (reasoningArgModal || helpModalOpen || modelsModalOpen) return
+    if (reasoningArgModal || helpModalOpen || modelsModalOpen || opsModalOpen) return
     const ctx = parseSlashSuggestContext(query, queryCursor)
     if (!ctx || ctx.mode !== 'reasoning_sub' || ctx.subFilter !== '') return
     const sig = `${ctx.start}:${query}`
     if (skipReasoningModalSig.current === sig) return
     setReasoningArgModal({ from: ctx.start, to: queryCursor })
     setSuggestDismissed(true)
-  }, [query, queryCursor, reasoningArgModal, helpModalOpen, modelsModalOpen])
+  }, [query, queryCursor, reasoningArgModal, helpModalOpen, modelsModalOpen, opsModalOpen])
 
   useEffect(() => {
     if (!quickActionsOpen) return
@@ -1545,6 +1633,383 @@ export default function AgentExecutor() {
       })
   }, [])
 
+  const loadOpsPanel = useCallback(
+    (panel: OpsPanel) => {
+      if (panel === 'tools') {
+        setOpsModalState((s) => ({ ...s, tools: 'loading' }))
+        Promise.all([getTools(), getSettings()])
+          .then(([toolsData, settingsData]) => {
+            const rawTools = Array.isArray((toolsData as { tools?: unknown[] })?.tools)
+              ? ((toolsData as { tools?: unknown[] }).tools as unknown[])
+              : []
+            const tools = rawTools
+              .map((t) => {
+                if (typeof t === 'string') return { name: t, description: '' }
+                if (t && typeof t === 'object') {
+                  const r = t as Record<string, unknown>
+                  return {
+                    name: String(r.name ?? ''),
+                    description: typeof r.description === 'string' ? r.description : '',
+                  }
+                }
+                return { name: '', description: '' }
+              })
+              .filter((t) => t.name)
+            const defaults = Array.isArray((settingsData as { default_tools?: unknown }).default_tools)
+              ? ((settingsData as { default_tools?: unknown[] }).default_tools as unknown[]).map(String)
+              : []
+            setOpsModalState((s) => ({ ...s, tools: { ok: { tools, enabledSet: new Set(defaults) } } }))
+          })
+          .catch((e: unknown) => {
+            setOpsModalState((s) => ({ ...s, tools: { err: e instanceof Error ? e.message : String(e) } }))
+          })
+        return
+      }
+
+      if (panel === 'skills') {
+        setOpsModalState((s) => ({ ...s, skills: 'loading' }))
+        getAnalyticsSkills()
+          .then((data: unknown) => {
+            const d = data as { skills?: unknown[]; growth_areas?: unknown[] }
+            const skills = (Array.isArray(d.skills) ? d.skills : [])
+              .map((s) => {
+                const r = s as Record<string, unknown>
+                return {
+                  task_type: String(r.task_type ?? ''),
+                  success_rate: Number(r.success_rate ?? 0),
+                  total_uses: Number(r.total_uses ?? 0),
+                }
+              })
+              .filter((s) => s.task_type)
+            const growthAreas = (Array.isArray(d.growth_areas) ? d.growth_areas : []).map(String).filter(Boolean)
+            setOpsModalState((s) => ({ ...s, skills: { ok: { skills, growthAreas } } }))
+          })
+          .catch((e: unknown) => {
+            setOpsModalState((s) => ({ ...s, skills: { err: e instanceof Error ? e.message : String(e) } }))
+          })
+        return
+      }
+
+      if (panel === 'stats') {
+        setOpsModalState((s) => ({ ...s, stats: 'loading' }))
+        Promise.all([getCostStatus(), getAgentStats(7)])
+          .then(([costData, statsData]) => {
+            const c = costData as Record<string, unknown>
+            const sData = statsData as { latency_by_endpoint?: unknown[] }
+            const latency = (Array.isArray(sData.latency_by_endpoint) ? sData.latency_by_endpoint : [])
+              .map((row) => {
+                const r = row as Record<string, unknown>
+                return {
+                  endpoint: String(r.endpoint ?? ''),
+                  p50: Number(r.p50_ms ?? 0),
+                  p95: Number(r.p95_ms ?? 0),
+                  p99: Number(r.p99_ms ?? 0),
+                  count: Number(r.count_requests ?? 0),
+                }
+              })
+              .filter((x) => x.endpoint)
+            setOpsModalState((s) => ({
+              ...s,
+              stats: {
+                ok: {
+                  budget: {
+                    spentToday: Number(c.spent_today ?? 0),
+                    spentMonth: Number(c.spent_month ?? 0),
+                    remaining: Number(c.remaining ?? 0),
+                    percentUsed: Number(c.percent_used ?? 0),
+                    status: String(c.status ?? 'ok'),
+                  },
+                  latency,
+                },
+              },
+            }))
+          })
+          .catch((e: unknown) => {
+            setOpsModalState((s) => ({ ...s, stats: { err: e instanceof Error ? e.message : String(e) } }))
+          })
+        return
+      }
+
+      if (panel === 'history') {
+        setOpsModalState((s) => ({ ...s, history: 'loading' }))
+        getHistory(8, 0)
+          .then((data: unknown) => {
+            const d = data as { tasks?: unknown[]; total?: number }
+            const tasks = (Array.isArray(d.tasks) ? d.tasks : [])
+              .map((t) => {
+                const r = t as Record<string, unknown>
+                return {
+                  id: String(r.id ?? ''),
+                  query: String(r.query ?? ''),
+                  status: String(r.status ?? ''),
+                  cost: Number(r.cost ?? 0),
+                  createdAt: String(r.created_at ?? ''),
+                }
+              })
+              .filter((t) => t.id)
+            setOpsModalState((s) => ({
+              ...s,
+              history: { ok: { tasks, total: Number(d.total ?? tasks.length) } },
+            }))
+          })
+          .catch((e: unknown) => {
+            setOpsModalState((s) => ({ ...s, history: { err: e instanceof Error ? e.message : String(e) } }))
+          })
+        return
+      }
+
+      setOpsModalState((s) => ({ ...s, mcp: 'loading' }))
+      Promise.all([getAgentToolsHealth(), getMcpServers()])
+        .then(([healthData, serversData]: [unknown, unknown]) => {
+          const d = healthData as {
+            checks?: unknown[]
+            healthy_count?: number
+            total?: number
+          }
+          const s = serversData as { servers?: unknown[] }
+          const checks = (Array.isArray(d.checks) ? d.checks : [])
+            .map((c) => {
+              const r = c as Record<string, unknown>
+              return {
+                name: String(r.name ?? r.tool ?? 'unknown'),
+                ok: Boolean(r.ok),
+                note: typeof r.note === 'string' ? r.note : undefined,
+                error: typeof r.error === 'string' ? r.error : undefined,
+              }
+            })
+          const servers = (Array.isArray(s.servers) ? s.servers : [])
+            .map((sv) => {
+              const r = sv as Record<string, unknown>
+              return {
+                name: String(r.name ?? ''),
+                transport: String(r.transport ?? 'http_json') as 'http_json' | 'sse' | 'stdio',
+                url: typeof r.url === 'string' ? r.url : undefined,
+                command: typeof r.command === 'string' ? r.command : undefined,
+                args: Array.isArray(r.args) ? r.args.map(String) : undefined,
+              }
+            })
+            .filter((sv) => sv.name)
+          setOpsModalState((s) => ({
+            ...s,
+            mcp: {
+              ok: {
+                checks,
+                healthyCount: Number(d.healthy_count ?? checks.filter((c) => c.ok).length),
+                total: Number(d.total ?? checks.length),
+                servers,
+              },
+            },
+          }))
+        })
+        .catch((e: unknown) => {
+          setOpsModalState((s) => ({ ...s, mcp: { err: e instanceof Error ? e.message : String(e) } }))
+        })
+    },
+    [],
+  )
+
+  const openOpsPanel = useCallback(
+    (panel: OpsPanel) => {
+      setOpsPanel(panel)
+      setOpsModalOpen(true)
+      loadOpsPanel(panel)
+    },
+    [loadOpsPanel],
+  )
+
+  const submitNewMcpServer = useCallback(async () => {
+    setMcpCreateError(null)
+    setMcpCreateBusy(true)
+    try {
+      const payload =
+        mcpNewTransport === 'stdio'
+          ? {
+              name: mcpNewName.trim(),
+              transport: mcpNewTransport,
+              command: mcpNewCommand.trim(),
+              args: mcpNewArgs
+                .split('\n')
+                .map((x) => x.trim())
+                .filter(Boolean),
+            }
+          : {
+              name: mcpNewName.trim(),
+              transport: mcpNewTransport,
+              url: mcpNewUrl.trim(),
+            }
+      await addMcpServer(payload)
+      setMcpCreateOpen(false)
+      setMcpNewName('')
+      setMcpNewUrl('')
+      setMcpNewCommand('')
+      setMcpNewArgs('')
+      loadOpsPanel('mcp')
+      setReasoningCmdHint('MCP server added and refreshed.')
+      window.setTimeout(() => setReasoningCmdHint(null), 3200)
+    } catch (e) {
+      setMcpCreateError(e instanceof Error ? e.message : 'Failed to add MCP server')
+    } finally {
+      setMcpCreateBusy(false)
+    }
+  }, [mcpNewTransport, mcpNewName, mcpNewCommand, mcpNewArgs, mcpNewUrl, loadOpsPanel])
+
+  const submitMcpEdit = useCallback(async () => {
+    if (!mcpEditName) return
+    setMcpCreateError(null)
+    setMcpEditBusy(true)
+    try {
+      const payload =
+        mcpNewTransport === 'stdio'
+          ? {
+              transport: mcpNewTransport,
+              command: mcpNewCommand.trim(),
+              args: mcpNewArgs
+                .split('\n')
+                .map((x) => x.trim())
+                .filter(Boolean),
+            }
+          : {
+              transport: mcpNewTransport,
+              url: mcpNewUrl.trim(),
+            }
+      await updateMcpServer(mcpEditName, payload)
+      setMcpEditName(null)
+      setMcpCreateOpen(false)
+      setMcpNewName('')
+      setMcpNewUrl('')
+      setMcpNewCommand('')
+      setMcpNewArgs('')
+      loadOpsPanel('mcp')
+      setReasoningCmdHint(`MCP server "${mcpEditName}" updated.`)
+      window.setTimeout(() => setReasoningCmdHint(null), 3200)
+    } catch (e) {
+      setMcpCreateError(e instanceof Error ? e.message : 'Failed to update MCP server')
+    } finally {
+      setMcpEditBusy(false)
+    }
+  }, [mcpEditName, mcpNewTransport, mcpNewCommand, mcpNewArgs, mcpNewUrl, loadOpsPanel])
+
+  const removeMcpServer = useCallback(async (name: string) => {
+    if (!window.confirm(`Delete MCP server "${name}"?`)) return
+    setMcpCreateError(null)
+    setMcpDeleteBusyName(name)
+    try {
+      await deleteMcpServer(name)
+      if (mcpEditName === name) {
+        setMcpEditName(null)
+        setMcpCreateOpen(false)
+      }
+      loadOpsPanel('mcp')
+      setReasoningCmdHint(`MCP server "${name}" deleted.`)
+      window.setTimeout(() => setReasoningCmdHint(null), 3200)
+    } catch (e) {
+      setMcpCreateError(e instanceof Error ? e.message : 'Failed to delete MCP server')
+    } finally {
+      setMcpDeleteBusyName(null)
+    }
+  }, [mcpEditName, loadOpsPanel])
+
+  const testMcpServer = useCallback(async (name: string) => {
+    setMcpCreateError(null)
+    setMcpTestBusyName(name)
+    try {
+      const data = await getAgentToolsHealth() as { checks?: unknown[] }
+      const checks = Array.isArray(data.checks) ? data.checks : []
+      const key = `mcp:${name}`
+      const row = checks.find((c) => {
+        const r = c as Record<string, unknown>
+        return String(r.tool ?? r.name ?? '').toLowerCase() === key.toLowerCase()
+      }) as Record<string, unknown> | undefined
+      if (!row) {
+        setMcpTestResultByName((prev) => ({ ...prev, [name]: { ok: false, detail: 'No health row returned for this server' } }))
+        return
+      }
+      const ok = Boolean(row.ok)
+      const detail =
+        typeof row.detail === 'string'
+          ? row.detail
+          : row.detail != null
+            ? JSON.stringify(row.detail)
+            : ok
+              ? 'Healthy'
+              : 'Connection failed'
+      setMcpTestResultByName((prev) => ({ ...prev, [name]: { ok, detail } }))
+    } catch (e) {
+      setMcpTestResultByName((prev) => ({
+        ...prev,
+        [name]: { ok: false, detail: e instanceof Error ? e.message : 'Health check failed' },
+      }))
+    } finally {
+      setMcpTestBusyName(null)
+    }
+  }, [])
+
+  const testMcpDraftConfig = useCallback(async () => {
+    setMcpCreateError(null)
+    setMcpDraftTestResult(null)
+    setMcpDraftTestBusy(true)
+    try {
+      const payload =
+        mcpNewTransport === 'stdio'
+          ? {
+              transport: mcpNewTransport,
+              command: mcpNewCommand.trim(),
+              args: mcpNewArgs
+                .split('\n')
+                .map((x) => x.trim())
+                .filter(Boolean),
+            }
+          : {
+              transport: mcpNewTransport,
+              url: mcpNewUrl.trim(),
+            }
+      const res = await testMcpServerDraft(payload)
+      const ok = Boolean((res as { ok?: unknown }).ok)
+      const detailRaw = (res as { detail?: unknown }).detail
+      const detail =
+        typeof detailRaw === 'string'
+          ? detailRaw
+          : detailRaw != null
+            ? JSON.stringify(detailRaw)
+            : ok
+              ? 'Probe succeeded'
+              : 'Probe failed'
+      setMcpDraftTestResult({ ok, detail })
+    } catch (e) {
+      setMcpDraftTestResult({ ok: false, detail: e instanceof Error ? e.message : 'Draft test failed' })
+    } finally {
+      setMcpDraftTestBusy(false)
+    }
+  }, [mcpNewTransport, mcpNewCommand, mcpNewArgs, mcpNewUrl])
+
+  const toggleDefaultTool = useCallback(
+    async (toolName: string, enable: boolean) => {
+      const current = opsModalState.tools
+      if (!isToolsOkState(current)) return
+      const nextSet = new Set(current.ok.enabledSet)
+      if (enable) nextSet.add(toolName)
+      else nextSet.delete(toolName)
+      setOpsModalState((s) => ({
+        ...s,
+        tools: { ok: { ...current.ok, enabledSet: nextSet } },
+      }))
+      try {
+        const settings = await getSettings()
+        const payload = {
+          ...(settings as Record<string, unknown>),
+          default_tools: Array.from(nextSet.values()),
+        }
+        await updateSettings(payload)
+      } catch (e) {
+        setFeedbackCmdHint(
+          e instanceof Error ? `Could not update default tools: ${e.message}` : 'Could not update default tools',
+        )
+        window.setTimeout(() => setFeedbackCmdHint(null), 4200)
+      }
+    },
+    [opsModalState.tools],
+  )
+
   const tryHandleChatSlashCommand = useCallback(
     (rawTrimmed: string): boolean => {
       const rawLower = rawTrimmed.toLowerCase()
@@ -1584,12 +2049,24 @@ export default function AgentExecutor() {
         loadModelsForModal()
         return true
       }
-      if (rawLower === '/costs') {
-        router.push('/costs')
+      if (rawLower === '/history') {
+        openOpsPanel('history')
         return true
       }
-      if (rawLower === '/history') {
-        router.push('/history')
+      if (rawLower === '/costs' || rawLower === '/stats') {
+        openOpsPanel('stats')
+        return true
+      }
+      if (rawLower === '/tools') {
+        openOpsPanel('tools')
+        return true
+      }
+      if (rawLower === '/skills') {
+        openOpsPanel('skills')
+        return true
+      }
+      if (rawLower === '/mcp') {
+        openOpsPanel('mcp')
         return true
       }
       if (rawLower === '/new') {
@@ -1606,7 +2083,7 @@ export default function AgentExecutor() {
       }
       return false
     },
-    [merged, handleDownloadThread, loadModelsForModal, router, reset, newConversation, isRunning, stop],
+    [merged, handleDownloadThread, loadModelsForModal, openOpsPanel, reset, newConversation, isRunning, stop],
   )
 
   const applySuggestionPick = useCallback(
@@ -1708,6 +2185,13 @@ export default function AgentExecutor() {
         if (slashSc) stripSlashAndFocus(slashSc.start)
         setModelsModalOpen(true)
         loadModelsForModal()
+        return
+      }
+
+      if (row.pick.type === 'action_ops_modal') {
+        if (!slashSc) return
+        stripSlashAndFocus(slashSc.start)
+        openOpsPanel(row.pick.panel)
         return
       }
 
@@ -1886,7 +2370,7 @@ export default function AgentExecutor() {
       }
     }
 
-    if (helpModalOpen || modelsModalOpen) {
+    if (helpModalOpen || modelsModalOpen || opsModalOpen) {
       if (e.key === 'Escape') {
         e.preventDefault()
         if (helpModalOpen) setHelpModalOpen(false)
@@ -1894,6 +2378,7 @@ export default function AgentExecutor() {
           setModelsModalOpen(false)
           setModelsModalState('loading')
         }
+        if (opsModalOpen) setOpsModalOpen(false)
         return
       }
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -2537,6 +3022,423 @@ export default function AgentExecutor() {
                   setModelsModalOpen(false)
                   setModelsModalState('loading')
                 }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {opsModalOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 font-sans"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ops-modal-title"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/45"
+            aria-label="Dismiss"
+            onClick={() => setOpsModalOpen(false)}
+          />
+          <div className="relative z-10 w-full max-w-3xl rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] shadow-2xl ring-1 ring-[color:var(--border)]/40">
+            <div className="border-b border-[color:var(--border)]/80 px-4 py-3">
+              <h2 id="ops-modal-title" className="text-sm font-semibold text-[color:var(--text)]">
+                Command menu
+              </h2>
+              <p className="mt-1 text-xs text-muted">
+                Inline chat controls for tools, skills, and MCP health.
+              </p>
+            </div>
+            <div className="border-b border-[color:var(--border)]/70 px-3 py-2">
+              <div className="flex gap-2">
+                {(['tools', 'skills', 'mcp', 'stats', 'history'] as const).map((panel) => (
+                  <button
+                    key={panel}
+                    type="button"
+                    onClick={() => {
+                      setOpsPanel(panel)
+                      if (opsModalState[panel] === 'loading') loadOpsPanel(panel)
+                    }}
+                    className={`rounded-md px-2.5 py-1.5 text-xs ${
+                      opsPanel === panel
+                        ? 'border border-[color:var(--accent)]/50 bg-[color:var(--accent)]/15 text-[color:var(--text)]'
+                        : 'btn-ghost text-muted'
+                    }`}
+                  >
+                    /{panel}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="max-h-[min(65vh,30rem)] overflow-y-auto px-4 py-3">
+              {opsPanel === 'tools' && (
+                <>
+                  {opsModalState.tools === 'loading' ? (
+                    <p className="text-sm text-muted">Loading tools…</p>
+                  ) : !isToolsOkState(opsModalState.tools) ? (
+                    <p className="text-sm text-[color:var(--danger)]">{opsModalState.tools.err}</p>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted">
+                        Toggle default tools directly from chat. Enabled tools are auto-preferred on future runs.
+                      </p>
+                      {(() => {
+                        const toolsState = opsModalState.tools.ok
+                        return toolsState.tools.map((tool) => {
+                          const enabled = toolsState.enabledSet.has(tool.name)
+                        return (
+                          <div key={tool.name} className="rounded-lg border border-[color:var(--border)] bg-[color:var(--bg-elev)] px-3 py-2">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-mono text-sm text-[color:var(--text)]">{tool.name}</p>
+                                <p className="text-xs text-muted">{tool.description || 'No description available.'}</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => void toggleDefaultTool(tool.name, !enabled)}
+                                className={`rounded-md px-2 py-1 text-xs ${
+                                  enabled
+                                    ? 'border border-[color:var(--success)]/45 bg-[color:var(--success)]/10 text-[color:var(--success)]'
+                                    : 'border border-[color:var(--border)] bg-[color:var(--bg)] text-muted'
+                                }`}
+                              >
+                                {enabled ? 'Enabled' : 'Disabled'}
+                              </button>
+                            </div>
+                          </div>
+                        )
+                        })
+                      })()}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {opsPanel === 'skills' && (
+                <>
+                  {opsModalState.skills === 'loading' ? (
+                    <p className="text-sm text-muted">Loading skills…</p>
+                  ) : 'err' in opsModalState.skills ? (
+                    <p className="text-sm text-[color:var(--danger)]">{opsModalState.skills.err}</p>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-xs text-muted">Live skill usage from analytics; choose follow-up actions below.</p>
+                      {opsModalState.skills.ok.skills.length === 0 ? (
+                        <p className="text-sm text-muted">No skill usage tracked yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {opsModalState.skills.ok.skills.map((s) => (
+                            <div key={s.task_type} className="rounded-lg border border-[color:var(--border)] bg-[color:var(--bg-elev)] px-3 py-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="font-mono text-xs text-[color:var(--text)]">{s.task_type}</span>
+                                <span className="text-xs text-muted">{Math.round(s.success_rate * 100)}% success · {s.total_uses} uses</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-soft)]/35 p-3">
+                        <p className="text-xs text-muted mb-2">Quick actions</p>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" className="btn-ghost px-2.5 py-1.5 rounded text-xs" onClick={() => router.push('/analytics')}>View details</button>
+                          <button type="button" className="btn-ghost px-2.5 py-1.5 rounded text-xs" onClick={() => router.push('/settings')}>Enable/disable in settings</button>
+                          <button type="button" className="btn-ghost px-2.5 py-1.5 rounded text-xs" onClick={() => setQuery('Add a new skill for: ')}>Add skill plan</button>
+                          <button type="button" className="btn-ghost px-2.5 py-1.5 rounded text-xs" onClick={() => setQuery('Disable or remove skill: ')}>Disable/delete plan</button>
+                        </div>
+                        {opsModalState.skills.ok.growthAreas.length > 0 ? (
+                          <p className="mt-2 text-xs text-muted">Growth areas: {opsModalState.skills.ok.growthAreas.join(', ')}</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {opsPanel === 'mcp' && (
+                <>
+                  {opsModalState.mcp === 'loading' ? (
+                    <p className="text-sm text-muted">Loading MCP health…</p>
+                  ) : 'err' in opsModalState.mcp ? (
+                    <p className="text-sm text-[color:var(--danger)]">{opsModalState.mcp.err}</p>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs text-muted">
+                          {opsModalState.mcp.ok.healthyCount}/{opsModalState.mcp.ok.total} checks healthy
+                        </p>
+                        <button
+                          type="button"
+                          className="btn-ghost px-2.5 py-1.5 rounded text-xs"
+                          onClick={() => {
+                            setMcpEditName(null)
+                            setMcpNewName('')
+                            setMcpNewTransport('http_json')
+                            setMcpNewUrl('')
+                            setMcpNewCommand('')
+                            setMcpNewArgs('')
+                            setMcpCreateOpen((v) => !v)
+                            setMcpCreateError(null)
+                          }}
+                        >
+                          {mcpCreateOpen && !mcpEditName ? 'Close add form' : 'Add MCP server'}
+                        </button>
+                      </div>
+                      {opsModalState.mcp.ok.servers.length > 0 ? (
+                        <div className="rounded-lg border border-[color:var(--border)] bg-[color:var(--bg-elev)] px-3 py-2 space-y-2">
+                          <p className="text-xs text-muted">Configured servers</p>
+                          {opsModalState.mcp.ok.servers.map((srv) => (
+                            <div key={srv.name} className="rounded border border-[color:var(--border)]/70 bg-[color:var(--surface-soft)]/25 px-2.5 py-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="font-mono text-xs text-[color:var(--text)]">{srv.name}</span>
+                                <span className="text-xs text-muted">{srv.transport}</span>
+                              </div>
+                              <p className="mt-1 text-xs text-muted break-all">
+                                {srv.transport === 'stdio'
+                                  ? `${srv.command ?? ''} ${(srv.args ?? []).join(' ')}`
+                                  : (srv.url ?? '')}
+                              </p>
+                              <div className="mt-2 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="btn-ghost px-2 py-1 rounded text-xs"
+                                  onClick={() => {
+                                    setMcpEditName(srv.name)
+                                    setMcpCreateOpen(true)
+                                    setMcpCreateError(null)
+                                    setMcpNewName(srv.name)
+                                    setMcpNewTransport(srv.transport)
+                                    setMcpNewUrl(srv.url ?? '')
+                                    setMcpNewCommand(srv.command ?? '')
+                                    setMcpNewArgs((srv.args ?? []).join('\n'))
+                                  }}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-ghost px-2 py-1 rounded text-xs"
+                                  disabled={mcpTestBusyName === srv.name}
+                                  onClick={() => void testMcpServer(srv.name)}
+                                >
+                                  {mcpTestBusyName === srv.name ? 'Testing…' : 'Test connection'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-ghost px-2 py-1 rounded text-xs text-[color:var(--danger)]"
+                                  disabled={mcpDeleteBusyName === srv.name}
+                                  onClick={() => void removeMcpServer(srv.name)}
+                                >
+                                  {mcpDeleteBusyName === srv.name ? 'Deleting…' : 'Delete'}
+                                </button>
+                              </div>
+                              {mcpTestResultByName[srv.name] ? (
+                                <p className={`mt-1 text-xs ${mcpTestResultByName[srv.name].ok ? 'text-[color:var(--success)]' : 'text-[color:var(--danger)]'}`}>
+                                  {mcpTestResultByName[srv.name].ok ? 'Healthy: ' : 'Failed: '}
+                                  {mcpTestResultByName[srv.name].detail}
+                                </p>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted">No MCP servers configured yet.</p>
+                      )}
+                      {mcpCreateOpen && (
+                        <div className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-soft)]/35 p-3 space-y-2">
+                          <div>
+                            <label className="block text-xs text-muted mb-1">Name</label>
+                            <input
+                              value={mcpNewName}
+                              onChange={(e) => setMcpNewName(e.target.value)}
+                              placeholder="e.g. github_sse"
+                              disabled={!!mcpEditName}
+                              className="w-full bg-[color:var(--bg-elev)] rounded px-2.5 py-1.5 text-xs border border-[color:var(--border)] focus:outline-none focus:border-[color:var(--accent)]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-muted mb-1">Transport</label>
+                            <select
+                              value={mcpNewTransport}
+                              onChange={(e) => setMcpNewTransport(e.target.value as 'http_json' | 'sse' | 'stdio')}
+                              className="w-full bg-[color:var(--bg-elev)] rounded px-2.5 py-1.5 text-xs border border-[color:var(--border)] focus:outline-none focus:border-[color:var(--accent)]"
+                            >
+                              <option value="http_json">http_json</option>
+                              <option value="sse">sse</option>
+                              <option value="stdio">stdio</option>
+                            </select>
+                          </div>
+                          {mcpNewTransport === 'stdio' ? (
+                            <>
+                              <div>
+                                <label className="block text-xs text-muted mb-1">Command</label>
+                                <input
+                                  value={mcpNewCommand}
+                                  onChange={(e) => setMcpNewCommand(e.target.value)}
+                                  placeholder="e.g. npx"
+                                  className="w-full bg-[color:var(--bg-elev)] rounded px-2.5 py-1.5 text-xs border border-[color:var(--border)] focus:outline-none focus:border-[color:var(--accent)]"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-muted mb-1">Args (one per line)</label>
+                                <textarea
+                                  value={mcpNewArgs}
+                                  onChange={(e) => setMcpNewArgs(e.target.value)}
+                                  rows={3}
+                                  placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;/tmp/agent-workspace"
+                                  className="w-full bg-[color:var(--bg-elev)] rounded px-2.5 py-1.5 text-xs border border-[color:var(--border)] focus:outline-none focus:border-[color:var(--accent)] resize-none"
+                                />
+                              </div>
+                            </>
+                          ) : (
+                            <div>
+                              <label className="block text-xs text-muted mb-1">URL</label>
+                              <input
+                                value={mcpNewUrl}
+                                onChange={(e) => setMcpNewUrl(e.target.value)}
+                                placeholder={mcpNewTransport === 'sse' ? 'https://host/sse' : 'https://host'}
+                                className="w-full bg-[color:var(--bg-elev)] rounded px-2.5 py-1.5 text-xs border border-[color:var(--border)] focus:outline-none focus:border-[color:var(--accent)]"
+                              />
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={(mcpCreateBusy || mcpEditBusy) || !mcpNewName.trim() || (mcpNewTransport === 'stdio' ? (!mcpNewCommand.trim() || !mcpNewArgs.trim()) : !mcpNewUrl.trim())}
+                              onClick={() => void (mcpEditName ? submitMcpEdit() : submitNewMcpServer())}
+                              className="btn-accent px-2.5 py-1.5 rounded text-xs disabled:opacity-50"
+                            >
+                              {mcpEditName
+                                ? (mcpEditBusy ? 'Saving…' : 'Save changes')
+                                : (mcpCreateBusy ? 'Adding…' : 'Add server')}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={mcpDraftTestBusy || (mcpNewTransport === 'stdio' ? (!mcpNewCommand.trim() || !mcpNewArgs.trim()) : !mcpNewUrl.trim())}
+                              onClick={() => void testMcpDraftConfig()}
+                              className="btn-ghost px-2.5 py-1.5 rounded text-xs disabled:opacity-50"
+                            >
+                              {mcpDraftTestBusy ? 'Testing draft…' : 'Test draft config'}
+                            </button>
+                            {mcpEditName ? (
+                              <button
+                                type="button"
+                                className="btn-ghost px-2.5 py-1.5 rounded text-xs"
+                                onClick={() => {
+                                  setMcpEditName(null)
+                                  setMcpCreateOpen(false)
+                                  setMcpCreateError(null)
+                                  setMcpNewName('')
+                                  setMcpNewTransport('http_json')
+                                  setMcpNewUrl('')
+                                  setMcpNewCommand('')
+                                  setMcpNewArgs('')
+                                }}
+                              >
+                                Cancel edit
+                              </button>
+                            ) : null}
+                            {mcpCreateError ? <span className="text-xs text-[color:var(--danger)]">{mcpCreateError}</span> : null}
+                          </div>
+                          {mcpDraftTestResult ? (
+                            <p className={`text-xs ${mcpDraftTestResult.ok ? 'text-[color:var(--success)]' : 'text-[color:var(--danger)]'}`}>
+                              {mcpDraftTestResult.ok ? 'Draft OK: ' : 'Draft failed: '}
+                              {mcpDraftTestResult.detail}
+                            </p>
+                          ) : null}
+                        </div>
+                      )}
+                      {opsModalState.mcp.ok.checks.map((c) => (
+                        <div key={c.name} className="rounded-lg border border-[color:var(--border)] bg-[color:var(--bg-elev)] px-3 py-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="font-mono text-xs text-[color:var(--text)]">{c.name}</span>
+                            <span className={`text-xs ${c.ok ? 'text-[color:var(--success)]' : 'text-[color:var(--danger)]'}`}>
+                              {c.ok ? 'healthy' : 'issue'}
+                            </span>
+                          </div>
+                          {(c.note || c.error) && (
+                            <p className="mt-1 text-xs text-muted">{c.error || c.note}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {opsPanel === 'stats' && (
+                <>
+                  {opsModalState.stats === 'loading' ? (
+                    <p className="text-sm text-muted">Loading stats…</p>
+                  ) : 'err' in opsModalState.stats ? (
+                    <p className="text-sm text-[color:var(--danger)]">{opsModalState.stats.err}</p>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="rounded-lg border border-[color:var(--border)] bg-[color:var(--bg-elev)] px-3 py-2">
+                        <p className="text-xs text-muted">
+                          Budget status: {opsModalState.stats.ok.budget.status} · {opsModalState.stats.ok.budget.percentUsed.toFixed(1)}% used
+                        </p>
+                        <p className="text-xs text-muted mt-1">
+                          Today ${opsModalState.stats.ok.budget.spentToday.toFixed(4)} · Month ${opsModalState.stats.ok.budget.spentMonth.toFixed(4)} · Remaining ${opsModalState.stats.ok.budget.remaining.toFixed(4)}
+                        </p>
+                      </div>
+                      {opsModalState.stats.ok.latency.length === 0 ? (
+                        <p className="text-sm text-muted">No latency rows available yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {opsModalState.stats.ok.latency.map((row) => (
+                            <div key={row.endpoint} className="rounded-lg border border-[color:var(--border)] bg-[color:var(--bg-elev)] px-3 py-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="font-mono text-xs text-[color:var(--text)]">{row.endpoint}</span>
+                                <span className="text-xs text-muted">{row.count} req</span>
+                              </div>
+                              <p className="text-xs text-muted mt-1">p50 {row.p50.toFixed(1)}ms · p95 {row.p95.toFixed(1)}ms · p99 {row.p99.toFixed(1)}ms</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {opsPanel === 'history' && (
+                <>
+                  {opsModalState.history === 'loading' ? (
+                    <p className="text-sm text-muted">Loading history…</p>
+                  ) : 'err' in opsModalState.history ? (
+                    <p className="text-sm text-[color:var(--danger)]">{opsModalState.history.err}</p>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted">Showing recent runs ({opsModalState.history.ok.tasks.length} of {opsModalState.history.ok.total}).</p>
+                      {opsModalState.history.ok.tasks.map((t) => (
+                        <div key={t.id} className="rounded-lg border border-[color:var(--border)] bg-[color:var(--bg-elev)] px-3 py-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs text-muted">{new Date(t.createdAt).toLocaleString()}</span>
+                            <span className="text-xs text-muted">{t.status} · ${t.cost.toFixed(4)}</span>
+                          </div>
+                          <p className="text-sm text-[color:var(--text)] mt-1 line-clamp-2">{t.query}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="flex justify-between gap-2 border-t border-[color:var(--border)]/70 bg-[color:var(--surface-soft)]/40 px-3 py-2">
+              <button
+                type="button"
+                className="btn-ghost px-3 py-1.5 rounded-lg text-xs"
+                onClick={() => loadOpsPanel(opsPanel)}
+              >
+                Refresh
+              </button>
+              <button
+                type="button"
+                className="btn-ghost px-3 py-1.5 rounded-lg text-xs"
+                onClick={() => setOpsModalOpen(false)}
               >
                 Close
               </button>

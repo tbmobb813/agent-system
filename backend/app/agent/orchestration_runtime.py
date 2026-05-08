@@ -16,7 +16,7 @@ from typing import Any, Awaitable, Callable, Optional
 
 from app.agent.memory import memory_manager
 from app.config import settings
-from app.database import execute, fetch
+from app.database import execute, fetch, fetchrow
 from app import database as _db
 
 logger = logging.getLogger(__name__)
@@ -504,3 +504,79 @@ class OrchestrationRuntime:
                 )
             except Exception as e:
                 logger.warning("Schedule %s: next_run update failed: %s", sid, e)
+
+    async def replay_failed_task(
+        self, failed_task_id: str, *, delete_immediately: bool = True
+    ) -> dict[str, Any]:
+        """
+        Re-enqueue a payload from failed_tasks.
+        
+        Args:
+            failed_task_id: UUID of the failed_tasks row to replay.
+            delete_immediately: If True, delete the dead-letter record immediately after
+                enqueuing (default). If False, keep the record for evidence/audit trail.
+                Note: Deletion happens immediately upon successful enqueue, not after
+                the replayed task completes.
+        
+        Returns replay metadata including the new task_id.
+        """
+        if not _db.db_pool:
+            raise RuntimeError("Database not connected")
+
+        row = await fetchrow(
+            """
+            SELECT id, payload
+            FROM failed_tasks
+            WHERE id = $1::uuid
+            """,
+            failed_task_id,
+        )
+        if not row:
+            raise LookupError(f"failed task {failed_task_id} not found")
+
+        payload = row.get("payload") if hasattr(row, "get") else row["payload"]
+        if not isinstance(payload, dict):
+            raise ValueError("failed task payload is not a JSON object")
+        if not payload.get("query"):
+            raise ValueError("failed task payload missing query")
+
+        new_task_id = str(uuid.uuid4())
+        replay_payload = dict(payload)
+        replay_payload["task_id"] = new_task_id
+
+        user_id = replay_payload.get("user_id")
+        query = str(replay_payload.get("query"))
+        if _db.db_pool:
+            try:
+                await execute(
+                    """
+                    INSERT INTO tasks (id, user_id, query, status, cost, created_at)
+                    VALUES ($1, $2, $3, 'queued', 0, $4)
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    new_task_id,
+                    user_id,
+                    query,
+                    datetime.utcnow(),
+                )
+            except Exception as e:
+                logger.warning("Replay task insert failed: %s", e)
+
+        await self.enqueue_task(replay_payload)
+
+        if delete_immediately:
+            try:
+                await execute(
+                    "DELETE FROM failed_tasks WHERE id = $1::uuid",
+                    failed_task_id,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Replay cleanup failed for failed_tasks %s: %s", failed_task_id, e
+                )
+
+        return {
+            "failed_task_id": failed_task_id,
+            "task_id": new_task_id,
+            "status": "queued",
+        }

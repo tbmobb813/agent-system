@@ -159,27 +159,27 @@ CREATE POLICY "Users can view own data"
 DROP POLICY IF EXISTS "Users can view own tasks" ON tasks;
 CREATE POLICY "Users can view own tasks"
     ON tasks FOR SELECT
-    USING (user_id = auth.uid());
+    USING (user_id::text = auth.uid()::text);
 
 DROP POLICY IF EXISTS "Users can insert own tasks" ON tasks;
 CREATE POLICY "Users can insert own tasks"
     ON tasks FOR INSERT
-    WITH CHECK (user_id = auth.uid());
+    WITH CHECK (user_id::text = auth.uid()::text);
 
 DROP POLICY IF EXISTS "Users can update own tasks" ON tasks;
 CREATE POLICY "Users can update own tasks"
     ON tasks FOR UPDATE
-    USING (user_id = auth.uid());
+    USING (user_id::text = auth.uid()::text);
 
 DROP POLICY IF EXISTS "Users can view own memory" ON memory;
 CREATE POLICY "Users can view own memory"
     ON memory FOR SELECT
-    USING (user_id = auth.uid());
+    USING (user_id::text = auth.uid()::text);
 
 DROP POLICY IF EXISTS "Users can insert own memory" ON memory;
 CREATE POLICY "Users can insert own memory"
     ON memory FOR INSERT
-    WITH CHECK (user_id = auth.uid());
+    WITH CHECK (user_id::text = auth.uid()::text);
 
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_tasks_user_created ON tasks(user_id, created_at DESC);

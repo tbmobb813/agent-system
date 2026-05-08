@@ -15,18 +15,30 @@ import uuid
 import time
 import logging
 from datetime import datetime
+import yaml
 
 from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 
 from app.config import settings
-from app.models import AgentRequest, AgentResponse, WorkflowRunRequest
+from app.models import (
+    AgentRequest,
+    AgentResponse,
+    WorkflowRunRequest,
+    McpServerCreate,
+    McpServerUpdate,
+    McpServerTest,
+)
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.streaming import format_sse_event
+from app.utils.pillar_loader import get_pillar_config, pillars_file_path
 from app.database import execute, fetch
 from app import database as _db
 from app.routes.schedules import router as schedules_router
+from app.tools.mcp_hub import McpConnectionHub, set_mcp_hub
+from app.tools.mcp_hub import SseMcpRunner, StdioMcpRunner
+from app.tools.mcp_client import MCPClient
 
 logger = logging.getLogger(__name__)
 
@@ -495,6 +507,278 @@ async def agent_tools_health(
     }
 
 
+def _get_mcp_servers_config(cfg: dict) -> list:
+    tools = cfg.setdefault("tools", {})
+    mcp = tools.setdefault("mcp", {})
+    mcp["enabled"] = True
+    servers = mcp.setdefault("servers", [])
+    if not isinstance(servers, list):
+        raise HTTPException(status_code=500, detail="Invalid tools.mcp.servers format")
+    return servers
+
+
+def _build_mcp_server_entry(
+    *,
+    transport: str,
+    url: str | None = None,
+    command: str | None = None,
+    args: list[str] | None = None,
+    env: dict[str, str] | None = None,
+) -> dict:
+    entry: dict = {"transport": transport}
+    if transport in ("http_json", "sse"):
+        if not url or not str(url).strip():
+            raise HTTPException(
+                status_code=400, detail="url is required for http_json/sse transport"
+            )
+        entry["url"] = str(url).strip()
+    elif transport == "stdio":
+        if not command or not str(command).strip():
+            raise HTTPException(
+                status_code=400, detail="command is required for stdio transport"
+            )
+        if not args or len(args) == 0:
+            raise HTTPException(
+                status_code=400, detail="args[] is required for stdio transport"
+            )
+        entry["command"] = str(command).strip()
+        entry["args"] = [str(a) for a in args]
+        if env:
+            entry["env"] = {str(k): str(v) for k, v in env.items()}
+    else:
+        raise HTTPException(
+            status_code=400, detail=f"Unsupported transport: {transport}"
+        )
+    return entry
+
+
+def _persist_pillars_config(path, cfg: dict) -> None:
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(cfg, f, sort_keys=False)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update pillars config: {e}"
+        )
+
+
+async def _reload_mcp_runtime(request: Request) -> None:
+    app = request.app
+    old_hub = getattr(app.state, "mcp_hub", None)
+    try:
+        if old_hub:
+            await old_hub.stop_all()
+    except Exception as e:
+        logger.debug("Previous MCP hub stop failed: %s", e)
+
+    hub = McpConnectionHub()
+    await hub.start_from_pillars()
+    set_mcp_hub(hub)
+    app.state.mcp_hub = hub
+    await _orchestrator(request).tools.load_mcp_tools()
+
+
+@router.get("/mcp/servers")
+@limiter.limit("60/minute")
+async def list_mcp_servers(
+    request: Request,
+    api_key: str = Depends(verify_api_key),
+):
+    cfg = get_pillar_config(force_reload=True)
+    if not cfg:
+        return {"servers": [], "total": 0}
+    servers = _get_mcp_servers_config(cfg)
+    out = [s for s in servers if isinstance(s, dict)]
+    return {"servers": out, "total": len(out)}
+
+
+@router.post("/mcp/servers")
+@limiter.limit("20/minute")
+async def add_mcp_server(
+    request: Request,
+    body: McpServerCreate,
+    api_key: str = Depends(verify_api_key),
+):
+    """Persist a new MCP server entry and refresh MCP runtime registrations."""
+    path = pillars_file_path()
+    cfg = get_pillar_config(force_reload=True)
+    if not cfg:
+        raise HTTPException(status_code=500, detail="agent_pillars.yaml is unavailable")
+
+    servers = _get_mcp_servers_config(cfg)
+
+    name = body.name.strip()
+    if any(
+        isinstance(s, dict) and str(s.get("name", "")).strip().lower() == name.lower()
+        for s in servers
+    ):
+        raise HTTPException(
+            status_code=409, detail=f"MCP server '{name}' already exists"
+        )
+
+    entry = {
+        "name": name,
+        **_build_mcp_server_entry(
+            transport=body.transport,
+            url=body.url,
+            command=body.command,
+            args=body.args,
+            env=body.env,
+        ),
+    }
+
+    servers.append(entry)
+    _persist_pillars_config(path, cfg)
+    await _reload_mcp_runtime(request)
+
+    return {"status": "added", "server": entry}
+
+
+@router.put("/mcp/servers/{server_name}")
+@limiter.limit("20/minute")
+async def update_mcp_server(
+    request: Request,
+    server_name: str,
+    body: McpServerUpdate,
+    api_key: str = Depends(verify_api_key),
+):
+    path = pillars_file_path()
+    cfg = get_pillar_config(force_reload=True)
+    if not cfg:
+        raise HTTPException(status_code=500, detail="agent_pillars.yaml is unavailable")
+    servers = _get_mcp_servers_config(cfg)
+    target = server_name.strip().lower()
+    idx = next(
+        (
+            i
+            for i, s in enumerate(servers)
+            if isinstance(s, dict) and str(s.get("name", "")).strip().lower() == target
+        ),
+        -1,
+    )
+    if idx < 0:
+        raise HTTPException(
+            status_code=404, detail=f"MCP server '{server_name}' not found"
+        )
+
+    original_name = str(servers[idx].get("name", "")).strip() or server_name.strip()
+    servers[idx] = {
+        "name": original_name,
+        **_build_mcp_server_entry(
+            transport=body.transport,
+            url=body.url,
+            command=body.command,
+            args=body.args,
+            env=body.env,
+        ),
+    }
+    _persist_pillars_config(path, cfg)
+    await _reload_mcp_runtime(request)
+    return {"status": "updated", "server": servers[idx]}
+
+
+@router.delete("/mcp/servers/{server_name}")
+@limiter.limit("20/minute")
+async def delete_mcp_server(
+    request: Request,
+    server_name: str,
+    api_key: str = Depends(verify_api_key),
+):
+    path = pillars_file_path()
+    cfg = get_pillar_config(force_reload=True)
+    if not cfg:
+        raise HTTPException(status_code=500, detail="agent_pillars.yaml is unavailable")
+    servers = _get_mcp_servers_config(cfg)
+    target = server_name.strip().lower()
+    new_servers = [
+        s
+        for s in servers
+        if not (
+            isinstance(s, dict) and str(s.get("name", "")).strip().lower() == target
+        )
+    ]
+    if len(new_servers) == len(servers):
+        raise HTTPException(
+            status_code=404, detail=f"MCP server '{server_name}' not found"
+        )
+    cfg["tools"]["mcp"]["servers"] = new_servers
+    _persist_pillars_config(path, cfg)
+    await _reload_mcp_runtime(request)
+    return {"status": "deleted", "name": server_name}
+
+
+@router.post("/mcp/servers/test")
+@limiter.limit("30/minute")
+async def test_mcp_server_config(
+    request: Request,
+    body: McpServerTest,
+    api_key: str = Depends(verify_api_key),
+):
+    """Probe an MCP server config without saving it."""
+    spec = _build_mcp_server_entry(
+        transport=body.transport,
+        url=body.url,
+        command=body.command,
+        args=body.args,
+        env=body.env,
+    )
+    transport = spec["transport"]
+    if transport == "http_json":
+        health = await MCPClient(str(spec["url"])).health_check()
+        if not health.get("ok"):
+            return {"ok": False, "transport": transport, "detail": health}
+        try:
+            tools = await MCPClient(str(spec["url"])).list_tools()
+            return {
+                "ok": True,
+                "transport": transport,
+                "tools_count": len(tools),
+                "detail": health,
+            }
+        except Exception as e:
+            return {"ok": False, "transport": transport, "detail": str(e)}
+    if transport == "sse":
+        runner = SseMcpRunner("__probe__", str(spec["url"]))
+        try:
+            await asyncio.wait_for(runner.start(), timeout=25.0)
+            tools = await runner.list_tools()
+            return {
+                "ok": True,
+                "transport": transport,
+                "tools_count": len(tools),
+                "detail": runner.health(),
+            }
+        except Exception as e:
+            return {"ok": False, "transport": transport, "detail": str(e)}
+        finally:
+            try:
+                await runner.stop()
+            except Exception:
+                pass
+    runner = StdioMcpRunner(
+        "__probe__",
+        str(spec["command"]),
+        list(spec["args"]),
+        spec.get("env"),
+    )
+    try:
+        await asyncio.wait_for(runner.start(), timeout=30.0)
+        tools = await runner.list_tools()
+        return {
+            "ok": True,
+            "transport": transport,
+            "tools_count": len(tools),
+            "detail": runner.health(),
+        }
+    except Exception as e:
+        return {"ok": False, "transport": transport, "detail": str(e)}
+    finally:
+        try:
+            await runner.stop()
+        except Exception:
+            pass
+
+
 @router.get("/tools")
 async def list_tools(request: Request, api_key: str = Depends(verify_api_key)):
     """List available tools."""
@@ -565,6 +849,89 @@ async def agent_latency_stats(
             for r in rows
         ],
     }
+
+
+@router.get("/dead-letter")
+@limiter.limit("20/minute")
+async def list_dead_letter_tasks(
+    request: Request,
+    limit: int = Query(20, ge=1, le=200),
+    user_id: str | None = Query(None),
+    include_payload: bool = Query(False),
+    api_key: str = Depends(verify_api_key),
+):
+    """List failed deferred tasks captured in failed_tasks."""
+    if not _db.db_pool:
+        return {"items": [], "total": 0, "note": "database_unavailable"}
+    try:
+        if user_id:
+            rows = await fetch(
+                """
+                SELECT id, task_id, error, payload, created_at
+                FROM failed_tasks
+                WHERE COALESCE(payload->>'user_id', '') = $1
+                ORDER BY created_at DESC
+                LIMIT $2
+                """,
+                user_id,
+                limit,
+            )
+        else:
+            rows = await fetch(
+                """
+                SELECT id, task_id, error, payload, created_at
+                FROM failed_tasks
+                ORDER BY created_at DESC
+                LIMIT $1
+                """,
+                limit,
+            )
+    except Exception as e:
+        logger.debug("dead-letter list query failed: %s", e)
+        return {"items": [], "total": 0, "note": "failed_tasks_unavailable"}
+
+    items = []
+    for r in rows:
+        payload = r["payload"] if include_payload else None
+        items.append(
+            {
+                "id": str(r["id"]),
+                "task_id": str(r["task_id"]) if r["task_id"] else None,
+                "error": str(r["error"]),
+                "created_at": (
+                    r["created_at"].isoformat() if r["created_at"] is not None else None
+                ),
+                "payload": payload,
+            }
+        )
+    return {"items": items, "total": len(items)}
+
+
+@router.post("/dead-letter/{failed_task_id}/replay")
+@limiter.limit("10/minute")
+async def replay_dead_letter_task(
+    request: Request,
+    failed_task_id: uuid.UUID,
+    keep_record: bool = Query(False),
+    api_key: str = Depends(verify_api_key),
+):
+    """Re-enqueue a dead-letter payload for retry."""
+    runtime = _runtime(request)
+    try:
+        out = await runtime.replay_failed_task(
+            str(failed_task_id),
+            delete_immediately=not keep_record,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.warning("dead-letter replay failed: %s", e)
+        raise HTTPException(status_code=500, detail="dead_letter_replay_failed")
+    return out
 
 
 @router.post("/workflows/{name}/run")

@@ -22,8 +22,7 @@ from telegram.ext import (
 )
 
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ API_KEY = os.getenv("TELEGRAM_BOT_API_KEY", "sk-agent-telegram-bot")
 
 
 def _parse_chat_id(raw_value: str) -> int:
-    value = (raw_value or "").strip().strip('"\'')
+    value = (raw_value or "").strip().strip("\"'")
     if not value:
         return 0
     try:
@@ -62,6 +61,7 @@ def _is_authorized(update: Update) -> bool:
 # Helpers
 # ============================================================================
 
+
 def _truncate(text: str, limit: int = 4000) -> str:
     """Truncate to Telegram's 4096-char message limit."""
     if len(text) <= limit:
@@ -77,7 +77,9 @@ async def _call_backend(method: str, path: str, **kwargs) -> dict | None:
             resp = await fn(f"{BACKEND_URL}{path}", headers=HEADERS, **kwargs)
             if resp.status_code == 200:
                 return resp.json()
-            logger.error(f"Backend {method.upper()} {path} → {resp.status_code}: {resp.text}")
+            logger.error(
+                f"Backend {method.upper()} {path} → {resp.status_code}: {resp.text}"
+            )
             return None
     except Exception as e:
         logger.error(f"Backend request failed: {e}")
@@ -87,6 +89,7 @@ async def _call_backend(method: str, path: str, **kwargs) -> dict | None:
 # ============================================================================
 # Command handlers
 # ============================================================================
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_authorized(update):
@@ -100,6 +103,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/analyze — analyze text\n"
         "/history — recent tasks\n"
         "/status — budget & usage\n"
+        "/tools — list tools\n"
+        "/stats — latency stats\n"
+        "/skills — skill profile\n"
+        "/mcp — MCP readiness\n"
         "/help — full command list",
         parse_mode="Markdown",
     )
@@ -116,6 +123,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/analyze `<text>` — summarize or analyze text\n"
         "/status — budget & usage\n"
         "/history — last 5 tasks\n"
+        "/tools — list tools\n"
+        "/stats — latency stats\n"
+        "/skills — skill profile\n"
+        "/mcp — MCP readiness\n"
         "/new — start a fresh conversation\n"
         "/help — this message\n\n"
         "*Model Routing*\n"
@@ -124,7 +135,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Code tasks → DeepSeek\n"
         "Research / deep dive → Gemini Flash\n"
         "Analysis / planning → Claude Haiku\n"
-        "\"use sonnet\" / premium → Claude Sonnet 4\n"
+        '"use sonnet" / premium → Claude Sonnet 4\n'
         "Tool use (web search etc) → Claude Haiku\n\n"
         "*Web UI*\n"
         "http://localhost:3003/commands\n\n"
@@ -193,7 +204,9 @@ async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = await _call_backend("get", "/history?limit=5")
     if not data:
-        await update.message.reply_text("⚠️ Could not fetch history. Is the database connected?")
+        await update.message.reply_text(
+            "⚠️ Could not fetch history. Is the database connected?"
+        )
         return
 
     tasks = data.get("tasks", [])
@@ -219,13 +232,137 @@ async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
+async def tools_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """List available tools from the backend."""
+    if not _is_authorized(update):
+        return
+    await update.message.chat.send_action(ChatAction.TYPING)
+
+    data = await _call_backend("get", "/agent/tools")
+    if not data:
+        await update.message.reply_text(
+            "⚠️ Could not fetch tools. Is the backend running?"
+        )
+        return
+
+    tools = data.get("tools", [])
+    total = data.get("total", len(tools))
+    if not tools:
+        await update.message.reply_text("No tools are currently registered.")
+        return
+
+    names = sorted(str(t.get("name") or "") for t in tools if isinstance(t, dict))
+    bullet_list = "\n".join(f"• `{n}`" for n in names if n)
+    await update.message.reply_text(
+        f"🛠 *Available tools* ({total} total)\n\n{bullet_list}",
+        parse_mode="Markdown",
+    )
+
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show simple latency stats per endpoint, if available."""
+    if not _is_authorized(update):
+        return
+    await update.message.chat.send_action(ChatAction.TYPING)
+
+    data = await _call_backend("get", "/agent/stats?days=1")
+    if not data:
+        await update.message.reply_text(
+            "⚠️ Could not fetch stats. Is the backend running?"
+        )
+        return
+
+    rows = data.get("latency_by_endpoint") or []
+    if not rows:
+        await update.message.reply_text(
+            "No latency samples yet. Try running a few tasks first."
+        )
+        return
+
+    lines = [f"📊 *Latency (last {data.get('window_days', 1)} day)*\n"]
+    for r in rows:
+        endpoint = r.get("endpoint", "")
+        p50 = r.get("p50_ms")
+        p95 = r.get("p95_ms")
+        p99 = r.get("p99_ms")
+        n = r.get("n")
+        lines.append(
+            f"`{endpoint}` — p50 {p50:.0f}ms, p95 {p95:.0f}ms, p99 {p99:.0f}ms (n={n})"
+        )
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def skills_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show the agent's skill profile (success rate per task type)."""
+    if not _is_authorized(update):
+        return
+    await update.message.chat.send_action(ChatAction.TYPING)
+
+    data = await _call_backend("get", "/analytics/skills")
+    if not data:
+        await update.message.reply_text(
+            "⚠️ Could not fetch skills. Is the database connected?"
+        )
+        return
+
+    skills = data.get("skills") or []
+    if not skills:
+        await update.message.reply_text(
+            "No skills computed yet. Run a few tasks first."
+        )
+        return
+
+    lines = ["🧠 *Skill profile* (top 10)\n"]
+    for s in skills[:10]:
+        task_type = s.get("task_type", "unknown")
+        rate = float(s.get("success_rate") or 0.0) * 100
+        uses = int(s.get("total_uses") or 0)
+        lines.append(f"`{task_type}` — {rate:.0f}% (uses={uses})")
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def mcp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show MCP/tool readiness snapshot (from /agent/tools/health)."""
+    if not _is_authorized(update):
+        return
+    await update.message.chat.send_action(ChatAction.TYPING)
+
+    data = await _call_backend("get", "/agent/tools/health")
+    if not data:
+        await update.message.reply_text(
+            "⚠️ Could not fetch tool health. Is the backend running?"
+        )
+        return
+
+    checks = data.get("checks") or []
+    if not checks:
+        await update.message.reply_text("No checks returned.")
+        return
+
+    total = int(data.get("total") or len(checks))
+    ok = int(data.get("healthy_count") or 0)
+    lines = [f"🔌 *Tool/MCP health*: {ok}/{total} ok\n"]
+    for c in checks[:15]:
+        name = c.get("name") or c.get("tool") or "unknown"
+        status = "✅" if c.get("ok") else "❌"
+        note = c.get("error") or c.get("note") or ""
+        tail = f" — {note}" if note else ""
+        lines.append(f"{status} `{name}`{tail}")
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
 async def new_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start a fresh conversation thread."""
     if not _is_authorized(update):
         return
     chat_id = update.message.chat_id
     _chat_conversations.pop(chat_id, None)
-    await update.message.reply_text("🔄 Started a new conversation. Previous context cleared.")
+    await update.message.reply_text(
+        "🔄 Started a new conversation. Previous context cleared."
+    )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -239,6 +376,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Core query processor
 # ============================================================================
 
+
 async def _process_query(update: Update, query: str):
     """Send query to backend and reply with the result."""
     await update.message.chat.send_action(ChatAction.TYPING)
@@ -246,11 +384,15 @@ async def _process_query(update: Update, query: str):
     chat_id = update.message.chat_id
     conversation_id = _chat_conversations.get(chat_id)
 
-    data = await _call_backend("post", "/agent/run", json={
-        "query": query,
-        "max_iterations": 5,
-        "conversation_id": conversation_id,
-    })
+    data = await _call_backend(
+        "post",
+        "/agent/run",
+        json={
+            "query": query,
+            "max_iterations": 5,
+            "conversation_id": conversation_id,
+        },
+    )
 
     if data is None:
         await update.message.reply_text(
@@ -273,6 +415,7 @@ async def _process_query(update: Update, query: str):
 # Entry point
 # ============================================================================
 
+
 def main():
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
@@ -288,6 +431,10 @@ def main():
     app.add_handler(CommandHandler("code", code_command))
     app.add_handler(CommandHandler("status", status_command))
     app.add_handler(CommandHandler("history", history_command))
+    app.add_handler(CommandHandler("tools", tools_command))
+    app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("skills", skills_command))
+    app.add_handler(CommandHandler("mcp", mcp_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     logger.info("Bot starting...")
