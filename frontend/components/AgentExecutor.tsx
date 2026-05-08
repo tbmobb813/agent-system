@@ -2491,8 +2491,7 @@ export default function AgentExecutor() {
       }
 
       if (row.pick.type === 'action_ops_modal') {
-        if (!slashSc) return
-        stripSlashAndFocus(slashSc.start)
+        if (slashSc) stripSlashAndFocus(slashSc.start)
         openOpsPanel(row.pick.panel)
         return
       }
@@ -2539,6 +2538,7 @@ export default function AgentExecutor() {
       merged,
       handleDownloadThread,
       loadModelsForModal,
+      openOpsPanel,
       reset,
       router,
       lastCompletedTurnMeta,
