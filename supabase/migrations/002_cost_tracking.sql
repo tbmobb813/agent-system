@@ -13,10 +13,10 @@ CREATE TABLE IF NOT EXISTS cost_tracking (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_cost_tracking_user_id ON cost_tracking(user_id);
-CREATE INDEX idx_cost_tracking_task_id ON cost_tracking(task_id);
-CREATE INDEX idx_cost_tracking_created_at ON cost_tracking(created_at);
-CREATE INDEX idx_cost_tracking_model ON cost_tracking(model);
+CREATE INDEX IF NOT EXISTS idx_cost_tracking_user_id ON cost_tracking(user_id);
+CREATE INDEX IF NOT EXISTS idx_cost_tracking_task_id ON cost_tracking(task_id);
+CREATE INDEX IF NOT EXISTS idx_cost_tracking_created_at ON cost_tracking(created_at);
+CREATE INDEX IF NOT EXISTS idx_cost_tracking_model ON cost_tracking(model);
 
 -- Monthly cost summary (materialized for performance)
 CREATE TABLE IF NOT EXISTS cost_summary_monthly (
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS cost_summary_monthly (
     UNIQUE(user_id, month)
 );
 
-CREATE INDEX idx_cost_summary_user_month ON cost_summary_monthly(user_id, month);
+CREATE INDEX IF NOT EXISTS idx_cost_summary_user_month ON cost_summary_monthly(user_id, month);
 
 -- Daily cost tracking (for daily limits/alerts)
 CREATE TABLE IF NOT EXISTS cost_summary_daily (
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS cost_summary_daily (
     UNIQUE(user_id, date)
 );
 
-CREATE INDEX idx_cost_summary_daily_user ON cost_summary_daily(user_id, date);
+CREATE INDEX IF NOT EXISTS idx_cost_summary_daily_user ON cost_summary_daily(user_id, date);
 
 -- Budget alerts
 CREATE TABLE IF NOT EXISTS budget_alerts (
@@ -58,8 +58,8 @@ CREATE TABLE IF NOT EXISTS budget_alerts (
     acknowledged BOOLEAN DEFAULT false
 );
 
-CREATE INDEX idx_budget_alerts_user_id ON budget_alerts(user_id);
-CREATE INDEX idx_budget_alerts_created_at ON budget_alerts(created_at);
+CREATE INDEX IF NOT EXISTS idx_budget_alerts_user_id ON budget_alerts(user_id);
+CREATE INDEX IF NOT EXISTS idx_budget_alerts_created_at ON budget_alerts(created_at);
 
 -- Cost by model (for analytics)
 CREATE OR REPLACE VIEW cost_by_model_monthly AS
@@ -211,6 +211,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_cost_insert ON cost_tracking;
 CREATE TRIGGER trigger_cost_insert
 AFTER INSERT ON cost_tracking
 FOR EACH ROW
@@ -221,14 +222,17 @@ ALTER TABLE cost_tracking ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cost_summary_monthly ENABLE ROW LEVEL SECURITY;
 ALTER TABLE budget_alerts ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view own costs" ON cost_tracking;
 CREATE POLICY "Users can view own costs"
     ON cost_tracking FOR SELECT
     USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can view own cost summaries" ON cost_summary_monthly;
 CREATE POLICY "Users can view own cost summaries"
     ON cost_summary_monthly FOR SELECT
     USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can view own budget alerts" ON budget_alerts;
 CREATE POLICY "Users can view own budget alerts"
     ON budget_alerts FOR SELECT
     USING (user_id = auth.uid());

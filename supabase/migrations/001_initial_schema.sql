@@ -150,26 +150,33 @@ ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies (users can only see their own data)
+-- Drop first so re-running against an existing DB does not fail (42710).
+DROP POLICY IF EXISTS "Users can view own data" ON users;
 CREATE POLICY "Users can view own data"
     ON users FOR SELECT
     USING (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can view own tasks" ON tasks;
 CREATE POLICY "Users can view own tasks"
     ON tasks FOR SELECT
     USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can insert own tasks" ON tasks;
 CREATE POLICY "Users can insert own tasks"
     ON tasks FOR INSERT
     WITH CHECK (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can update own tasks" ON tasks;
 CREATE POLICY "Users can update own tasks"
     ON tasks FOR UPDATE
     USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can view own memory" ON memory;
 CREATE POLICY "Users can view own memory"
     ON memory FOR SELECT
     USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can insert own memory" ON memory;
 CREATE POLICY "Users can insert own memory"
     ON memory FOR INSERT
     WITH CHECK (user_id = auth.uid());
