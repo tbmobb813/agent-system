@@ -1,7 +1,7 @@
 -- Request latency samples (best-effort inserts from agent routes).
 
 CREATE TABLE IF NOT EXISTS latency_metrics (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     endpoint TEXT NOT NULL,
     duration_ms INTEGER NOT NULL,
     status TEXT NOT NULL,

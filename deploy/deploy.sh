@@ -12,6 +12,9 @@ cd "$REPO_DIR"
 echo "==> Pulling latest code"
 git pull origin main
 
+echo "==> Running deployment preflight checks"
+bash "$REPO_DIR/deploy/preflight.sh"
+
 echo "==> Backend — install/update dependencies"
 cd "$REPO_DIR/backend"
 ./venv/bin/pip install -r requirements.txt -q

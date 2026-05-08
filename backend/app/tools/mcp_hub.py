@@ -11,6 +11,7 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Callable, Optional
 
 from app.utils.pillar_loader import get_pillar_config
@@ -75,6 +76,10 @@ class _SessionHolder:
     started: asyncio.Event
     session: Any
     task: Optional[asyncio.Task] = None
+    connected: bool = False
+    reconnect_attempts: int = 0
+    last_error: Optional[str] = None
+    last_connected_at: Optional[datetime] = None
 
 
 class SseMcpRunner:
@@ -91,18 +96,36 @@ class SseMcpRunner:
         from mcp import ClientSession
         from mcp.client.sse import sse_client
 
-        try:
-            async with sse_client(self.url) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    self._holder.session = session
-                    self._holder.started.set()
-                    await self._holder.stop.wait()
-        except Exception as e:
-            logger.error("MCP SSE server %s (%s) failed: %s", self.name, self.url, e)
-            self._holder.started.set()
-        finally:
-            self._holder.session = None
+        backoff = 1.0
+        while not self._holder.stop.is_set():
+            try:
+                async with sse_client(self.url) as (read, write):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        self._holder.session = session
+                        self._holder.connected = True
+                        self._holder.last_error = None
+                        self._holder.reconnect_attempts = 0
+                        self._holder.last_connected_at = datetime.utcnow()
+                        self._holder.started.set()
+                        backoff = 1.0
+                        await self._holder.stop.wait()
+                        break
+            except Exception as e:
+                self._holder.connected = False
+                self._holder.session = None
+                self._holder.reconnect_attempts += 1
+                self._holder.last_error = str(e)
+                logger.error(
+                    "MCP SSE server %s (%s) failed: %s", self.name, self.url, e
+                )
+                self._holder.started.set()
+                if self._holder.stop.is_set():
+                    break
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30.0)
+        self._holder.session = None
+        self._holder.connected = False
 
     async def start(self) -> None:
         self._holder.task = asyncio.create_task(self._worker())
@@ -139,6 +162,22 @@ class SseMcpRunner:
         result = await session.call_tool(tool_name, arguments)
         return _format_call_tool_result(result)
 
+    def health(self) -> dict[str, Any]:
+        return {
+            "connected": bool(
+                self._holder.connected and self._holder.session is not None
+            ),
+            "reconnect_attempts": int(self._holder.reconnect_attempts),
+            "last_error": self._holder.last_error,
+            "last_connected_at": (
+                self._holder.last_connected_at.isoformat()
+                if self._holder.last_connected_at
+                else None
+            ),
+            "transport": "sse",
+            "target": self.url,
+        }
+
 
 class StdioMcpRunner:
     def __init__(
@@ -171,18 +210,34 @@ class StdioMcpRunner:
             args=self.args,
             env=merged_env,
         )
-        try:
-            async with stdio_client(params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    self._holder.session = session
-                    self._holder.started.set()
-                    await self._holder.stop.wait()
-        except Exception as e:
-            logger.error("MCP stdio server %s failed: %s", self.name, e)
-            self._holder.started.set()
-        finally:
-            self._holder.session = None
+        backoff = 1.0
+        while not self._holder.stop.is_set():
+            try:
+                async with stdio_client(params) as (read, write):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        self._holder.session = session
+                        self._holder.connected = True
+                        self._holder.last_error = None
+                        self._holder.reconnect_attempts = 0
+                        self._holder.last_connected_at = datetime.utcnow()
+                        self._holder.started.set()
+                        backoff = 1.0
+                        await self._holder.stop.wait()
+                        break
+            except Exception as e:
+                self._holder.connected = False
+                self._holder.session = None
+                self._holder.reconnect_attempts += 1
+                self._holder.last_error = str(e)
+                logger.error("MCP stdio server %s failed: %s", self.name, e)
+                self._holder.started.set()
+                if self._holder.stop.is_set():
+                    break
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30.0)
+        self._holder.session = None
+        self._holder.connected = False
 
     async def start(self) -> None:
         self._holder.task = asyncio.create_task(self._worker())
@@ -218,6 +273,22 @@ class StdioMcpRunner:
             raise RuntimeError(f"MCP stdio session not active: {self.name}")
         result = await session.call_tool(tool_name, arguments)
         return _format_call_tool_result(result)
+
+    def health(self) -> dict[str, Any]:
+        return {
+            "connected": bool(
+                self._holder.connected and self._holder.session is not None
+            ),
+            "reconnect_attempts": int(self._holder.reconnect_attempts),
+            "last_error": self._holder.last_error,
+            "last_connected_at": (
+                self._holder.last_connected_at.isoformat()
+                if self._holder.last_connected_at
+                else None
+            ),
+            "transport": "stdio",
+            "target": self.command,
+        }
 
 
 class McpConnectionHub:
@@ -298,6 +369,23 @@ class McpConnectionHub:
         if not r:
             raise RuntimeError(f"No active MCP hub runner for server {server_name!r}")
         return await r.call_tool(tool_name, arguments)
+
+    def health_snapshot(self) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for name, runner in self._runners.items():
+            detail: dict[str, Any]
+            try:
+                detail = runner.health() if hasattr(runner, "health") else {}
+            except Exception as e:
+                detail = {"last_error": str(e), "connected": False}
+            rows.append(
+                {
+                    "tool": f"mcp:{name}",
+                    "ok": bool(detail.get("connected")),
+                    "detail": detail,
+                }
+            )
+        return rows
 
 
 async def register_hub_servers_into_registry(

@@ -567,6 +567,87 @@ async def agent_latency_stats(
     }
 
 
+@router.get("/dead-letter")
+@limiter.limit("20/minute")
+async def list_dead_letter_tasks(
+    request: Request,
+    limit: int = Query(20, ge=1, le=200),
+    user_id: str | None = Query(None),
+    include_payload: bool = Query(False),
+    api_key: str = Depends(verify_api_key),
+):
+    """List failed deferred tasks captured in failed_tasks."""
+    if not _db.db_pool:
+        return {"items": [], "total": 0, "note": "database_unavailable"}
+    try:
+        if user_id:
+            rows = await fetch(
+                """
+                SELECT id, task_id, error, payload, created_at
+                FROM failed_tasks
+                WHERE COALESCE(payload->>'user_id', '') = $1
+                ORDER BY created_at DESC
+                LIMIT $2
+                """,
+                user_id,
+                limit,
+            )
+        else:
+            rows = await fetch(
+                """
+                SELECT id, task_id, error, payload, created_at
+                FROM failed_tasks
+                ORDER BY created_at DESC
+                LIMIT $1
+                """,
+                limit,
+            )
+    except Exception as e:
+        logger.debug("dead-letter list query failed: %s", e)
+        return {"items": [], "total": 0, "note": "failed_tasks_unavailable"}
+
+    items = []
+    for r in rows:
+        payload = r["payload"] if include_payload else None
+        items.append(
+            {
+                "id": str(r["id"]),
+                "task_id": str(r["task_id"]) if r["task_id"] else None,
+                "error": str(r["error"]),
+                "created_at": (
+                    r["created_at"].isoformat() if r["created_at"] is not None else None
+                ),
+                "payload": payload,
+            }
+        )
+    return {"items": items, "total": len(items)}
+
+
+@router.post("/dead-letter/{failed_task_id}/replay")
+@limiter.limit("10/minute")
+async def replay_dead_letter_task(
+    request: Request,
+    failed_task_id: uuid.UUID,
+    keep_record: bool = Query(False),
+    api_key: str = Depends(verify_api_key),
+):
+    """Re-enqueue a dead-letter payload for retry."""
+    runtime = _runtime(request)
+    try:
+        out = await runtime.replay_failed_task(
+            str(failed_task_id),
+            delete_on_success=not keep_record,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.warning("dead-letter replay failed: %s", e)
+        raise HTTPException(status_code=500, detail="dead_letter_replay_failed")
+    return out
+
+
 @router.post("/workflows/{name}/run")
 @limiter.limit("10/minute")
 async def run_declared_workflow(

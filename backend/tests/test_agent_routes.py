@@ -71,6 +71,18 @@ class DummyRuntime:
     async def pending_queue_size(self) -> int:
         return len(self._items)
 
+    async def replay_failed_task(
+        self, failed_task_id: str, *, delete_on_success: bool = True
+    ):
+        task_id = "33333333-3333-3333-3333-333333333333"
+        self._items.append({"task_id": task_id, "query": "replayed"})
+        return {
+            "failed_task_id": failed_task_id,
+            "task_id": task_id,
+            "status": "queued",
+            "delete_on_success": delete_on_success,
+        }
+
     class _Queue:
         def __init__(self, parent):
             self.parent = parent
@@ -428,6 +440,79 @@ async def test_enqueue_agent_task_rejects_when_budget_exceeded():
     finally:
         app.state.orchestration_runtime = original_runtime
         app.state.cost_tracker = original_cost
+
+
+async def test_replay_dead_letter_task_queues_retry():
+    original_runtime = getattr(app.state, "orchestration_runtime", None)
+    app.state.orchestration_runtime = DummyRuntime()
+    failed_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/agent/dead-letter/{failed_id}/replay",
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+            )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["failed_task_id"] == failed_id
+        assert payload["status"] == "queued"
+        assert payload["task_id"] == "33333333-3333-3333-3333-333333333333"
+    finally:
+        app.state.orchestration_runtime = original_runtime
+
+
+async def test_list_dead_letter_tasks_handles_db_unavailable(monkeypatch):
+    import app.routes.agent as agent_routes
+
+    monkeypatch.setattr(agent_routes._db, "db_pool", None)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/agent/dead-letter",
+            headers={"Authorization": "Bearer sk-agent-local-dev"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"] == []
+    assert payload["note"] == "database_unavailable"
+
+
+async def test_list_dead_letter_tasks_returns_rows(monkeypatch):
+    import app.routes.agent as agent_routes
+    from datetime import datetime
+
+    monkeypatch.setattr(agent_routes._db, "db_pool", object())
+
+    async def _fake_fetch(_query: str, *_args):
+        return [
+            {
+                "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                "task_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+                "error": "boom",
+                "payload": {"query": "x", "user_id": "u1"},
+                "created_at": datetime(2026, 1, 1, 12, 0, 0),
+            }
+        ]
+
+    monkeypatch.setattr(agent_routes, "fetch", _fake_fetch)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/agent/dead-letter?include_payload=true",
+            headers={"Authorization": "Bearer sk-agent-local-dev"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["error"] == "boom"
+    assert payload["items"][0]["payload"]["query"] == "x"
 
 
 def test_agent_request_reasoning_effort_normalizes():

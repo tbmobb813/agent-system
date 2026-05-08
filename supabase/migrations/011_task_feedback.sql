@@ -2,7 +2,7 @@
 -- future responses through backend-managed memory promotion.
 
 CREATE TABLE IF NOT EXISTS task_feedback (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
     user_id TEXT,
     signal TEXT NOT NULL CHECK (signal IN ('up', 'down')),

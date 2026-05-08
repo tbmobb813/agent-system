@@ -224,6 +224,24 @@ async def test_tool_health_snapshot_includes_core_tools():
     assert "code_execution" in names
 
 
+async def test_tool_health_snapshot_includes_mcp_hub_rows(monkeypatch):
+    class _Hub:
+        def health_snapshot(self):
+            return [{"tool": "mcp:demo", "ok": True, "detail": {"connected": True}}]
+
+    monkeypatch.setattr(
+        "app.utils.pillar_loader.get_pillar_config",
+        lambda: {"tools": {"mcp": {"enabled": True, "servers": []}}},
+    )
+    monkeypatch.setattr("app.tools.mcp_hub.get_mcp_hub", lambda: _Hub())
+
+    reg = ToolRegistry()
+    snap = await reg.tool_health_snapshot()
+    row = next((r for r in snap if r["tool"] == "mcp:demo"), None)
+    assert row is not None
+    assert row["ok"] is True
+
+
 async def test_search_documents_formats_results(monkeypatch):
     registry = ToolRegistry()
 

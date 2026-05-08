@@ -1,15 +1,15 @@
 # 🚀 Deployment Checklist & Production Readiness
 
-This guide ensures your agent system is production-ready before deployment to your VPS.
+This guide reflects the current architecture (Supabase/Postgres, optional Redis, Docker production compose, CI coverage/eval gates).
 
 ## Pre-Deployment Checklist
 
 ### Code Quality
-- [ ] All files copied to `/home/claude/agent-system/`
-- [ ] `.env.example` reviewed and filled in with real values
+- [ ] Repo cloned/pulled on VPS
+- [ ] `.env` created from `.env.example` with real values
 - [ ] `.gitignore` includes `.env` (never commit secrets)
-- [ ] `requirements.txt` has all dependencies
-- [ ] `docker-compose.yml` is correctly configured
+- [ ] `backend/requirements.txt` and `frontend/package-lock.json` are up to date
+- [ ] `docker-compose.prod.yml` is used for production
 
 ### Security
 - [ ] OPENROUTER_API_KEY is strong and kept secret
@@ -21,7 +21,7 @@ This guide ensures your agent system is production-ready before deployment to yo
 
 ### Database
 - [ ] Supabase project created and tables initialized
-- [ ] All migrations run successfully
+- [ ] All migrations run successfully (including `015_failed_tasks.sql`)
 - [ ] Backups configured in Supabase
 - [ ] Row-level security (RLS) policies enabled
 - [ ] Connection string tested
@@ -46,7 +46,7 @@ This guide ensures your agent system is production-ready before deployment to yo
 ```bash
 # 1. Start local environment
 cd ~/agent-system
-docker-compose up
+docker-compose -f docker-compose.prod.yml up -d --build
 
 # 2. Wait for services to start
 sleep 30
@@ -55,34 +55,28 @@ sleep 30
 curl http://localhost:8000/health
 
 # 4. Test frontend
-open http://localhost:3000
+open http://localhost:3003
 
 # 5. Run a test agent query
 curl -X POST http://localhost:8000/agent/run \
+  -H "Authorization: Bearer sk-agent-local-dev" \
   -H "Content-Type: application/json" \
   -d '{"query": "What is 2+2?"}'
 
 # 6. Check costs
-curl http://localhost:8000/status/costs
+curl -H "Authorization: Bearer sk-agent-local-dev" http://localhost:8000/status/costs
 
 # 7. View logs
-docker-compose logs backend
-docker-compose logs frontend
+docker-compose -f docker-compose.prod.yml logs backend
+docker-compose -f docker-compose.prod.yml logs frontend
 ```
 
 ### Verify All Components
 
 ```bash
 # Check all containers running
-docker-compose ps
-# Should show: postgres, backend, frontend, redis all UP
-
-# Test database
-docker-compose exec postgres psql -U postgres -d agent_db -c "SELECT 1;"
-
-# Test Redis
-docker-compose exec redis redis-cli ping
-# Should return: PONG
+docker-compose -f docker-compose.prod.yml ps
+# Should show: backend, frontend, telegram-bot UP (plus optional extras)
 
 # Test API documentation
 open http://localhost:8000/docs
@@ -135,15 +129,18 @@ cat .env | grep -E "OPENROUTER|SUPABASE|TOKEN"
 ### Step 4: Test on VPS
 
 ```bash
+# Run preflight checks first (validator + eval gate + env checks)
+bash deploy/preflight.sh
+
 # Start services
-docker-compose up -d
+docker-compose -f docker-compose.prod.yml up -d --build
 
 # Wait for startup
 sleep 30
 
 # Check status
-docker-compose ps
-docker-compose logs
+docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.prod.yml logs
 
 # Test local connection
 curl http://localhost:8000/health
@@ -159,14 +156,14 @@ server {
     server_name your-domain.com;
     
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://localhost:3003;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
     }
     
-    location /api/ {
+    location /api/backend/ {
         proxy_pass http://localhost:8000/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -208,8 +205,8 @@ Requires=docker.service
 Type=simple
 User=claude
 WorkingDirectory=/home/claude/agent-system
-ExecStart=docker-compose -f docker-compose.prod.yml up
-ExecStop=docker-compose -f docker-compose.prod.yml down
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml up
+ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml down
 Restart=always
 RestartSec=10
 
@@ -245,7 +242,8 @@ curl https://your-domain.com/health
 # Should return JSON health status
 
 # Test API
-curl -X POST https://your-domain.com/api/agent/run \
+curl -X POST https://your-domain.com/api/backend/agent/run \
+  -H "Authorization: Bearer <YOUR_BACKEND_API_KEY>" \
   -H "Content-Type: application/json" \
   -d '{"query": "test"}'
 
@@ -258,16 +256,16 @@ curl -I https://your-domain.com
 
 ```bash
 # Real-time logs
-docker-compose logs -f
+docker-compose -f docker-compose.prod.yml logs -f
 
 # Backend logs only
-docker-compose logs -f backend
+docker-compose -f docker-compose.prod.yml logs -f backend
 
 # Check for errors
-docker-compose logs backend | grep ERROR
+docker-compose -f docker-compose.prod.yml logs backend | grep ERROR
 
 # Database activity
-docker-compose logs postgres | head -20
+# (Supabase is managed; no local postgres container expected by default)
 ```
 
 ### Check Resource Usage
@@ -281,6 +279,19 @@ df -h
 
 # Network connections
 sudo netstat -tulpn | grep LISTEN
+
+## Deploy Command (Recommended)
+
+```bash
+cd ~/agent-system
+bash deploy/deploy.sh
+```
+
+`deploy/deploy.sh` now runs:
+1) `git pull`
+2) `deploy/preflight.sh`
+3) backend/frontend dependency install + build
+4) process restart
 ```
 
 ## Troubleshooting Deployment
