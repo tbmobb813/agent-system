@@ -355,33 +355,6 @@ function slashRootToPick(r: SlashRootDef): SuggestPick {
   }
 }
 
-function labelForQuickAction(r: SlashRootDef): string {
-  switch (r.key) {
-    case 'new':
-      return 'New conversation'
-    case 'stop':
-      return 'Stop current run'
-    case 'clear':
-      return 'Clear transcript'
-    case 'copy':
-      return 'Copy thread'
-    case 'download':
-      return 'Download thread'
-    case 'models':
-      return 'View models'
-    case 'costs':
-      return 'Open costs'
-    case 'history':
-      return 'Open history'
-    case 'help':
-      return 'Open help'
-    case 'feedback':
-      return 'Rate latest reply'
-    default:
-      return r.label.replace(/^\//, '')
-  }
-}
-
 function filterRootSlashRows(filter: string): SuggestRow[] {
   const f = filter.toLowerCase()
   return SLASH_ROOT.filter(
@@ -1467,6 +1440,7 @@ function QuickActionsMenu({
 
   return (
     <div
+      id="quick-actions-popover"
       className="absolute left-0 bottom-full z-50 mb-2 w-72 rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] shadow-2xl ring-1 ring-[color:var(--border)]/20 font-sans overflow-hidden"
       aria-label="Quick actions"
     >
@@ -1584,17 +1558,6 @@ export default function AgentExecutor() {
   const suggestionRows = useMemo(
     () => buildSuggestionRows(query, queryCursor, suggestDismissed, toolNames),
     [query, queryCursor, suggestDismissed, toolNames],
-  )
-
-  const quickActionRows = useMemo(
-    () =>
-      SLASH_ROOT.filter((r) => r.kind !== 'replace' && r.kind !== 'replace_then_reasoning_modal').map((r) => ({
-        id: `quick-${r.id}`,
-        label: labelForQuickAction(r),
-        hint: r.hint,
-        pick: slashRootToPick(r),
-      })),
-    [],
   )
 
   const slashMenuCtx = useMemo(
@@ -3039,13 +3002,15 @@ export default function AgentExecutor() {
             {/* Toolbar row */}
             <div className="flex items-center gap-1 px-2 pb-2 pt-1 border-t border-[color:var(--border)]/50">
               {/* Actions launcher */}
-              <div className="relative">
+              <div className="relative" ref={quickActionsRef}>
                 <button
+                  ref={quickActionsButtonRef}
                   type="button"
                   onClick={() => setQuickActionsOpen((v) => !v)}
                   className={`btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm ${quickActionsOpen ? 'bg-[color:var(--surface-soft)]' : ''}`}
                   aria-haspopup="menu"
                   aria-expanded={quickActionsOpen}
+                  aria-controls="quick-actions-popover"
                   title="Quick actions"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -3184,148 +3149,6 @@ export default function AgentExecutor() {
               className="mt-2 w-full bg-[color:var(--bg-elev)] rounded-lg px-3 py-2 text-sm border border-[color:var(--border)] focus:outline-none focus:border-[color:var(--accent)] resize-none disabled:opacity-50"
             />
           </details>
-          <div>
-            <div className="mb-1 flex items-center justify-between gap-2">
-              <label className="block text-sm text-muted" htmlFor="agent-message-input">
-                Message
-              </label>
-              <div className="relative z-50" ref={quickActionsRef}>
-                <button
-                  ref={quickActionsButtonRef}
-                  type="button"
-                  onClick={() => setQuickActionsOpen((v) => !v)}
-                  className="btn-ghost rounded-md px-2.5 py-1 text-xs"
-                  aria-expanded={quickActionsOpen}
-                  aria-controls="quick-actions-menu"
-                >
-                  Actions
-                </button>
-                {quickActionsOpen && (
-                  <div
-                    id="quick-actions-menu"
-                    aria-label="Quick actions"
-                    className="absolute right-0 top-full z-50 mt-1 w-[min(18rem,calc(100vw-2rem))] overflow-hidden rounded-md border border-[color:var(--border)] bg-[color:var(--bg)] font-sans shadow-lg ring-1 ring-[color:var(--border)]/30"
-                  >
-                    <div className="border-b border-[color:var(--border)]/70 bg-[color:var(--surface-soft)]/45 px-3 py-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Quick Actions</p>
-                    </div>
-                    <div className="max-h-72 overflow-y-auto py-1">
-                      {quickActionRows.map((row) => (
-                        <button
-                          key={row.id}
-                          type="button"
-                          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-[color:var(--surface-soft)]/70"
-                          onClick={() => {
-                            const el = queryInputRef.current
-                            const c = el?.selectionStart ?? queryCursor
-                            applySuggestionPick(row, c)
-                            setQuickActionsOpen(false)
-                          }}
-                        >
-                          <span className="text-[color:var(--text)]">{row.label}</span>
-                          <span className="max-w-[9rem] text-right text-[11px] leading-snug text-muted line-clamp-2">{row.hint}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="relative isolate z-30">
-            {suggestionRows.length > 0 && !isRunning && (
-              <div
-                className="absolute left-0 right-0 bottom-full z-40 mb-1 flex max-h-[min(42vh,288px)] flex-col overflow-hidden rounded-md border border-[color:var(--border)] bg-[color:var(--bg)] text-left font-sans shadow-[0_-6px_28px_rgba(0,0,0,0.2)] ring-1 ring-[color:var(--border)]/30"
-                role="listbox"
-                aria-label={slashMenuCtx?.mode === 'reasoning_sub' ? 'Arguments' : slashMenuCtx ? 'Commands' : 'Insert'}
-                onMouseDown={(ev) => ev.preventDefault()}
-              >
-                <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[color:var(--border)]/80 bg-[color:var(--surface-soft)]/55 px-2.5 py-1.5">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
-                    {!slashMenuCtx ? 'Insert' : slashMenuCtx.mode === 'reasoning_sub' ? 'Arguments' : 'Commands'}
-                  </span>
-                  {slashMenuCtx?.mode === 'reasoning_sub' ? (
-                    <span className="truncate text-right font-mono text-[11px] text-muted/90">/reasoning</span>
-                  ) : null}
-                </div>
-                <div className="min-h-0 flex-1 overflow-y-auto py-0.5">
-                  {suggestionRows.map((row, idx) => {
-                    const active = idx === Math.min(suggestHighlight, suggestionRows.length - 1)
-                    return (
-                      <button
-                        key={row.id}
-                        type="button"
-                        role="option"
-                        aria-selected={active}
-                        aria-label={`${row.label}. ${row.hint}`}
-                        className={`group flex w-full items-stretch gap-0 text-left outline-none ${
-                          active ? 'bg-[color:var(--surface-soft)]' : 'hover:bg-[color:var(--surface-soft)]/65'
-                        }`}
-                        onMouseEnter={() => setSuggestHighlight(idx)}
-                        onClick={() => {
-                          const el = queryInputRef.current
-                          const c = el?.selectionStart ?? queryCursor
-                          applySuggestionPick(row, c)
-                        }}
-                      >
-                        <span
-                          className={`w-[3px] shrink-0 self-stretch rounded-full ${
-                            active
-                              ? 'bg-[color:var(--accent)]'
-                              : 'bg-transparent group-hover:bg-[color:var(--border)]'
-                          }`}
-                          aria-hidden
-                        />
-                        <span className="flex min-w-0 flex-1 items-center justify-between gap-3 py-1.5 pl-1 pr-2.5">
-                          <SuggestPrimaryLabel row={row} />
-                          <span className="max-w-[min(54%,15rem)] text-right text-[11px] leading-snug text-muted line-clamp-2">
-                            {row.hint}
-                          </span>
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-                <div className="shrink-0 border-t border-[color:var(--border)]/70 bg-[color:var(--surface-soft)]/35 px-2.5 py-1 text-[10px] tabular-nums text-muted/90">
-                  <span>↑↓</span>
-                  <span className="mx-1 opacity-50">·</span>
-                  <span>↵</span>
-                  <span className="ml-0.5 opacity-80">{slashMenuCtx ? 'apply' : 'select'}</span>
-                  <span className="mx-1 opacity-50">·</span>
-                  <span>tab</span>
-                  <span className="ml-0.5 opacity-80">complete</span>
-                  <span className="mx-1 opacity-50">·</span>
-                  <span>esc</span>
-                  <span className="ml-0.5 opacity-80">close</span>
-                </div>
-              </div>
-            )}
-            <textarea
-              id="agent-message-input"
-              ref={queryInputRef}
-              value={query}
-              onChange={(e) => {
-                const v = e.target.value
-                const c = e.target.selectionStart ?? v.length
-                setQuery(v)
-                setQueryCursor(c)
-                if (!parseSlashSuggestContext(v, c) && !parseInputTrigger(v, c)) setSuggestDismissed(false)
-              }}
-              onClick={(e) => setQueryCursor(e.currentTarget.selectionStart ?? query.length)}
-              onSelect={(e) => setQueryCursor(e.currentTarget.selectionStart ?? query.length)}
-              onKeyDown={handleKeyDown}
-              placeholder="Message — use Actions for quick tasks, / for command palette, @ for inserts. Enter send · Shift+Enter newline"
-              rows={2}
-              disabled={isRunning}
-              className="relative z-10 w-full bg-[color:var(--bg-elev)] rounded-lg px-3 py-2 text-sm border border-[color:var(--border)] focus:outline-none focus:border-[color:var(--accent)] resize-none disabled:opacity-50"
-            />
-            </div>
-            {feedbackCmdHint && (
-              <p className="text-xs text-[color:var(--danger)] mt-1.5">{feedbackCmdHint}</p>
-            )}
-            {reasoningCmdHint && (
-              <p className="text-xs text-muted mt-1.5">{reasoningCmdHint}</p>
-            )}
-          </div>
           {editLastOpen && !isRunning && (
             <div className="panel panel-soft rounded-lg p-3 space-y-2">
               <label htmlFor="edit-last-message" className="block text-xs text-muted">Edit last user message</label>
