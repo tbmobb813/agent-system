@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
+import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
 import { useAgentStream, StreamEvent } from '@/lib/hooks'
 import Link from 'next/link'
@@ -1241,6 +1241,269 @@ function ContextMetricsCompact({ events }: { events: StreamEvent[] }) {
   )
 }
 
+type QuickActionsMenuProps = {
+  isRunning: boolean
+  hasMessages: boolean
+  hasLastMessage: boolean
+  reasoningEffortLabel: string
+  threadExportEmpty: boolean
+  onNewConversation: () => void
+  onStop: () => void
+  onClear: () => void
+  onOpenOps: (panel: OpsPanel) => void
+  onOpenModels: () => void
+  onOpenHelp: () => void
+  onOpenReasoningPicker: () => void
+  onCopyThread: () => void
+  onDownloadThread: () => void
+  onFeedback: () => void
+  onEditResend: () => void
+}
+
+function QuickActionsMenu({
+  isRunning,
+  hasMessages,
+  hasLastMessage,
+  reasoningEffortLabel,
+  threadExportEmpty,
+  onNewConversation,
+  onStop,
+  onClear,
+  onOpenOps,
+  onOpenModels,
+  onOpenHelp,
+  onOpenReasoningPicker,
+  onCopyThread,
+  onDownloadThread,
+  onFeedback,
+  onEditResend,
+}: QuickActionsMenuProps) {
+  type ActionItem = {
+    id: string
+    icon: ReactNode
+    label: string
+    hint?: string
+    disabled?: boolean
+    danger?: boolean
+    action: () => void
+  }
+  type ActionGroup = { label: string; items: ActionItem[] }
+
+  const groups: ActionGroup[] = [
+    {
+      label: 'Conversation',
+      items: [
+        {
+          id: 'new',
+          icon: (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          ),
+          label: 'New conversation',
+          disabled: isRunning,
+          action: onNewConversation,
+        },
+        {
+          id: 'edit',
+          icon: (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+          ),
+          label: 'Edit & resend last',
+          disabled: !hasLastMessage || isRunning,
+          action: onEditResend,
+        },
+        {
+          id: 'clear',
+          icon: (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" />
+            </svg>
+          ),
+          label: 'Clear thread',
+          disabled: !hasMessages || isRunning,
+          action: onClear,
+        },
+        {
+          id: 'stop',
+          icon: (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+              <rect x="4" y="4" width="16" height="16" rx="2" />
+            </svg>
+          ),
+          label: 'Stop',
+          hint: 'Stop the current run',
+          disabled: !isRunning,
+          danger: true,
+          action: onStop,
+        },
+      ],
+    },
+    {
+      label: 'Workspace',
+      items: [
+        {
+          id: 'tools',
+          icon: (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+            </svg>
+          ),
+          label: 'Tools',
+          hint: 'Enable / disable tools',
+          action: () => onOpenOps('tools'),
+        },
+        {
+          id: 'skills',
+          icon: (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+          ),
+          label: 'Skills',
+          hint: 'Skill usage & availability',
+          action: () => onOpenOps('skills'),
+        },
+        {
+          id: 'mcp',
+          icon: (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <rect x="2" y="7" width="20" height="14" rx="2" ry="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+            </svg>
+          ),
+          label: 'MCP servers',
+          hint: 'Health & readiness',
+          action: () => onOpenOps('mcp'),
+        },
+        {
+          id: 'history',
+          icon: (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+            </svg>
+          ),
+          label: 'History',
+          hint: 'Recent run log',
+          action: () => onOpenOps('history'),
+        },
+        {
+          id: 'stats',
+          icon: (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
+            </svg>
+          ),
+          label: 'Stats & costs',
+          hint: 'Budget and latency',
+          action: () => onOpenOps('stats'),
+        },
+      ],
+    },
+    {
+      label: 'Models & Config',
+      items: [
+        {
+          id: 'models',
+          icon: (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <circle cx="12" cy="12" r="3" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+            </svg>
+          ),
+          label: 'Agent models',
+          hint: 'Routing & model list',
+          action: onOpenModels,
+        },
+        {
+          id: 'reasoning',
+          icon: (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <circle cx="12" cy="12" r="10" /><path d="M12 8v4l3 3" />
+            </svg>
+          ),
+          label: `Reasoning: ${reasoningEffortLabel}`,
+          hint: 'Set reasoning effort level',
+          action: onOpenReasoningPicker,
+        },
+      ],
+    },
+    {
+      label: 'Export & Feedback',
+      items: [
+        {
+          id: 'copy',
+          icon: <IconClipboard />,
+          label: 'Copy thread',
+          disabled: threadExportEmpty,
+          action: onCopyThread,
+        },
+        {
+          id: 'download',
+          icon: <IconDownload />,
+          label: 'Download thread',
+          disabled: threadExportEmpty,
+          action: onDownloadThread,
+        },
+        {
+          id: 'feedback',
+          icon: <IconStar />,
+          label: 'Rate this reply',
+          action: onFeedback,
+        },
+        {
+          id: 'help',
+          icon: (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          ),
+          label: 'Help & shortcuts',
+          action: onOpenHelp,
+        },
+      ],
+    },
+  ]
+
+  return (
+    <div
+      className="absolute left-0 bottom-full z-50 mb-2 w-72 rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] shadow-2xl ring-1 ring-[color:var(--border)]/20 font-sans overflow-hidden"
+      aria-label="Quick actions"
+    >
+      {groups.map((group, gi) => (
+        <div key={group.label}>
+          {gi > 0 && <div className="border-t border-[color:var(--border)]/60" />}
+          <div className="px-3 pt-2 pb-0.5">
+            <span className="text-[10px] uppercase tracking-widest text-muted font-semibold">{group.label}</span>
+          </div>
+          {group.items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              disabled={item.disabled}
+              onClick={item.action}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors disabled:opacity-40 disabled:pointer-events-none ${
+                item.danger
+                  ? 'hover:bg-[color:var(--danger)]/10 text-[color:var(--danger)]'
+                  : 'hover:bg-[color:var(--surface-soft)] text-[color:var(--text)]'
+              }`}
+            >
+              <span className="w-5 shrink-0 flex items-center justify-center">{item.icon}</span>
+              <span className="flex-1 min-w-0">
+                <span className="block">{item.label}</span>
+                {item.hint && <span className="block text-[10px] text-muted leading-tight">{item.hint}</span>}
+              </span>
+            </button>
+          ))}
+        </div>
+      ))}
+      <div className="border-t border-[color:var(--border)]/60 px-3 py-1.5 text-[10px] text-muted/70">
+        Tip: type <span className="font-mono">/</span> at line start for quick commands
+      </div>
+    </div>
+  )
+}
+
 export default function AgentExecutor() {
   const [query, setQuery] = useState('')
   const [context, setContext] = useState('')
@@ -1395,9 +1658,23 @@ export default function AgentExecutor() {
 
   const commitReasoningArg = useCallback((opt: string, range: { from: number; to: number }) => {
     skipReasoningModalSig.current = null
+    setReasoningArgModal(null)
+    // Direct (button-triggered) path: set effort without inserting slash text
+    if (range.from === -1) {
+      setSuggestDismissed(true)
+      if (opt === 'default' || opt === 'clear' || opt === 'env') {
+        setReasoningEffortForRequest(undefined)
+      } else if (opt === 'off' || opt === 'disable') {
+        setReasoningEffortForRequest('off')
+      } else if (opt !== 'help' && opt !== '?') {
+        setReasoningEffortForRequest(opt)
+      }
+      queueMicrotask(() => queryInputRef.current?.focus())
+      return
+    }
+    // Slash-command path: insert text into query
     const insert = `/reasoning ${opt} `
     setQuery((q) => q.slice(0, range.from) + insert + q.slice(range.to))
-    setReasoningArgModal(null)
     const pos = range.from + insert.length
     queueMicrotask(() => {
       const el = queryInputRef.current
@@ -2669,6 +2946,231 @@ export default function AgentExecutor() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-2">
+          {/* Unified chat input card — Claude.ai / ChatGPT style */}
+          <div className="relative rounded-xl border border-[color:var(--border)] bg-[color:var(--bg-elev)] focus-within:border-[color:var(--accent)] transition-colors">
+            {/* @/slash suggestion palette — floats above the card */}
+            <div className="relative isolate z-30">
+              {suggestionRows.length > 0 && !isRunning && (
+                <div
+                  className="absolute left-0 right-0 bottom-full z-40 mb-1 flex max-h-[min(42vh,288px)] flex-col overflow-hidden rounded-md border border-[color:var(--border)] bg-[color:var(--bg)] text-left font-sans shadow-[0_-6px_28px_rgba(0,0,0,0.2)] ring-1 ring-[color:var(--border)]/30"
+                  role="listbox"
+                  aria-label={slashMenuCtx?.mode === 'reasoning_sub' ? 'Arguments' : slashMenuCtx ? 'Commands' : 'Insert'}
+                  onMouseDown={(ev) => ev.preventDefault()}
+                >
+                  <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[color:var(--border)]/80 bg-[color:var(--surface-soft)]/55 px-2.5 py-1.5">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
+                      {!slashMenuCtx ? 'Insert' : slashMenuCtx.mode === 'reasoning_sub' ? 'Arguments' : 'Commands'}
+                    </span>
+                    {slashMenuCtx?.mode === 'reasoning_sub' ? (
+                      <span className="truncate text-right font-mono text-[11px] text-muted/90">/reasoning</span>
+                    ) : null}
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-y-auto py-0.5">
+                    {suggestionRows.map((row, idx) => {
+                      const active = idx === Math.min(suggestHighlight, suggestionRows.length - 1)
+                      return (
+                        <button
+                          key={row.id}
+                          type="button"
+                          role="option"
+                          aria-selected={active}
+                          aria-label={`${row.label}. ${row.hint}`}
+                          className={`group flex w-full items-stretch gap-0 text-left outline-none ${
+                            active ? 'bg-[color:var(--surface-soft)]' : 'hover:bg-[color:var(--surface-soft)]/65'
+                          }`}
+                          onMouseEnter={() => setSuggestHighlight(idx)}
+                          onClick={() => {
+                            const el = queryInputRef.current
+                            const c = el?.selectionStart ?? queryCursor
+                            applySuggestionPick(row, c)
+                          }}
+                        >
+                          <span
+                            className={`w-[3px] shrink-0 self-stretch rounded-full ${
+                              active
+                                ? 'bg-[color:var(--accent)]'
+                                : 'bg-transparent group-hover:bg-[color:var(--border)]'
+                            }`}
+                            aria-hidden
+                          />
+                          <span className="flex min-w-0 flex-1 items-center justify-between gap-3 py-1.5 pl-1 pr-2.5">
+                            <SuggestPrimaryLabel row={row} />
+                            <span className="max-w-[min(54%,15rem)] text-right text-[11px] leading-snug text-muted line-clamp-2">
+                              {row.hint}
+                            </span>
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div className="shrink-0 border-t border-[color:var(--border)]/70 bg-[color:var(--surface-soft)]/35 px-2.5 py-1 text-[10px] tabular-nums text-muted/90">
+                    <span>↑↓</span>
+                    <span className="mx-1 opacity-50">·</span>
+                    <span>↵</span>
+                    <span className="ml-0.5 opacity-80">{slashMenuCtx ? 'apply' : 'select'}</span>
+                    <span className="mx-1 opacity-50">·</span>
+                    <span>tab</span>
+                    <span className="ml-0.5 opacity-80">complete</span>
+                    <span className="mx-1 opacity-50">·</span>
+                    <span>esc</span>
+                    <span className="ml-0.5 opacity-80">close</span>
+                  </div>
+                </div>
+              )}
+              <textarea
+                id="agent-message-input"
+                ref={queryInputRef}
+                value={query}
+                onChange={(e) => {
+                  const v = e.target.value
+                  const c = e.target.selectionStart ?? v.length
+                  setQuery(v)
+                  setQueryCursor(c)
+                  if (!parseSlashSuggestContext(v, c) && !parseInputTrigger(v, c)) setSuggestDismissed(false)
+                }}
+                onClick={(e) => setQueryCursor(e.currentTarget.selectionStart ?? query.length)}
+                onSelect={(e) => setQueryCursor(e.currentTarget.selectionStart ?? query.length)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask anything… (@ to mention tools, Shift+Enter for newline)"
+                rows={3}
+                disabled={isRunning}
+                className="relative z-10 w-full bg-transparent rounded-t-xl px-4 pt-3 pb-2 text-sm focus:outline-none resize-none disabled:opacity-50"
+              />
+            </div>
+            {/* Toolbar row */}
+            <div className="flex items-center gap-1 px-2 pb-2 pt-1 border-t border-[color:var(--border)]/50">
+              {/* Actions launcher */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setQuickActionsOpen((v) => !v)}
+                  className={`btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm ${quickActionsOpen ? 'bg-[color:var(--surface-soft)]' : ''}`}
+                  aria-haspopup="menu"
+                  aria-expanded={quickActionsOpen}
+                  title="Quick actions"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  <span className="hidden sm:inline">Actions</span>
+                </button>
+                {quickActionsOpen && (
+                  <>
+                    <button
+                      type="button"
+                      className="fixed inset-0 z-40"
+                      aria-hidden
+                      tabIndex={-1}
+                      onClick={() => setQuickActionsOpen(false)}
+                    />
+                    <QuickActionsMenu
+                      isRunning={isRunning}
+                      hasMessages={merged.length > 0 || !!error}
+                      hasLastMessage={!!lastUserMessage}
+                      reasoningEffortLabel={reasoningEffortLabel}
+                      threadExportEmpty={!responseText.trim()}
+                      onNewConversation={() => { newConversation(); setQuickActionsOpen(false) }}
+                      onStop={() => { void stop(); setQuickActionsOpen(false) }}
+                      onClear={() => { reset(); setQuickActionsOpen(false) }}
+                      onOpenOps={(panel) => { openOpsPanel(panel); setQuickActionsOpen(false) }}
+                      onOpenModels={() => { setModelsModalOpen(true); loadModelsForModal(); setQuickActionsOpen(false) }}
+                      onOpenHelp={() => { setHelpModalOpen(true); setQuickActionsOpen(false) }}
+                      onOpenReasoningPicker={() => { setSuggestDismissed(true); setReasoningArgModal({ from: -1, to: -1 }); setQuickActionsOpen(false) }}
+                      onCopyThread={() => {
+                        const text = buildThreadExportText(merged)
+                        if (!text.trim()) {
+                          setReasoningCmdHint('Nothing to copy yet.')
+                          window.setTimeout(() => setReasoningCmdHint(null), 3200)
+                        } else {
+                          void navigator.clipboard.writeText(text).then(
+                            () => {
+                              setReasoningCmdHint('Copied thread to clipboard.')
+                              window.setTimeout(() => setReasoningCmdHint(null), 3200)
+                            },
+                            () => {
+                              setFeedbackCmdHint('Clipboard unavailable; try Download instead.')
+                              window.setTimeout(() => setFeedbackCmdHint(null), 4000)
+                            },
+                          )
+                        }
+                        setQuickActionsOpen(false)
+                      }}
+                      onDownloadThread={() => { handleDownloadThread(); setQuickActionsOpen(false) }}
+                      onFeedback={() => { tryOpenFeedbackPanel(); setQuickActionsOpen(false) }}
+                      onEditResend={() => {
+                        setEditLastOpen((v) => !v)
+                        setEditLastText(lastUserMessage)
+                        setQuickActionsOpen(false)
+                      }}
+                    />
+                  </>
+                )}
+              </div>
+              {/* Context panel toggle */}
+              <button
+                type="button"
+                onClick={() => {
+                  const panel = contextPanelRef.current
+                  if (panel) {
+                    panel.open = !panel.open
+                    if (panel.open) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                  }
+                }}
+                className="btn-ghost p-1.5 rounded-lg"
+                title="Optional context"
+                aria-label="Toggle context panel"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+              </button>
+              <div className="flex-1" />
+              {/* Reasoning effort chip */}
+              <button
+                type="button"
+                onClick={() => { setSuggestDismissed(true); setReasoningArgModal({ from: -1, to: -1 }) }}
+                className="btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-muted hover:text-[color:var(--text)] transition-colors"
+                title="Set reasoning effort"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <circle cx="12" cy="12" r="10" /><path d="M12 8v4l3 3" />
+                </svg>
+                <span className="hidden sm:inline">Reasoning:</span>
+                <span className="font-mono">{reasoningEffortLabel}</span>
+              </button>
+              {/* Send / Stop */}
+              {isRunning ? (
+                <button
+                  type="button"
+                  onClick={() => void stop()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-[color:var(--danger)]/50 bg-[color:var(--danger)]/15 text-[color:var(--danger)] transition-colors hover:bg-[color:var(--danger)]/25"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                    <rect x="4" y="4" width="16" height="16" rx="2" />
+                  </svg>
+                  Stop
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!query.trim()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-[color:var(--accent)] text-white disabled:opacity-40 transition-opacity hover:opacity-90"
+                >
+                  Send
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
+          {feedbackCmdHint && (
+            <p className="text-xs text-[color:var(--danger)]">{feedbackCmdHint}</p>
+          )}
+          {reasoningCmdHint && (
+            <p className="text-xs text-muted">{reasoningCmdHint}</p>
+          )}
+          {/* Optional context panel */}
           <details ref={contextPanelRef} className="group rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-soft)]/40 px-3 py-2">
             <summary className="text-xs text-muted cursor-pointer list-none [&::-webkit-details-marker]:hidden">
               Optional context for the next message
@@ -2844,55 +3346,22 @@ export default function AgentExecutor() {
                 >
                   Resend edited message
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setEditLastOpen(false)}
+                  className="btn-ghost px-3 py-1.5 rounded text-xs"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           )}
-          <div className="flex gap-3 items-center flex-wrap">
-            {isRunning && (
-              <button
-                type="button"
-                onClick={stop}
-                className="px-4 py-2 border border-[color:var(--danger)]/50 bg-[color:var(--danger)]/15 text-[color:var(--danger)] rounded-lg text-sm transition-colors hover:bg-[color:var(--danger)]/25"
-              >
-                Stop
-              </button>
-            )}
-            {!isRunning && lastUserMessage && (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditLastOpen(v => !v)
-                  setEditLastText(lastUserMessage)
-                }}
-                className="btn-ghost px-4 py-2 rounded-lg text-sm"
-              >
-                {editLastOpen ? 'Close edit' : 'Edit & resend'}
-              </button>
-            )}
-            {(merged.length > 0 || error) && !isRunning && (
-              <button
-                type="button"
-                onClick={reset}
-                className="btn-ghost px-4 py-2 rounded-lg text-sm"
-              >
-                Clear
-              </button>
-            )}
-            {conversationId && !isRunning && (
-              <button
-                type="button"
-                onClick={newConversation}
-                className="btn-ghost px-4 py-2 rounded-lg text-sm"
-              >
-                New Conversation
-              </button>
-            )}
-            {conversationId && (
-              <span className="text-xs text-muted font-mono">
-                thread: {conversationId.slice(0, 8)}…
-              </span>
-            )}
-          </div>
+          {/* Thread info row */}
+          {conversationId && (
+            <div className="flex items-center gap-3 text-xs text-muted flex-wrap">
+              <span className="font-mono">thread: {conversationId.slice(0, 8)}…</span>
+            </div>
+          )}
         </form>
       </div>
 
