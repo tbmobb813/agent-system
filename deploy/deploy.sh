@@ -12,9 +12,6 @@ cd "$REPO_DIR"
 echo "==> Pulling latest code"
 git pull origin main
 
-echo "==> Running deployment preflight checks"
-bash "$REPO_DIR/deploy/preflight.sh"
-
 echo "==> Backend — install/update dependencies"
 cd "$REPO_DIR/backend"
 ./venv/bin/pip install -r requirements.txt -q
@@ -30,6 +27,9 @@ echo "==> Copy static assets to standalone output"
 # next/standalone doesn't copy public/ or .next/static/ automatically
 cp -r public .next/standalone/public 2>/dev/null || true
 cp -r .next/static .next/standalone/.next/static 2>/dev/null || true
+echo "==> Running deployment preflight checks"
+bash "$REPO_DIR/deploy/preflight.sh"
+
 
 echo "==> Restarting services"
 pm2 restart all

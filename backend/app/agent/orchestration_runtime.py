@@ -506,10 +506,18 @@ class OrchestrationRuntime:
                 logger.warning("Schedule %s: next_run update failed: %s", sid, e)
 
     async def replay_failed_task(
-        self, failed_task_id: str, *, delete_on_success: bool = True
+        self, failed_task_id: str, *, delete_immediately: bool = True
     ) -> dict[str, Any]:
         """
-        Re-enqueue a payload from failed_tasks and optionally remove the dead-letter row.
+        Re-enqueue a payload from failed_tasks.
+        
+        Args:
+            failed_task_id: UUID of the failed_tasks row to replay.
+            delete_immediately: If True, delete the dead-letter record immediately after
+                enqueuing (default). If False, keep the record for evidence/audit trail.
+                Note: Deletion happens immediately upon successful enqueue, not after
+                the replayed task completes.
+        
         Returns replay metadata including the new task_id.
         """
         if not _db.db_pool:
@@ -524,7 +532,7 @@ class OrchestrationRuntime:
             failed_task_id,
         )
         if not row:
-            raise ValueError(f"failed task {failed_task_id} not found")
+            raise LookupError(f"failed task {failed_task_id} not found")
 
         payload = row.get("payload") if hasattr(row, "get") else row["payload"]
         if not isinstance(payload, dict):
@@ -557,6 +565,7 @@ class OrchestrationRuntime:
         await self.enqueue_task(replay_payload)
 
         if delete_on_success:
+                if delete_immediately:
             try:
                 await execute(
                     "DELETE FROM failed_tasks WHERE id = $1::uuid",

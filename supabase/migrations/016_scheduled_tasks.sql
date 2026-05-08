@@ -1,7 +1,7 @@
 -- User-defined cron schedules → deferred agent runs (via orchestration queue).
 
 CREATE TABLE IF NOT EXISTS scheduled_tasks (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id TEXT,
     cron_expr TEXT NOT NULL,
     prompt TEXT NOT NULL,

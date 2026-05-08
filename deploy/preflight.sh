@@ -18,6 +18,12 @@ fi
 err() { echo "[preflight][error] $*" >&2; exit 1; }
 warn() { echo "[preflight][warn]  $*"; }
 ok() { echo "[preflight][ok]    $*"; }
+# Use backend venv Python if available, otherwise fall back to system python3
+PYTHON_BIN="python3"
+if [[ -f "backend/venv/bin/python" ]]; then
+  PYTHON_BIN="backend/venv/bin/python"
+fi
+
 
 [[ -f ".env" ]] || err ".env is missing (copy from .env.example and fill secrets)"
 
@@ -51,18 +57,18 @@ else
 fi
 
 ok "Running pillar validator with code scan"
-python3 agent_pillar_validator.py --check-code >/dev/null
+$PYTHON_BIN agent_pillar_validator.py --check-code >/dev/null
 ok "Validator passed"
 
 ok "Running eval harness gate"
-python3 backend/evals/run_eval_harness.py --ci --min-score 80 >/dev/null
+$PYTHON_BIN backend/evals/run_eval_harness.py --ci --min-score 80 >/dev/null
 ok "Eval harness passed"
 
 if [[ $WITH_TESTS -eq 1 ]]; then
   ok "Running backend pytest + coverage gate"
   (
     cd backend
-    PYTHONPATH=. pytest --cov=app --cov-fail-under=55 -q >/dev/null
+    PYTHONPATH=. $PYTHON_BIN -m pytest --cov=app --cov-fail-under=55 -q >/dev/null
   )
   ok "Backend tests passed"
 else

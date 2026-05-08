@@ -132,8 +132,14 @@ class SseMcpRunner:
         try:
             await asyncio.wait_for(self._holder.started.wait(), timeout=60.0)
         except asyncio.TimeoutError:
+            self._holder.stop.set()
+            if self._holder.task:
+                self._holder.task.cancel()
             raise RuntimeError(f"MCP SSE server {self.name} timed out during connect")
         if self._holder.session is None:
+            self._holder.stop.set()
+            if self._holder.task:
+                self._holder.task.cancel()
             raise RuntimeError(
                 f"MCP SSE server {self.name} did not initialize a session"
             )
@@ -244,8 +250,14 @@ class StdioMcpRunner:
         try:
             await asyncio.wait_for(self._holder.started.wait(), timeout=90.0)
         except asyncio.TimeoutError:
+            self._holder.stop.set()
+            if self._holder.task:
+                self._holder.task.cancel()
             raise RuntimeError(f"MCP stdio server {self.name} timed out during connect")
         if self._holder.session is None:
+            self._holder.stop.set()
+            if self._holder.task:
+                self._holder.task.cancel()
             raise RuntimeError(
                 f"MCP stdio server {self.name} did not initialize a session"
             )

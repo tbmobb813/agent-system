@@ -377,7 +377,9 @@ class ToolRegistry:
             servers = [
                 s
                 for s in (mcp_cfg.get("servers") or [])
-                if isinstance(s, dict) and str(s.get("url") or "").strip()
+                if isinstance(s, dict)
+                and s.get("transport", "http_json") == "http_json"
+                and str(s.get("url") or "").strip()
             ]
 
             async def _check_mcp(srv: dict) -> dict:

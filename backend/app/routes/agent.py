@@ -916,10 +916,12 @@ async def replay_dead_letter_task(
     try:
         out = await runtime.replay_failed_task(
             str(failed_task_id),
-            delete_on_success=not keep_record,
+            delete_immediately=not keep_record,
         )
-    except ValueError as e:
+    except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
