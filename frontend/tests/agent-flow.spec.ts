@@ -29,6 +29,22 @@ test('agent full flow: submit query, receive stream, and show completion control
     '',
   ].join('\n\n')
 
+  await page.route('**/api/backend/tools', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ tools: [] }),
+    })
+  })
+
+  await page.route('**/api/backend/status/costs/breakdown', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ by_provider: [], by_model: [], by_day: [] }),
+    })
+  })
+
   await page.route('**/api/backend/agent/stream', async route => {
     await route.fulfill({
       status: 200,
@@ -79,6 +95,22 @@ test('agent flow shows an error when stream request fails', async ({ page }) => 
         agent_show_thinking_while_streaming: true,
         metadata: {},
       }),
+    })
+  })
+
+  await page.route('**/api/backend/tools', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ tools: [] }),
+    })
+  })
+
+  await page.route('**/api/backend/status/costs/breakdown', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ by_provider: [], by_model: [], by_day: [] }),
     })
   })
 

@@ -75,6 +75,22 @@ test('full user flow: dashboard to agent execution', async ({ page }) => {
     '',
   ].join('\n\n')
 
+  await page.route('**/api/backend/tools', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ tools: [] }),
+    })
+  })
+
+  await page.route('**/api/backend/status/costs/breakdown', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ by_provider: [], by_model: [], by_day: [] }),
+    })
+  })
+
   await page.route('**/api/backend/agent/stream', async route => {
     await route.fulfill({
       status: 200,
