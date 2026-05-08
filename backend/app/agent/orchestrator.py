@@ -183,8 +183,10 @@ def _format_progress_checkpoint(state: "ExecutionState") -> str:
         it = entry.get("iteration", "?")
         typ = entry.get("type", "")
         if typ == "planned_tool_call":
+            raw_args = entry.get("args") or {}
+            arg_keys = list(raw_args.keys()) if isinstance(raw_args, dict) else []
             lines.append(
-                f"  - Round {it}: planned tool {entry.get('tool')} with args {entry.get('args')!r}"
+                f"  - Round {it}: planned tool {entry.get('tool')} with args {arg_keys}"
             )
         elif typ == "tool_result":
             prev = (entry.get("result_preview") or "")[:160]

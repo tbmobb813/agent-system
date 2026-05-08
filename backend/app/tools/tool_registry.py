@@ -2,6 +2,7 @@
 Tool Registry - Manages all available tools the agent can use.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -372,24 +373,23 @@ class ToolRegistry:
 
         mcp_cfg = (get_pillar_config().get("tools") or {}).get("mcp") or {}
         if mcp_cfg.get("enabled"):
-            for srv in mcp_cfg.get("servers") or []:
-                if not isinstance(srv, dict):
-                    continue
+            servers = [
+                s
+                for s in (mcp_cfg.get("servers") or [])
+                if isinstance(s, dict) and str(s.get("url") or "").strip()
+            ]
+
+            async def _check_mcp(srv: dict) -> dict:
                 skey = str(srv.get("name") or "server")
                 url = str(srv.get("url") or "").strip().rstrip("/")
-                if not url:
-                    continue
                 try:
                     h = await MCPClient(url).health_check()
-                    rows.append(
-                        {
-                            "tool": f"mcp:{skey}",
-                            "ok": bool(h.get("ok")),
-                            "detail": h,
-                        }
-                    )
+                    return {"tool": f"mcp:{skey}", "ok": bool(h.get("ok")), "detail": h}
                 except Exception as e:
-                    rows.append({"tool": f"mcp:{skey}", "ok": False, "detail": str(e)})
+                    return {"tool": f"mcp:{skey}", "ok": False, "detail": str(e)}
+
+            mcp_results = await asyncio.gather(*[_check_mcp(s) for s in servers])
+            rows.extend(mcp_results)
 
         return rows
 

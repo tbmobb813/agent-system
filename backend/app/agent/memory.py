@@ -640,7 +640,7 @@ class MemoryManager:
                         INNER JOIN memory AS b2
                           ON a2.user_id IS NOT DISTINCT FROM b2.user_id
                          AND a2.category = b2.category
-                         AND a2.id < b2.id
+                         AND (a2.created_at, a2.id) < (b2.created_at, b2.id)
                          AND a2.embedding IS NOT NULL
                          AND b2.embedding IS NOT NULL
                          AND (a2.embedding <=> b2.embedding) < $1::float8
