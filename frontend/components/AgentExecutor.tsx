@@ -2323,6 +2323,22 @@ export default function AgentExecutor() {
     [opsModalState.tools],
   )
 
+  const tryOpenFeedbackPanel = useCallback((): boolean => {
+    if (lastCompletedTurnMeta?.taskId && isDone) {
+      setFeedbackCmdHint(null)
+      queueMicrotask(() => {
+        const el = feedbackDetailsRef.current
+        if (!el) return
+        el.open = true
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      })
+      return true
+    }
+    setFeedbackCmdHint('Finish a run first, then use the star icon under the latest reply or /feedback.')
+    window.setTimeout(() => setFeedbackCmdHint(null), 4500)
+    return false
+  }, [lastCompletedTurnMeta, isDone])
+
   const tryHandleChatSlashCommand = useCallback(
     (rawTrimmed: string): boolean => {
       const rawLower = rawTrimmed.toLowerCase()
@@ -2609,22 +2625,6 @@ export default function AgentExecutor() {
     },
     [reasoningEffortForRequest],
   )
-
-  const tryOpenFeedbackPanel = useCallback((): boolean => {
-    if (lastCompletedTurnMeta?.taskId && isDone) {
-      setFeedbackCmdHint(null)
-      queueMicrotask(() => {
-        const el = feedbackDetailsRef.current
-        if (!el) return
-        el.open = true
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-      })
-      return true
-    }
-    setFeedbackCmdHint('Finish a run first, then use the star icon under the latest reply or /feedback.')
-    window.setTimeout(() => setFeedbackCmdHint(null), 4500)
-    return false
-  }, [lastCompletedTurnMeta, isDone])
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
