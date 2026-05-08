@@ -2,8 +2,11 @@
 Tool Registry - Manages all available tools the agent can use.
 """
 
+import asyncio
+import json
 import logging
 import os
+import re
 import httpx
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
@@ -23,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 class Tool:
     """Definition of a single tool."""
-    
+
     def __init__(
         self,
         name: str,
@@ -36,12 +39,13 @@ class Tool:
         self.description = description
         self.required_args = required_args or []
         self.signature = signature(func)
-    
+
     async def call(self, **kwargs) -> Any:
         """Call the tool with given arguments."""
         try:
             # Support both async and sync functions
             import inspect
+
             if inspect.iscoroutinefunction(self.func):
                 return await self.func(**kwargs)
             else:
@@ -55,11 +59,14 @@ class ToolRegistry:
     Registry of all available tools.
     Tools are functions that the agent can call to perform actions.
     """
-    
+
     def __init__(self):
         self.tools: Dict[str, Tool] = {}
+        self._dynamic_schemas: Dict[str, dict] = {}
+        self._mcp_tool_names: list[str] = []
+        self._sub_agent_registered: bool = False
         self._register_builtin_tools()
-    
+
     def _register_builtin_tools(self):
         """Register built-in tools."""
         # Web Search
@@ -69,7 +76,7 @@ class ToolRegistry:
             description="Search the web for information. Returns top results with titles, URLs, and snippets.",
             required_args=["query"],
         )
-        
+
         # Browser Automation
         self.register(
             name="browser_automation",
@@ -77,7 +84,7 @@ class ToolRegistry:
             description="Automate browser tasks: navigate pages, extract data, fill forms, take screenshots.",
             required_args=["action"],
         )
-        
+
         # File Operations
         self.register(
             name="file_operations",
@@ -85,7 +92,7 @@ class ToolRegistry:
             description="Read, write, and manage files within the workspace.",
             required_args=["operation"],
         )
-        
+
         # Code Execution
         self.register(
             name="code_execution",
@@ -109,7 +116,283 @@ class ToolRegistry:
             description="Search through uploaded documents for relevant information.",
             required_args=["query"],
         )
-    
+
+    @staticmethod
+    def _json_schema_to_openai_params(schema: Any) -> dict:
+        if not isinstance(schema, dict) or not schema:
+            return {"type": "object", "properties": {}, "required": []}
+        if schema.get("type") == "object":
+            return {
+                "type": "object",
+                "properties": schema.get("properties") or {},
+                "required": list(schema.get("required") or []),
+            }
+        return {"type": "object", "properties": {"_value": schema}, "required": []}
+
+    @staticmethod
+    def _sanitize_mcp_function_name(server_key: str, tool_name: str) -> str:
+        raw = re.sub(r"[^a-zA-Z0-9_]", "_", f"mcp_{server_key}_{tool_name}")
+        if raw and raw[0].isdigit():
+            raw = "mcp_" + raw
+        return raw[:80]
+
+    async def load_mcp_tools(self) -> None:
+        """
+        Register tools from agent_pillars.yaml tools.mcp.servers:
+        - http_json (default): POST {url}/rpc
+        - sse / stdio: persistent sessions via app.tools.mcp_hub (start hub first)
+        """
+        from app.tools.mcp_client import MCPClient
+        from app.tools.mcp_hub import register_hub_servers_into_registry
+        from app.utils.pillar_loader import get_pillar_config
+
+        for name in self._mcp_tool_names:
+            self.tools.pop(name, None)
+            self._dynamic_schemas.pop(name, None)
+        self._mcp_tool_names = []
+
+        cfg = get_pillar_config()
+        mcp_cfg = (cfg.get("tools") or {}).get("mcp") or {}
+        if not mcp_cfg.get("enabled"):
+            return
+
+        for srv in mcp_cfg.get("servers") or []:
+            if not isinstance(srv, dict):
+                continue
+            skey = str(srv.get("name") or "server").strip() or "server"
+            transport = str(srv.get("transport") or "http_json").strip().lower()
+            if transport in ("sse", "stdio"):
+                continue
+            if transport not in ("http", "http_json", "http_rpc", "rpc"):
+                logger.warning(
+                    "Unknown MCP transport %r for %s — skipping HTTP path",
+                    transport,
+                    skey,
+                )
+                continue
+
+            base_url = str(srv.get("url") or "").strip().rstrip("/")
+            if not base_url:
+                logger.warning("MCP HTTP server %s skipped — no url", skey)
+                continue
+
+            client = MCPClient(base_url)
+            try:
+                remote_tools = await client.list_tools()
+            except Exception as e:
+                logger.warning(
+                    "MCP tools/list failed for %s (%s): %s", skey, base_url, e
+                )
+                continue
+
+            for rt in remote_tools:
+                if not isinstance(rt, dict):
+                    continue
+                tn = rt.get("name")
+                if not tn:
+                    continue
+                reg_name = self._sanitize_mcp_function_name(skey, str(tn))
+                if reg_name in self.tools:
+                    reg_name = f"{reg_name}_alt"
+
+                desc = str(rt.get("description") or f"MCP tool {tn} ({skey})")[:800]
+                input_schema = rt.get("inputSchema") or rt.get("input_schema") or {}
+                oa = self._json_schema_to_openai_params(input_schema)
+                required = list(oa.get("required") or [])
+
+                def _make_handler(url: str, mcp_name: str):
+                    async def _handler(**kwargs: Any) -> dict[str, Any]:
+                        cl = MCPClient(url)
+                        return await cl.call_tool(mcp_name, kwargs)
+
+                    return _handler
+
+                handler = _make_handler(base_url, str(tn))
+                self.register(
+                    name=reg_name,
+                    func=handler,
+                    description=desc,
+                    required_args=required,
+                )
+                self._mcp_tool_names.append(reg_name)
+                self._dynamic_schemas[reg_name] = {
+                    "type": "function",
+                    "function": {
+                        "name": reg_name,
+                        "description": desc,
+                        "parameters": oa,
+                    },
+                }
+
+        try:
+            hub_more = await register_hub_servers_into_registry(
+                self, self._sanitize_mcp_function_name
+            )
+            self._mcp_tool_names.extend(hub_more)
+        except Exception as e:
+            logger.warning("MCP hub registration failed: %s", e)
+
+        if self._mcp_tool_names:
+            logger.info("Registered %s MCP tool(s)", len(self._mcp_tool_names))
+
+    def register_sub_agent_tool(self, orchestrator: Any) -> None:
+        """Expose nested agent runs as delegate_sub_agent (call once after orchestrator exists)."""
+        if self._sub_agent_registered:
+            return
+        self._sub_agent_registered = True
+
+        async def _delegate(*, query: str, depth: int = 1) -> str:
+            out = await orchestrator.run_sub_agent(
+                query=query,
+                depth=int(depth),
+                max_depth=2,
+            )
+            return json.dumps(out, ensure_ascii=False)
+
+        desc = (
+            "Delegate a focused sub-task to a nested agent run (fresh ReAct loop, depth-limited). "
+            "Use for isolated research, coding, or analysis that should not pollute the main thread."
+        )
+        self.register(
+            name="delegate_sub_agent",
+            func=_delegate,
+            description=desc,
+            required_args=["query"],
+        )
+        self._dynamic_schemas["delegate_sub_agent"] = {
+            "type": "function",
+            "function": {
+                "name": "delegate_sub_agent",
+                "description": desc,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Self-contained sub-task for the nested agent",
+                        },
+                        "depth": {
+                            "type": "integer",
+                            "description": "Nesting depth (1–2)",
+                            "default": 1,
+                        },
+                    },
+                    "required": ["query"],
+                },
+            },
+        }
+
+    async def tool_health_snapshot(self) -> list[dict[str, Any]]:
+        """Lightweight readiness checks for builtins + configured MCP servers."""
+        from app.tools.mcp_client import MCPClient
+        from app.utils.pillar_loader import get_pillar_config
+
+        rows: list[dict[str, Any]] = []
+
+        # web_search — SearXNG or Brave
+        searx_ok = False
+        searx_err = ""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as hc:
+                r = await hc.get(
+                    f"{settings.SEARXNG_URL}/search",
+                    params={"q": "__health__", "format": "json"},
+                )
+                searx_ok = r.status_code < 500
+        except Exception as e:
+            searx_err = str(e)
+        brave_configured = bool(settings.BRAVE_SEARCH_API_KEY)
+        ws_ok = searx_ok or brave_configured
+        rows.append(
+            {
+                "tool": "web_search",
+                "ok": ws_ok,
+                "detail": (
+                    "searxng"
+                    if searx_ok
+                    else (
+                        "brave_key_set"
+                        if brave_configured
+                        else searx_err or "no_provider"
+                    )
+                ),
+            }
+        )
+
+        browser_ok = False
+        berr = ""
+        try:
+            from playwright.async_api import async_playwright  # noqa: F401
+
+            browser_ok = True
+        except Exception as e:
+            berr = str(e)
+        rows.append(
+            {
+                "tool": "browser_automation",
+                "ok": browser_ok,
+                "detail": "playwright_import" if browser_ok else berr,
+            }
+        )
+
+        rows.append(
+            {
+                "tool": "code_execution",
+                "ok": bool(settings.E2B_API_KEY),
+                "detail": (
+                    "e2b_configured" if settings.E2B_API_KEY else "E2B_API_KEY unset"
+                ),
+            }
+        )
+
+        ws_path = Path(settings.AGENT_WORKSPACE_DIR).expanduser()
+        try:
+            ws_path.mkdir(parents=True, exist_ok=True)
+            w_ok = os.access(ws_path, os.W_OK)
+        except Exception:
+            w_ok = False
+        rows.append({"tool": "file_operations", "ok": w_ok, "detail": str(ws_path)})
+
+        rows.append({"tool": "api_call", "ok": True, "detail": "always_available"})
+
+        doc_ok = bool(settings.OPENAI_API_KEY)
+        rows.append(
+            {
+                "tool": "search_documents",
+                "ok": doc_ok,
+                "detail": (
+                    "openai_embeddings" if doc_ok else "fulltext_only_without_openai"
+                ),
+            }
+        )
+
+        if "delegate_sub_agent" in self.tools:
+            rows.append(
+                {"tool": "delegate_sub_agent", "ok": True, "detail": "registered"}
+            )
+
+        mcp_cfg = (get_pillar_config().get("tools") or {}).get("mcp") or {}
+        if mcp_cfg.get("enabled"):
+            servers = [
+                s
+                for s in (mcp_cfg.get("servers") or [])
+                if isinstance(s, dict) and str(s.get("url") or "").strip()
+            ]
+
+            async def _check_mcp(srv: dict) -> dict:
+                skey = str(srv.get("name") or "server")
+                url = str(srv.get("url") or "").strip().rstrip("/")
+                try:
+                    h = await MCPClient(url).health_check()
+                    return {"tool": f"mcp:{skey}", "ok": bool(h.get("ok")), "detail": h}
+                except Exception as e:
+                    return {"tool": f"mcp:{skey}", "ok": False, "detail": str(e)}
+
+            mcp_results = await asyncio.gather(*[_check_mcp(s) for s in servers])
+            rows.extend(mcp_results)
+
+        return rows
+
     def register(
         self,
         name: str,
@@ -121,25 +404,25 @@ class ToolRegistry:
         tool = Tool(name, func, description, required_args)
         self.tools[name] = tool
         logger.info(f"Registered tool: {name}")
-    
+
     async def call(self, tool_name: str, **kwargs) -> Any:
         """
         Call a registered tool.
         """
         if tool_name not in self.tools:
             raise ValueError(f"Tool not found: {tool_name}")
-        
+
         tool = self.tools[tool_name]
-        
+
         # Validate required args
         for arg in tool.required_args:
             if arg not in kwargs:
                 raise ValueError(f"Missing required argument: {arg}")
-        
+
         logger.info(f"Calling tool: {tool_name} with args: {list(kwargs.keys())}")
-        
+
         return await tool.call(**kwargs)
-    
+
     def list_tools(self) -> list[str]:
         """List all available tool names."""
         return list(self.tools.keys())
@@ -158,8 +441,15 @@ class ToolRegistry:
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "query": {"type": "string", "description": "The search query"},
-                            "max_results": {"type": "integer", "description": "Number of results (default 5)", "default": 5},
+                            "query": {
+                                "type": "string",
+                                "description": "The search query",
+                            },
+                            "max_results": {
+                                "type": "integer",
+                                "description": "Number of results (default 5)",
+                                "default": 5,
+                            },
                         },
                         "required": ["query"],
                     },
@@ -175,14 +465,36 @@ class ToolRegistry:
                         "properties": {
                             "action": {
                                 "type": "string",
-                                "enum": ["navigate", "extract", "scrape", "screenshot", "click", "fill"],
+                                "enum": [
+                                    "navigate",
+                                    "extract",
+                                    "scrape",
+                                    "screenshot",
+                                    "click",
+                                    "fill",
+                                ],
                                 "description": "Action to perform",
                             },
-                            "url": {"type": "string", "description": "URL to open (required for navigate/extract/scrape/screenshot/click/fill)"},
-                            "selector": {"type": "string", "description": "CSS selector for extract/scrape/click/fill"},
-                            "text": {"type": "string", "description": "Text to type into element (required for fill)"},
-                            "screenshot_path": {"type": "string", "description": "Where to save the screenshot"},
-                            "wait_for": {"type": "string", "description": "CSS selector to wait for before extracting"},
+                            "url": {
+                                "type": "string",
+                                "description": "URL to open (required for navigate/extract/scrape/screenshot/click/fill)",
+                            },
+                            "selector": {
+                                "type": "string",
+                                "description": "CSS selector for extract/scrape/click/fill",
+                            },
+                            "text": {
+                                "type": "string",
+                                "description": "Text to type into element (required for fill)",
+                            },
+                            "screenshot_path": {
+                                "type": "string",
+                                "description": "Where to save the screenshot",
+                            },
+                            "wait_for": {
+                                "type": "string",
+                                "description": "CSS selector to wait for before extracting",
+                            },
                         },
                         "required": ["action"],
                     },
@@ -201,8 +513,14 @@ class ToolRegistry:
                                 "enum": ["read", "write", "list", "delete"],
                                 "description": "Operation to perform",
                             },
-                            "path": {"type": "string", "description": "File path relative to workspace"},
-                            "content": {"type": "string", "description": "Content to write (required for write)"},
+                            "path": {
+                                "type": "string",
+                                "description": "File path relative to workspace",
+                            },
+                            "content": {
+                                "type": "string",
+                                "description": "Content to write (required for write)",
+                            },
                         },
                         "required": ["operation"],
                     },
@@ -216,8 +534,15 @@ class ToolRegistry:
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "code": {"type": "string", "description": "The code to execute"},
-                            "language": {"type": "string", "description": "Programming language (default: python)", "default": "python"},
+                            "code": {
+                                "type": "string",
+                                "description": "The code to execute",
+                            },
+                            "language": {
+                                "type": "string",
+                                "description": "Programming language (default: python)",
+                                "default": "python",
+                            },
                         },
                         "required": ["code"],
                     },
@@ -231,11 +556,27 @@ class ToolRegistry:
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "url": {"type": "string", "description": "Full URL including https://"},
-                            "method": {"type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"], "default": "GET"},
-                            "headers": {"type": "object", "description": "HTTP headers as key-value pairs"},
-                            "data": {"type": "object", "description": "JSON body for POST/PUT/PATCH"},
-                            "params": {"type": "object", "description": "URL query parameters"},
+                            "url": {
+                                "type": "string",
+                                "description": "Full URL including https://",
+                            },
+                            "method": {
+                                "type": "string",
+                                "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"],
+                                "default": "GET",
+                            },
+                            "headers": {
+                                "type": "object",
+                                "description": "HTTP headers as key-value pairs",
+                            },
+                            "data": {
+                                "type": "object",
+                                "description": "JSON body for POST/PUT/PATCH",
+                            },
+                            "params": {
+                                "type": "object",
+                                "description": "URL query parameters",
+                            },
                         },
                         "required": ["url"],
                     },
@@ -249,9 +590,19 @@ class ToolRegistry:
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "query": {"type": "string", "description": "What to search for"},
-                            "limit": {"type": "integer", "description": "Number of chunks to return (default 5)", "default": 5},
-                            "document_id": {"type": "string", "description": "Restrict search to a specific document ID (optional)"},
+                            "query": {
+                                "type": "string",
+                                "description": "What to search for",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Number of chunks to return (default 5)",
+                                "default": 5,
+                            },
+                            "document_id": {
+                                "type": "string",
+                                "description": "Restrict search to a specific document ID (optional)",
+                            },
                         },
                         "required": ["query"],
                     },
@@ -260,24 +611,32 @@ class ToolRegistry:
         }
 
         names = allowed if allowed is not None else list(self.tools.keys())
-        return [SCHEMAS[n] for n in names if n in SCHEMAS and n in self.tools]
+        schemas: list[dict] = []
+        for n in names:
+            if n not in self.tools:
+                continue
+            if n in SCHEMAS:
+                schemas.append(SCHEMAS[n])
+            elif n in self._dynamic_schemas:
+                schemas.append(self._dynamic_schemas[n])
+        return schemas
 
     def get_tool_info(self, tool_name: str) -> dict:
         """Get information about a tool."""
         if tool_name not in self.tools:
             return {}
-        
+
         tool = self.tools[tool_name]
         return {
             "name": tool.name,
             "description": tool.description,
             "required_args": tool.required_args,
         }
-    
+
     # ========================================================================
     # Built-in Tool Implementations (Placeholders)
     # ========================================================================
-    
+
     async def _web_search(self, query: str, max_results: int = 5) -> dict:
         """
         Search the web. Tries SearXNG first, falls back to Brave Search if unreachable.
@@ -316,7 +675,12 @@ class ToolRegistry:
                 }
                 for r in data.get("results", [])[:max_results]
             ]
-            return {"query": query, "results": results, "total": len(results), "provider": "searxng"}
+            return {
+                "query": query,
+                "results": results,
+                "total": len(results),
+                "provider": "searxng",
+            }
 
         except httpx.ConnectError:
             logger.error(f"SearXNG unreachable at {settings.SEARXNG_URL}")
@@ -328,8 +692,14 @@ class ToolRegistry:
     async def _brave_search(self, query: str, max_results: int = 5) -> dict:
         """Search via Brave Search API (fallback)."""
         if not settings.BRAVE_SEARCH_API_KEY:
-            logger.error("Brave Search fallback unavailable — BRAVE_SEARCH_API_KEY not set")
-            return {"query": query, "results": [], "error": "no_search_provider_available"}
+            logger.error(
+                "Brave Search fallback unavailable — BRAVE_SEARCH_API_KEY not set"
+            )
+            return {
+                "query": query,
+                "results": [],
+                "error": "no_search_provider_available",
+            }
 
         logger.info(f"Brave Search fallback: {query}")
         try:
@@ -355,12 +725,17 @@ class ToolRegistry:
                 }
                 for r in data.get("web", {}).get("results", [])[:max_results]
             ]
-            return {"query": query, "results": results, "total": len(results), "provider": "brave"}
+            return {
+                "query": query,
+                "results": results,
+                "total": len(results),
+                "provider": "brave",
+            }
 
         except Exception as e:
             logger.error(f"Brave Search failed: {e}")
             return {"query": query, "results": [], "error": str(e)}
-    
+
     async def _browser_automation(
         self,
         action: str,
@@ -412,10 +787,19 @@ class ToolRegistry:
                 page = await browser.new_page()
 
                 try:
-                    if action in ("navigate", "extract", "scrape", "screenshot", "click", "fill"):
+                    if action in (
+                        "navigate",
+                        "extract",
+                        "scrape",
+                        "screenshot",
+                        "click",
+                        "fill",
+                    ):
                         if not url:
                             return "Error: url is required"
-                        await page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+                        await page.goto(
+                            url, timeout=timeout, wait_until="domcontentloaded"
+                        )
                         if wait_for:
                             await page.wait_for_selector(wait_for, timeout=timeout)
 
@@ -438,10 +822,16 @@ class ToolRegistry:
                             t = await el.inner_text()
                             if t.strip():
                                 texts.append(t.strip())
-                        return "\n---\n".join(texts) if texts else "No elements matched selector"
+                        return (
+                            "\n---\n".join(texts)
+                            if texts
+                            else "No elements matched selector"
+                        )
 
                     elif action == "screenshot":
-                        path = screenshot_path or os.path.join(settings.AGENT_WORKSPACE_DIR, "screenshot.png")
+                        path = screenshot_path or os.path.join(
+                            settings.AGENT_WORKSPACE_DIR, "screenshot.png"
+                        )
                         os.makedirs(os.path.dirname(path), exist_ok=True)
                         await page.screenshot(path=path, full_page=True)
                         return f"Screenshot saved to {path}"
@@ -467,7 +857,7 @@ class ToolRegistry:
         except Exception as e:
             logger.error(f"Browser automation failed: {e}")
             return f"Browser automation error: {e}"
-    
+
     async def _file_operations(
         self,
         operation: str,
@@ -612,10 +1002,13 @@ class ToolRegistry:
     ) -> str:
         """Search ingested documents for relevant content."""
         from app.agent.documents import search_documents
+
         results = await search_documents(query, limit=limit, document_id=document_id)
         if not results:
             return "No relevant content found in your documents for that query."
         lines = []
         for r in results:
-            lines.append(f"[{r['filename']} — chunk {r['chunk_index']}]\n{r['content']}")
+            lines.append(
+                f"[{r['filename']} — chunk {r['chunk_index']}]\n{r['content']}"
+            )
         return "\n\n---\n\n".join(lines)

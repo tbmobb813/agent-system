@@ -894,6 +894,67 @@ function TurnFeedbackDetails({
   )
 }
 
+function TurnQuickThumbs({
+  taskId,
+  dismissFeedbackNudge,
+}: {
+  taskId: string
+  dismissFeedbackNudge: () => void
+}) {
+  const [busy, setBusy] = useState<'up' | 'down' | null>(null)
+  const [flash, setFlash] = useState<string | null>(null)
+  const tRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (tRef.current) clearTimeout(tRef.current)
+    }
+  }, [])
+
+  const vote = async (signal: 'up' | 'down') => {
+    setBusy(signal)
+    try {
+      await submitTaskFeedback(taskId, { signal, notes: '' })
+      dismissFeedbackNudge()
+      setFlash(signal === 'up' ? 'Marked helpful' : 'Noted for next time')
+      if (tRef.current) clearTimeout(tRef.current)
+      tRef.current = setTimeout(() => setFlash(null), 2200)
+    } catch {
+      setFlash('Could not save — try the star menu')
+      if (tRef.current) clearTimeout(tRef.current)
+      tRef.current = setTimeout(() => setFlash(null), 3200)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center gap-0.5" title="One-tap feedback">
+      <button
+        type="button"
+        disabled={busy !== null}
+        onClick={() => void vote('up')}
+        className="btn-ghost p-1.5 rounded-lg text-sm disabled:opacity-40"
+        aria-label="Mark this reply as helpful"
+        title="Helpful"
+      >
+        👍
+      </button>
+      <button
+        type="button"
+        disabled={busy !== null}
+        onClick={() => void vote('down')}
+        className="btn-ghost p-1.5 rounded-lg text-sm disabled:opacity-40"
+        aria-label="Mark this reply as needs work"
+        title="Needs work"
+      >
+        👎
+      </button>
+      {flash ? <span className="text-[10px] text-muted max-w-[9rem] truncate">{flash}</span> : null}
+    </span>
+  )
+}
+
 /** Completed-turn footer: cost on the left; copy, feedback, and (latest turn only) full-thread download on the right. */
 function TurnDoneFooter({
   turnId,
@@ -936,6 +997,9 @@ function TurnDoneFooter({
       </p>
       <div className="flex items-center justify-end gap-0.5 flex-wrap">
         <TurnCopyIcon text={exportText} />
+        {taskId ? (
+          <TurnQuickThumbs taskId={taskId} dismissFeedbackNudge={dismissFeedbackNudge} />
+        ) : null}
         {taskId ? (
           <TurnFeedbackDetails
             taskId={taskId}

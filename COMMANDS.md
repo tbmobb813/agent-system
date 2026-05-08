@@ -40,6 +40,13 @@ Base URL: **http://localhost:8000**
 | `/agent/stop` | POST | Cancel a running task |
 | `/agent/tools` | GET | List available tools |
 | `/agent/models` | GET | List models and routing strategy |
+| `/agent/enqueue` | POST | Queue deferred task (background worker) |
+| `/agent/tools/health` | GET | Tool + MCP readiness snapshot |
+| `/agent/stats` | GET | p50/p95/p99 latency by endpoint (`latency_metrics` table) |
+| `/agent/schedules` | POST | Create cron schedule (prompt run on schedule) |
+| `/agent/schedules` | GET | List schedules (optional `?user_id=`) |
+| `/agent/schedules/{id}` | DELETE | Delete schedule (optional `?user_id=`) |
+| `/agent/workflows/{name}/run` | POST | Run YAML workflow from `backend/data/workflows/{name}.yaml` |
 | `/history` | GET | Paginated task history |
 | `/history/{id}` | GET | Single task detail |
 | `/history/{id}` | DELETE | Delete a task |
@@ -47,11 +54,17 @@ Base URL: **http://localhost:8000**
 | `/settings` | POST | Update settings |
 | `/memory` | GET | List memory entries |
 | `/memory/search` | GET | Search memory |
+| `/memory/range` | GET | Memories in time window (`start`, `end` ISO8601) |
 | `/memory` | POST | Add memory entry |
 | `/memory/{id}` | DELETE | Delete memory entry |
 | `/conversations` | GET | List conversations |
 | `/conversations/{id}` | GET | Get conversation |
 | `/conversations/{id}` | DELETE | Delete conversation |
+| `/history/{task_id}/feedback` | POST | Thumbs / feedback for a task |
+
+Workflow run body is optional JSON (`user_id`). Example:
+
+`POST /agent/workflows/example/run` with `{}`
 
 API docs (interactive): **http://localhost:8000/docs**
 
@@ -83,10 +96,67 @@ SearXNG UI: **http://localhost:8888**
 
 ## Database (Supabase)
 
-Migrations are in `supabase/migrations/`. Apply via Supabase dashboard or:
+Migrations are in `supabase/migrations/`.
+
+**Option A — Supabase CLI (recommended if the project is linked)**
+
+The CLI is invoked via **`npx`** unless you installed `supabase` globally (`npm i -g supabase`).
 
 ```bash
-supabase db push
+# One-time: link your project (ref = Dashboard → Project Settings → General → Reference ID)
+npx supabase link --project-ref <YOUR_PROJECT_REF>
+
+npx supabase db push
+```
+
+**Option B — Python helper** (uses `DATABASE_URL` from `backend/.env`; needs a reachable Postgres — fix URL if you see pooler “tenant not found” errors)
+
+```bash
+cd /home/nixstation-remote/agent-system
+python3 scripts/apply_recent_migrations.py
+```
+
+If the project was **paused** in the Supabase dashboard, unpause and wait until the database is healthy before pushing or running the script above (paused projects often show pooler / tenant resolution errors).
+
+**Option C — Dashboard**
+
+Open Supabase → SQL Editor → paste and run the contents of:
+
+- `supabase/migrations/016_scheduled_tasks.sql`
+- `supabase/migrations/017_latency_metrics.sql`
+
+Recent additions include `scheduled_tasks`, `latency_metrics`, and related tables — apply before using `/agent/schedules` or `/agent/stats` with persisted metrics.
+
+**If `db push` fails with “already exists”:** your remote DB was likely created earlier without matching migration history. Options: (1) run `npx supabase migration list` then `npx supabase migration repair <version> --status applied` for migrations that are already reflected in the DB; (2) pull latest repo — `001_initial_schema.sql` uses `CREATE INDEX IF NOT EXISTS` so re-applying `001` is safe for indexes; (3) apply only new files via **Option C** (SQL Editor) or `scripts/apply_recent_migrations.py`.
+
+---
+
+## Tests & eval harness
+
+From repo root:
+
+```bash
+cd backend
+source venv/bin/activate   # if you use a venv
+pip install -r requirements.txt
+BACKEND_API_KEY=sk-agent-local-dev OPENROUTER_BUDGET_MONTHLY=30 pytest --cov=app --cov-fail-under=55 -q
+```
+
+Router / pattern eval cases (no live agent):
+
+```bash
+# From repo root
+python3 backend/evals/run_eval_harness.py
+python3 backend/evals/run_eval_harness.py --ci --min-score 80
+
+# From backend/ directory
+python3 evals/run_eval_harness.py --ci --min-score 80
+```
+
+Pillar compliance (optional):
+
+```bash
+python3 agent_pillar_validator.py --check-code
 ```
 
 ---
@@ -171,5 +241,6 @@ Config file: `/home/nixstation-remote/agent-system/backend/.env`
 | `SEARXNG_URL` | SearXNG instance URL (default: http://localhost:8888) |
 | `BRAVE_SEARCH_API_KEY` | Brave Search fallback key (optional) |
 | `E2B_API_KEY` | E2B sandbox key for code execution |
+| `REDIS_URL` | Optional — durable deferred queue when `message_queue.provider` is `redis` |
 | `OPENAI_API_KEY` | OpenAI key for embeddings (optional) |
 | `ALERT_WEBHOOK_URL` | Webhook for budget alerts (optional) |

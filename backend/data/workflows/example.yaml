@@ -1,0 +1,7 @@
+# Example declarative workflow (run via POST /agent/workflows/example/run).
+workflow: example
+description: Demonstrates an agent step (no mandatory tool steps).
+steps:
+  - name: greet_plan
+    agent: main
+    query: "In one short paragraph, list three healthy breakfast ideas."

@@ -20,16 +20,18 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 
 from app.config import settings
-from app.models import AgentRequest, AgentResponse
+from app.models import AgentRequest, AgentResponse, WorkflowRunRequest
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.streaming import format_sse_event
-from app.database import execute
+from app.database import execute, fetch
 from app import database as _db
+from app.routes.schedules import router as schedules_router
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agent", tags=["agent"])
+router.include_router(schedules_router)
 
 
 def _orchestrator(request: Request):
@@ -49,7 +51,9 @@ def _cost_tracker(request: Request):
 def _runtime(request: Request):
     runtime = getattr(request.app.state, "orchestration_runtime", None)
     if not runtime:
-        raise HTTPException(status_code=503, detail="Orchestration runtime not initialized")
+        raise HTTPException(
+            status_code=503, detail="Orchestration runtime not initialized"
+        )
     return runtime
 
 
@@ -118,7 +122,9 @@ async def run_agent(
     cost_tracker = _cost_tracker(request)
 
     estimated_cost = await cost_tracker.estimate_cost(body.query)
-    remaining = settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_month()
+    remaining = (
+        settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_month()
+    )
 
     if estimated_cost > remaining:
         return JSONResponse(
@@ -198,7 +204,9 @@ async def stream_agent(
         try:
             await execute(
                 "UPDATE tasks SET status = $1, completed_at = $2 WHERE id = $3",
-                status, datetime.utcnow(), task_id,
+                status,
+                datetime.utcnow(),
+                task_id,
             )
         except Exception as e:
             logger.warning(f"Could not update task status: {e}")
@@ -208,19 +216,26 @@ async def stream_agent(
         stream_status = "completed"
         try:
             estimated_cost = await cost_tracker.estimate_cost(body.query)
-            remaining = settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_month()
+            remaining = (
+                settings.OPENROUTER_BUDGET_MONTHLY
+                - await cost_tracker.get_spent_month()
+            )
 
             if estimated_cost > remaining:
                 stream_status = "budget_exceeded"
-                yield format_sse_event({
-                    "type": "error",
-                    "error": "Insufficient budget",
-                    "spent": await cost_tracker.get_spent_month(),
-                    "budget": settings.OPENROUTER_BUDGET_MONTHLY,
-                })
+                yield format_sse_event(
+                    {
+                        "type": "error",
+                        "error": "Insufficient budget",
+                        "spent": await cost_tracker.get_spent_month(),
+                        "budget": settings.OPENROUTER_BUDGET_MONTHLY,
+                    }
+                )
                 return
 
-            yield format_sse_event({"type": "status", "content": "initializing", "task_id": task_id})
+            yield format_sse_event(
+                {"type": "status", "content": "initializing", "task_id": task_id}
+            )
 
             # Pre-insert task as running
             if _db.db_pool:
@@ -231,7 +246,10 @@ async def stream_agent(
                         VALUES ($1, $2, $3, 'running', 0, $4)
                         ON CONFLICT (id) DO NOTHING
                         """,
-                        task_id, user_id, body.query, started_at,
+                        task_id,
+                        user_id,
+                        body.query,
+                        started_at,
                     )
                 except Exception as e:
                     logger.warning(f"Could not pre-insert task: {e}")
@@ -274,11 +292,15 @@ async def stream_agent(
                         try:
                             await _stream.aclose()
                         except Exception as close_error:
-                            logger.debug(f"Failed to close timed out stream: {close_error}")
-                    yield format_sse_event({
-                        "type": "error",
-                        "error": f"Run timed out after {settings.MAX_STREAM_SECONDS}s",
-                    })
+                            logger.debug(
+                                f"Failed to close timed out stream: {close_error}"
+                            )
+                    yield format_sse_event(
+                        {
+                            "type": "error",
+                            "error": f"Run timed out after {settings.MAX_STREAM_SECONDS}s",
+                        }
+                    )
                     return
 
                 data = event.model_dump(mode="json")
@@ -366,7 +388,9 @@ async def stream_agent(
                 try:
                     pop_call_info(task_id)
                 except Exception as pop_error:
-                    logger.debug(f"Failed to cleanup call info for task {task_id}: {pop_error}")
+                    logger.debug(
+                        f"Failed to cleanup call info for task {task_id}: {pop_error}"
+                    )
 
     return StreamingResponse(
         generate(),
@@ -390,7 +414,9 @@ async def enqueue_agent_task(
     runtime = _runtime(request)
     cost_tracker = _cost_tracker(request)
     estimated_cost = await cost_tracker.estimate_cost(body.query)
-    remaining = settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_month()
+    remaining = (
+        settings.OPENROUTER_BUDGET_MONTHLY - await cost_tracker.get_spent_month()
+    )
     if estimated_cost > remaining:
         return JSONResponse(
             status_code=402,
@@ -430,10 +456,11 @@ async def enqueue_agent_task(
             "reasoning_effort": body.reasoning_effort,
         }
     )
+    qs = await runtime.pending_queue_size()
     return {
         "status": "queued",
         "task_id": task_id,
-        "queue_size": runtime.queue.qsize(),
+        "queue_size": qs,
     }
 
 
@@ -452,6 +479,22 @@ async def stop_agent(
     return {"status": "stopped", "task_id": task_id_str}
 
 
+@router.get("/tools/health")
+@limiter.limit("60/minute")
+async def agent_tools_health(
+    request: Request,
+    api_key: str = Depends(verify_api_key),
+):
+    """Readiness snapshot for built-in tools and configured MCP servers."""
+    orchestrator = _orchestrator(request)
+    checks = await orchestrator.tools.tool_health_snapshot()
+    return {
+        "checks": checks,
+        "healthy_count": sum(1 for c in checks if c.get("ok")),
+        "total": len(checks),
+    }
+
+
 @router.get("/tools")
 async def list_tools(request: Request, api_key: str = Depends(verify_api_key)):
     """List available tools."""
@@ -464,8 +507,81 @@ async def list_tools(request: Request, api_key: str = Depends(verify_api_key)):
 async def list_models(api_key: str = Depends(verify_api_key)):
     """List available models and routing strategy."""
     from app.agent.router import ModelRouter
+
     router_instance = ModelRouter()
     return {
         "models": router_instance.get_available_models(),
         "routing_strategy": "complexity_based",
     }
+
+
+@router.get("/stats")
+@limiter.limit("30/minute")
+async def agent_latency_stats(
+    request: Request,
+    days: int = Query(7, ge=1, le=90),
+    api_key: str = Depends(verify_api_key),
+):
+    """p50/p95/p99 latency by endpoint from ``latency_metrics`` (if table exists)."""
+    if not _db.db_pool:
+        return {
+            "window_days": days,
+            "latency_by_endpoint": [],
+            "note": "database_unavailable",
+        }
+    try:
+        rows = await fetch(
+            """
+            SELECT endpoint,
+                   percentile_disc(0.5) WITHIN GROUP (ORDER BY duration_ms) AS p50_ms,
+                   percentile_disc(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95_ms,
+                   percentile_disc(0.99) WITHIN GROUP (ORDER BY duration_ms) AS p99_ms,
+                   COUNT(*)::bigint AS n
+            FROM latency_metrics
+            WHERE created_at >= (NOW() - ($1::int * INTERVAL '1 day'))
+            GROUP BY endpoint
+            ORDER BY endpoint
+            """,
+            days,
+        )
+    except Exception as e:
+        logger.debug("latency stats query failed: %s", e)
+        return {
+            "window_days": days,
+            "latency_by_endpoint": [],
+            "note": "latency_metrics_unavailable",
+        }
+
+    return {
+        "window_days": days,
+        "latency_by_endpoint": [
+            {
+                "endpoint": r["endpoint"],
+                "p50_ms": float(r["p50_ms"]) if r["p50_ms"] is not None else None,
+                "p95_ms": float(r["p95_ms"]) if r["p95_ms"] is not None else None,
+                "p99_ms": float(r["p99_ms"]) if r["p99_ms"] is not None else None,
+                "n": int(r["n"]),
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.post("/workflows/{name}/run")
+@limiter.limit("10/minute")
+async def run_declared_workflow(
+    request: Request,
+    name: str,
+    body: WorkflowRunRequest,
+    api_key: str = Depends(verify_api_key),
+):
+    """Run a YAML workflow from ``backend/data/workflows/{name}.yaml``."""
+    from app.agent.workflows import run_named_workflow
+
+    orchestrator = _orchestrator(request)
+    try:
+        return await run_named_workflow(orchestrator, name, user_id=body.user_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Workflow {name!r} not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

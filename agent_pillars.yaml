@@ -124,7 +124,11 @@ llm:
       top_p: 0.9
       use_for: ["best_quality", "critical_tasks"]
       supports_tools: true
-  
+
+  # Used when orchestration.execution.complexity_threshold is "llm_classifier"
+  routing_classifier:
+    model: "meta-llama/llama-3.1-8b-instruct:free"
+
   fallback_chain:
     - "anthropic/claude-haiku"
     - "google/gemini-flash-1.5"
@@ -181,16 +185,23 @@ tools:
       provider: "pgvector"
   
   mcp:
-    enabled: false  # Enable when MCP client is implemented
+    enabled: true   # HTTP JSON-RPC (`url` + /rpc) and hub transports (sse, stdio) via ToolRegistry + McpConnectionHub
     servers: []
-    # Example:
-    # - name: "github"
-    #   url: "https://mcp.github.com/sse"
-    # - name: "slack"
-    #   url: "https://mcp.slack.com/sse"
+    # Examples:
+    # - name: "remote_http"
+    #   transport: http_json   # default when omitted; requires MCP HTTP bridge at url + /rpc
+    #   url: "https://your-mcp-bridge.example.com"
+    # - name: "github_sse"
+    #   transport: sse
+    #   url: "https://mcp.example.com/github/sse"
+    # - name: "local_stdio"
+    #   transport: stdio
+    #   command: "npx"
+    #   args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp/agent-workspace"]
+    #   env: { "FOO": "bar" }
   
   agent_as_tool:
-    enabled: false  # Enable when sub-agent pattern is implemented
+    enabled: true   # SubAgentRunner + run_sub_agent; enable in pillars when exposed as LLM-callable tool
     max_depth: 2    # Prevent infinite sub-agent recursion
   
   custom_functions:
@@ -207,10 +218,10 @@ memory:
     # Conversation-level memory with temporal context
     track_session_id: true
     track_timestamps: true
-    searchable_by_time_range: false  # TODO: implement
+    searchable_by_time_range: true    # GET /memory/range + memory_manager.search_by_time_range
   
   working_memory:
-    enabled: false  # TODO: implement scratchpad in ExecutionState
+    enabled: true  # Implemented: ExecutionState.working_memory, goal, done_when, progress checkpoints
     max_items: 20
     scope: "per_session"
   
@@ -241,9 +252,10 @@ memory:
   lifecycle:
     auto_save_insights: true          # Extract insights after each conversation
     insight_extraction_model: "deepseek/deepseek-chat"
-    decay_enabled: false              # TODO: implement relevance decay
+    decay_enabled: true               # Implemented: OrchestrationRuntime daily job → memory_manager.apply_relevance_decay
     decay_half_life_days: 90
-    consolidation_enabled: false      # TODO: merge facts into patterns
+    consolidation_enabled: true       # Weekly job: dedupe identical memory rows
+    semantic_consolidation_enabled: false  # If true, also merge near-duplicate embeddings (cosine)
     consolidation_frequency: "weekly"
     max_memories_per_user: 10000
     prune_below_relevance: 0.1
@@ -257,21 +269,24 @@ orchestration:
     max_iterations: 10
     parallel_tool_calls: true
     plan_complex_queries: true
-    complexity_threshold: "keyword"  # keyword | llm_classifier
+    complexity_threshold: "keyword"  # keyword | llm_classifier — latter uses llm.routing_classifier for planning gate
   
   triggers:
     scheduled_tasks:
-      enabled: false  # TODO: implement APScheduler/Celery
-      # Example future tasks:
-      # - name: "daily_briefing"
-      #   cron: "0 8 * * *"
-      #   query: "Summarize today's AI news"
-      # - name: "memory_consolidation"
-      #   cron: "0 2 * * 0"  # Weekly Sunday 2am
+      enabled: true   # Interval jobs from this list + built-in memory_decay / memory_consolidation
+      tasks: []
+      # Examples:
+      # - name: "weekly_consolidate"
+      #   interval_seconds: 604800
       #   action: "consolidate_memories"
+      # - name: "daily_brief"
+      #   interval_seconds: 86400
+      #   query: "Summarize today's AI news in 5 bullets"
+      #   user_id: "optional-user-uuid"
+      #   max_iterations: 6
     
     event_driven:
-      enabled: false
+      enabled: true   # register_event_handler / emit_event in OrchestrationRuntime (lightweight)
       # Example future triggers:
       # - event: "document_uploaded"
       #   action: "auto_index_document"
@@ -279,13 +294,14 @@ orchestration:
       #   action: "notify_user"
   
   message_queue:
-    enabled: false  # TODO: implement Redis queue
-    provider: "redis"
-    deferred_execution: false
+    enabled: true
+    provider: "asyncio"   # asyncio | redis — set redis + REDIS_URL for cross-process durable queue
+    redis_queue_key: "agent:deferred_tasks"
+    deferred_execution: true          # POST /agent/enqueue
     dead_letter_logging: false
   
   agent2agent:
-    enabled: false  # TODO: implement sub-agent spawning
+    enabled: true   # run_sub_agent / SubAgentRunner (depth-limited); optional LLM tool exposure TBD
     max_depth: 2
     communication: "direct"  # direct | queue
   
@@ -294,11 +310,11 @@ orchestration:
     max_retries: 3
     retry_backoff: "exponential"  # exponential | linear | none
     circuit_breaker:
-      enabled: false
+      enabled: true                   # Implemented: AgentOrchestrator _circuit_failure_threshold / _circuit_recovery_seconds
       failure_threshold: 5
       recovery_timeout_seconds: 60
     dead_letter:
-      enabled: false
+      enabled: false   # When true + DB migration 015_failed_tasks, worker failures also insert into failed_tasks
       table: "failed_tasks"
 
 # ═══════════════════════════════════════════════════════════════════
@@ -335,9 +351,12 @@ user_interface:
     endpoints:
       - "POST /agent/run"
       - "POST /agent/stream"
+      - "POST /agent/enqueue"
       - "POST /agent/stop"
       - "GET /agent/tools"
+      - "GET /agent/tools/health"
       - "GET /agent/models"
+      - "GET /memory/range"
       - "GET /health"
       - "GET /status/costs"
   
@@ -352,19 +371,19 @@ user_interface:
       - "/help"
   
   slack_discord_bot:
-    enabled: false  # Future
+    enabled: true   # Webhook routes + integration module (parity with Telegram optional)
   
   feedback:
-    enabled: false  # TODO: implement
+    enabled: true   # POST /history/{task_id}/feedback + task_feedback; chat UI thumbs optional
     types: ["thumbs_up_down", "text_comment", "rating_1_5"]
-    store_in: "response_feedback"
+    store_in: "task_feedback"
 
 # ═══════════════════════════════════════════════════════════════════
 # PILLAR 8: Testing & Evals
 # ═══════════════════════════════════════════════════════════════════
 testing:
   unit_tests:
-    enabled: false  # TODO: implement
+    enabled: true
     framework: "pytest"
     test_directory: "backend/tests/"
     required_modules:
@@ -376,7 +395,7 @@ testing:
     min_coverage_percent: 70
   
   latency_testing:
-    enabled: false  # TODO: instrument
+    enabled: true   # latency_metrics + _record_latency_metric on agent routes
     track_p50: true
     track_p95: true
     track_p99: true
@@ -384,7 +403,7 @@ testing:
     alert_p95_above_ms: 5000
   
   quality_metrics:
-    enabled: false  # TODO: implement
+    enabled: true   # judge scoring via app/agent/quality.py (sampled)
     judge_model: "anthropic/claude-haiku"
     dimensions:
       - "helpfulness"
@@ -396,7 +415,7 @@ testing:
     sample_rate: 0.1  # Score 10% of responses
   
   eval_harness:
-    enabled: false  # TODO: implement
+    enabled: true   # backend/evals/ starter harness
     test_cases_path: "backend/evals/test_cases.json"
     # Test case format:
     # {
@@ -409,13 +428,13 @@ testing:
     run_on: "manual"  # manual | push | nightly
   
   ci_cd:
-    enabled: false  # TODO: set up GitHub Actions
+    enabled: true
     provider: "github_actions"
     run_on_push: true
     block_merge_on_failure: true
-    workflow_file: ".github/workflows/test.yml"
+    workflow_file: ".github/workflows/ci.yml"
   
   iterate_and_improve:
     prompt_versioning: true
     track_quality_over_time: true
-    feedback_loop: false  # TODO: connect user feedback to eval scores
+    feedback_loop: true   # feedback → save_feedback_learning in memory

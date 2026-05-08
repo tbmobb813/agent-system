@@ -14,10 +14,33 @@ unreliable for function-calling format.
 import logging
 from typing import Optional
 
+from openai import AsyncOpenAI
+
 from app.config import settings
 from app.agent import cost_learning
+from app.utils.pillar_loader import get_pillar_config
 
 logger = logging.getLogger(__name__)
+
+
+def _openrouter_client() -> AsyncOpenAI:
+    return AsyncOpenAI(
+        api_key=settings.OPENROUTER_API_KEY,
+        base_url=settings.OPENROUTER_BASE_URL,
+    )
+
+
+# Router internal tier keys → agent_pillars.yaml llm.model_tiers keys
+_ROUTER_TIER_TO_YAML: dict[str, str] = {
+    "free": "free",
+    "simple": "simple",
+    "balanced": "simple",
+    "coding": "coding",
+    "research": "research",
+    "advanced": "advanced",
+    "premium": "premium",
+    "agent": "agent",
+}
 
 
 class ModelRouter:
@@ -66,10 +89,10 @@ class ModelRouter:
 
     # Fallback chain: if a model fails, try the next one
     FALLBACK_CHAIN = [
-        settings.DEFAULT_MODEL_AGENT,    # Haiku — primary tool-use model
-        settings.DEFAULT_MODEL_RESEARCH, # Gemini Flash — cheap, supports tool use
-        settings.DEFAULT_MODEL_SIMPLE,   # DeepSeek — cheap general fallback
-        settings.DEFAULT_MODEL_FREE,     # Free model — last resort (no tool use)
+        settings.DEFAULT_MODEL_AGENT,  # Haiku — primary tool-use model
+        settings.DEFAULT_MODEL_RESEARCH,  # Gemini Flash — cheap, supports tool use
+        settings.DEFAULT_MODEL_SIMPLE,  # DeepSeek — cheap general fallback
+        settings.DEFAULT_MODEL_FREE,  # Free model — last resort (no tool use)
     ]
 
     def select_model(
@@ -106,12 +129,12 @@ class ModelRouter:
 
         tier_map = {
             "conversational": "free",
-            "simple":         "simple",
-            "coding":         "coding",
-            "research":       "research",
-            "complex":        "advanced",
-            "premium":        "premium",
-            "balanced":       "balanced",
+            "simple": "simple",
+            "coding": "coding",
+            "research": "research",
+            "complex": "advanced",
+            "premium": "premium",
+            "balanced": "balanced",
         }
         tier = tier_map.get(query_type, "balanced")
         model = self.MODELS[tier]["model"]
@@ -130,64 +153,175 @@ class ModelRouter:
 
         # Very short / conversational
         conversational = [
-            "hi", "hello", "hey", "good morning", "good afternoon",
-            "good evening", "how are you", "what's up", "thanks",
-            "thank you", "ok", "okay", "sure", "yes", "no",
+            "hi",
+            "hello",
+            "hey",
+            "good morning",
+            "good afternoon",
+            "good evening",
+            "how are you",
+            "what's up",
+            "thanks",
+            "thank you",
+            "ok",
+            "okay",
+            "sure",
+            "yes",
+            "no",
         ]
         if any(q.startswith(w) for w in conversational) or len(q.split()) <= 4:
             return "conversational"
 
         # Premium — explicit quality signals or long-form serious work
         premium_keywords = [
-            "best possible", "use your best", "use claude sonnet",
-            "use sonnet", "most thorough", "spare no detail",
-            "write a full", "write a complete", "professional report",
-            "cover letter", "business plan", "legal", "medical",
+            "best possible",
+            "use your best",
+            "use claude sonnet",
+            "use sonnet",
+            "most thorough",
+            "spare no detail",
+            "write a full",
+            "write a complete",
+            "professional report",
+            "cover letter",
+            "business plan",
+            "legal",
+            "medical",
         ]
         if any(kw in q for kw in premium_keywords):
             return "premium"
 
         # Research / long-context (Gemini Flash excels here)
         research_keywords = [
-            "research", "summarize this", "summarise this",
-            "read this", "review this document", "long article",
-            "detailed breakdown", "in depth", "deep dive",
-            "comprehensive overview", "market research",
+            "research",
+            "summarize this",
+            "summarise this",
+            "read this",
+            "review this document",
+            "long article",
+            "detailed breakdown",
+            "in depth",
+            "deep dive",
+            "comprehensive overview",
+            "market research",
         ]
         if any(kw in q for kw in research_keywords):
             return "research"
 
         # Coding
         coding_keywords = [
-            "code", "write", "implement", "function", "debug", "fix",
-            "class", "method", "algorithm", "python", "javascript",
-            "typescript", "java", "rust", "golang", "sql", "script",
-            "program", "refactor", "bug", "error", "exception",
-            "dockerfile", "regex", "api", "endpoint", "test",
+            "code",
+            "write",
+            "implement",
+            "function",
+            "debug",
+            "fix",
+            "class",
+            "method",
+            "algorithm",
+            "python",
+            "javascript",
+            "typescript",
+            "java",
+            "rust",
+            "golang",
+            "sql",
+            "script",
+            "program",
+            "refactor",
+            "bug",
+            "error",
+            "exception",
+            "dockerfile",
+            "regex",
+            "api",
+            "endpoint",
+            "test",
         ]
         if any(kw in q for kw in coding_keywords):
             return "coding"
 
         # Complex reasoning
         complex_keywords = [
-            "analyze", "analyse", "compare", "evaluate", "strategy",
-            "explain in detail", "pros and cons", "trade-off",
-            "architecture", "design", "step by step", "breakdown",
-            "essay", "report", "plan",
+            "analyze",
+            "analyse",
+            "compare",
+            "evaluate",
+            "strategy",
+            "explain in detail",
+            "pros and cons",
+            "trade-off",
+            "architecture",
+            "design",
+            "step by step",
+            "breakdown",
+            "essay",
+            "report",
+            "plan",
         ]
         if any(kw in q for kw in complex_keywords):
             return "complex"
 
         # Simple lookup / facts
         simple_keywords = [
-            "what is", "who is", "when did", "where is", "define",
-            "meaning of", "capital of", "how many", "what does",
-            "convert", "translate", "spell", "calculate",
+            "what is",
+            "who is",
+            "when did",
+            "where is",
+            "define",
+            "meaning of",
+            "capital of",
+            "how many",
+            "what does",
+            "convert",
+            "translate",
+            "spell",
+            "calculate",
         ]
         if any(kw in q for kw in simple_keywords):
             return "simple"
 
         return "balanced"
+
+    def complexity_mode(self) -> str:
+        cfg = get_pillar_config()
+        ex = (cfg.get("orchestration") or {}).get("execution") or {}
+        return str(ex.get("complexity_threshold") or "keyword").strip().lower()
+
+    async def _classify_query_llm(self, query: str) -> str:
+        """Single-label routing; falls back to keyword classifier on any error."""
+        rc = (get_pillar_config().get("llm") or {}).get("routing_classifier") or {}
+        model = str(rc.get("model") or settings.DEFAULT_MODEL_FREE)
+        client = _openrouter_client()
+        prompt = (
+            "Classify the user message into exactly one category. "
+            "Reply with only one word from this list, lowercase: "
+            "conversational, simple, coding, research, complex, premium, balanced.\n\n"
+            f"Message:\n{query[:4000]}\n\nCategory:"
+        )
+        try:
+            resp = await client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=16,
+                temperature=0,
+            )
+            raw = (resp.choices[0].message.content or "").strip().lower()
+            label = raw.split()[0].rstrip(".,;:") if raw else ""
+            allowed = {
+                "conversational",
+                "simple",
+                "coding",
+                "research",
+                "complex",
+                "premium",
+                "balanced",
+            }
+            if label in allowed:
+                return label
+        except Exception as e:
+            logger.debug("LLM routing classifier failed: %s", e)
+        return self._classify(query)
 
     def select_for_run(
         self,
@@ -203,7 +337,9 @@ class ModelRouter:
             # Tool/ReAct runs always use the agent tier (reliable function calling).
             # Still respect budget floor — fall back to cheapest if nearly depleted.
             if budget_remaining < 2.0:
-                logger.warning(f"Budget critical (${budget_remaining:.2f}) — forcing free model for tool run")
+                logger.warning(
+                    f"Budget critical (${budget_remaining:.2f}) — forcing free model for tool run"
+                )
                 return self.MODELS["free"]["model"]
             return self.MODELS["agent"]["model"]
         return self.select_model(query, budget_remaining=budget_remaining)
@@ -212,7 +348,9 @@ class ModelRouter:
         """Return True if the query warrants a planning pass before execution."""
         return self._classify(query) in ("complex", "research")
 
-    def should_plan(self, query: str, has_tools: bool, has_history: bool = False) -> bool:
+    def should_plan(
+        self, query: str, has_tools: bool, has_history: bool = False
+    ) -> bool:
         """
         Decide whether the orchestrator should run a planning pass.
 
@@ -221,6 +359,16 @@ class ModelRouter:
         """
         if not has_tools or has_history:
             return False
+        return self.is_complex(query)
+
+    async def should_plan_async(
+        self, query: str, has_tools: bool, has_history: bool = False
+    ) -> bool:
+        if not has_tools or has_history:
+            return False
+        if self.complexity_mode() == "llm_classifier" and settings.OPENROUTER_API_KEY:
+            qt = await self._classify_query_llm(query)
+            return qt in ("complex", "research")
         return self.is_complex(query)
 
     def is_worth_remembering(self, query: str) -> bool:
@@ -294,7 +442,11 @@ class ModelRouter:
         if len(q.split()) <= 12 and (
             any(q.startswith(prefix) for prefix in followup_prefixes)
             or any(phrase in q for phrase in transactional_edits)
-            or (q.startswith("can you") and any(ref in q for ref in followup_refs) and len(q.split()) <= 8)
+            or (
+                q.startswith("can you")
+                and any(ref in q for ref in followup_refs)
+                and len(q.split()) <= 8
+            )
         ):
             return False
 
@@ -318,6 +470,34 @@ class ModelRouter:
 
     def get_available_models(self) -> dict:
         return self.MODELS
+
+    def tier_key_for_model(self, model: str) -> Optional[str]:
+        """Return router tier key (e.g. agent, simple) for a concrete model id."""
+        for tier_key, meta in self.MODELS.items():
+            if meta.get("model") == model:
+                return tier_key
+        return None
+
+    def sampling_params_for_model(self, model: str) -> dict[str, float]:
+        """
+        temperature / top_p from agent_pillars.yaml for the tier that owns this model.
+        Falls back to sensible defaults if yaml is missing or tier unknown.
+        """
+        defaults = {"temperature": 0.7, "top_p": 0.9}
+        tier = self.tier_key_for_model(model)
+        yaml_tier = _ROUTER_TIER_TO_YAML.get(tier or "", "simple")
+        cfg = get_pillar_config()
+        tiers = (cfg.get("llm") or {}).get("model_tiers") or {}
+        spec = tiers.get(yaml_tier) or tiers.get("simple") or {}
+        try:
+            temperature = float(spec.get("temperature", defaults["temperature"]))
+        except (TypeError, ValueError):
+            temperature = defaults["temperature"]
+        try:
+            top_p = float(spec.get("top_p", defaults["top_p"]))
+        except (TypeError, ValueError):
+            top_p = defaults["top_p"]
+        return {"temperature": temperature, "top_p": top_p}
 
     def get_next_fallback(self, current_model: str) -> Optional[str]:
         """Get next model in fallback chain after current fails."""

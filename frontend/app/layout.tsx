@@ -6,6 +6,12 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'AI Agent System',
   description: 'Personal AI co-worker dashboard',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    title: 'AI Agent',
+    statusBarStyle: 'default',
+  },
 }
 
 const displayFont = Orbitron({
