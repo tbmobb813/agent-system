@@ -1299,6 +1299,7 @@ export default function AgentExecutor() {
     history: 'loading',
   })
   const quickActionsRef = useRef<HTMLDivElement>(null)
+  const quickActionsButtonRef = useRef<HTMLButtonElement>(null)
   const router = useRouter()
   const { events, isRunning, error, conversationId, run, reset, stop, newConversation } = useAgentStream()
 
@@ -1371,9 +1372,20 @@ export default function AgentExecutor() {
       if (!root || root.contains(ev.target as Node)) return
       setQuickActionsOpen(false)
     }
+    const onDocKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key !== 'Escape') return
+      if (reasoningArgModal || helpModalOpen || modelsModalOpen || opsModalOpen) return
+      ev.preventDefault()
+      setQuickActionsOpen(false)
+      queueMicrotask(() => quickActionsButtonRef.current?.focus())
+    }
     document.addEventListener('mousedown', onDocMouseDown)
-    return () => document.removeEventListener('mousedown', onDocMouseDown)
-  }, [quickActionsOpen])
+    document.addEventListener('keydown', onDocKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onDocMouseDown)
+      document.removeEventListener('keydown', onDocKeyDown)
+    }
+  }, [quickActionsOpen, reasoningArgModal, helpModalOpen, modelsModalOpen, opsModalOpen])
 
   useEffect(() => {
     if (reasoningArgModal || helpModalOpen || modelsModalOpen) {
@@ -2689,10 +2701,10 @@ export default function AgentExecutor() {
               </label>
               <div className="relative z-50" ref={quickActionsRef}>
                 <button
+                  ref={quickActionsButtonRef}
                   type="button"
                   onClick={() => setQuickActionsOpen((v) => !v)}
                   className="btn-ghost rounded-md px-2.5 py-1 text-xs"
-                  aria-haspopup="menu"
                   aria-expanded={quickActionsOpen}
                   aria-controls="quick-actions-menu"
                 >
@@ -2701,7 +2713,6 @@ export default function AgentExecutor() {
                 {quickActionsOpen && (
                   <div
                     id="quick-actions-menu"
-                    role="menu"
                     aria-label="Quick actions"
                     className="absolute right-0 top-full z-50 mt-1 w-[min(18rem,calc(100vw-2rem))] overflow-hidden rounded-md border border-[color:var(--border)] bg-[color:var(--bg)] font-sans shadow-lg ring-1 ring-[color:var(--border)]/30"
                   >
@@ -2713,7 +2724,6 @@ export default function AgentExecutor() {
                         <button
                           key={row.id}
                           type="button"
-                          role="menuitem"
                           className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-[color:var(--surface-soft)]/70"
                           onClick={() => {
                             const el = queryInputRef.current
