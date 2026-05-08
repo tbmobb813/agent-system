@@ -2541,8 +2541,7 @@ export default function AgentExecutor() {
       openOpsPanel,
       reset,
       router,
-      lastCompletedTurnMeta,
-      isDone,
+      tryOpenFeedbackPanel,
     ],
   )
 
