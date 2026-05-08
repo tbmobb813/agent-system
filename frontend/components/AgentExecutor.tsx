@@ -2163,18 +2163,7 @@ export default function AgentExecutor() {
 
       if (row.pick.type === 'action_feedback_panel') {
         if (slashSc) stripSlashAndFocus(slashSc.start)
-        if (lastCompletedTurnMeta?.taskId && isDone) {
-          setFeedbackCmdHint(null)
-          queueMicrotask(() => {
-            const el = feedbackDetailsRef.current
-            if (!el) return
-            el.open = true
-            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-          })
-        } else {
-          setFeedbackCmdHint('Finish a run first, then use the star icon under the latest reply or /feedback.')
-          window.setTimeout(() => setFeedbackCmdHint(null), 4500)
-        }
+        tryOpenFeedbackPanel()
         return
       }
 
