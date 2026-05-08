@@ -38,6 +38,7 @@ type SuggestPick =
   /** Insert `text` then open the reasoning-effort dialog (same as typing `/reasoning `). */
   | { type: 'replace_then_reasoning_modal'; text: string }
   | { type: 'expand_context' }
+  | { type: 'action_feedback_panel' }
   | { type: 'action_new_thread' }
   | { type: 'action_stop' }
   | { type: 'action_help_modal' }
@@ -125,6 +126,13 @@ type SlashRootDef =
       key: string
       label: string
       hint: string
+      kind: 'action_feedback_panel'
+    }
+  | {
+      id: string
+      key: string
+      label: string
+      hint: string
       kind: 'action_new_thread'
     }
   | {
@@ -191,8 +199,7 @@ const SLASH_ROOT: SlashRootDef[] = [
     key: 'feedback',
     label: '/feedback',
     hint: 'Rate the latest reply',
-    kind: 'replace',
-    text: '/feedback ',
+    kind: 'action_feedback_panel',
   },
   {
     id: 'slash-re',
@@ -268,6 +275,8 @@ function slashRootToPick(r: SlashRootDef): SuggestPick {
       return { type: 'replace', text: r.text }
     case 'replace_then_reasoning_modal':
       return { type: 'replace_then_reasoning_modal', text: r.text }
+    case 'action_feedback_panel':
+      return { type: 'action_feedback_panel' }
     case 'action_new_thread':
       return { type: 'action_new_thread' }
     case 'action_stop':
@@ -284,6 +293,33 @@ function slashRootToPick(r: SlashRootDef): SuggestPick {
       return { type: 'action_models_modal' }
     case 'action_navigate':
       return { type: 'action_navigate', path: r.path }
+  }
+}
+
+function labelForQuickAction(r: SlashRootDef): string {
+  switch (r.key) {
+    case 'new':
+      return 'New conversation'
+    case 'stop':
+      return 'Stop current run'
+    case 'clear':
+      return 'Clear transcript'
+    case 'copy':
+      return 'Copy thread'
+    case 'download':
+      return 'Download thread'
+    case 'models':
+      return 'View models'
+    case 'costs':
+      return 'Open costs'
+    case 'history':
+      return 'Open history'
+    case 'help':
+      return 'Open help'
+    case 'feedback':
+      return 'Rate latest reply'
+    default:
+      return r.label.replace(/^\//, '')
   }
 }
 
@@ -1141,6 +1177,7 @@ export default function AgentExecutor() {
   const [queryCursor, setQueryCursor] = useState(0)
   const [suggestDismissed, setSuggestDismissed] = useState(false)
   const [suggestHighlight, setSuggestHighlight] = useState(0)
+  const [quickActionsOpen, setQuickActionsOpen] = useState(false)
   const [reasoningArgModal, setReasoningArgModal] = useState<null | { from: number; to: number }>(null)
   const skipReasoningModalSig = useRef<string | null>(null)
   const queryRef = useRef(query)
@@ -1149,6 +1186,7 @@ export default function AgentExecutor() {
   const [modelsModalState, setModelsModalState] = useState<
     'loading' | { ok: Record<string, unknown> } | { err: string }
   >('loading')
+  const quickActionsRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
   const { events, isRunning, error, conversationId, run, reset, stop, newConversation } = useAgentStream()
 
@@ -1170,6 +1208,17 @@ export default function AgentExecutor() {
   const suggestionRows = useMemo(
     () => buildSuggestionRows(query, queryCursor, suggestDismissed, toolNames),
     [query, queryCursor, suggestDismissed, toolNames],
+  )
+
+  const quickActionRows = useMemo(
+    () =>
+      SLASH_ROOT.filter((r) => r.kind !== 'replace' && r.kind !== 'replace_then_reasoning_modal').map((r) => ({
+        id: `quick-${r.id}`,
+        label: labelForQuickAction(r),
+        hint: r.hint,
+        pick: slashRootToPick(r),
+      })),
+    [],
   )
 
   const slashMenuCtx = useMemo(
@@ -1202,6 +1251,23 @@ export default function AgentExecutor() {
     setReasoningArgModal({ from: ctx.start, to: queryCursor })
     setSuggestDismissed(true)
   }, [query, queryCursor, reasoningArgModal, helpModalOpen, modelsModalOpen])
+
+  useEffect(() => {
+    if (!quickActionsOpen) return
+    const onDocMouseDown = (ev: MouseEvent) => {
+      const root = quickActionsRef.current
+      if (!root || root.contains(ev.target as Node)) return
+      setQuickActionsOpen(false)
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    return () => document.removeEventListener('mousedown', onDocMouseDown)
+  }, [quickActionsOpen])
+
+  useEffect(() => {
+    if (reasoningArgModal || helpModalOpen || modelsModalOpen) {
+      setQuickActionsOpen(false)
+    }
+  }, [reasoningArgModal, helpModalOpen, modelsModalOpen])
 
   const commitReasoningArg = useCallback((opt: string, range: { from: number; to: number }) => {
     skipReasoningModalSig.current = null
@@ -1582,23 +1648,37 @@ export default function AgentExecutor() {
         return
       }
 
+      if (row.pick.type === 'action_feedback_panel') {
+        if (slashSc) stripSlashAndFocus(slashSc.start)
+        if (lastCompletedTurnMeta?.taskId && isDone) {
+          setFeedbackCmdHint(null)
+          queueMicrotask(() => {
+            const el = feedbackDetailsRef.current
+            if (!el) return
+            el.open = true
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+          })
+        } else {
+          setFeedbackCmdHint('Finish a run first, then use the star icon under the latest reply or /feedback.')
+          window.setTimeout(() => setFeedbackCmdHint(null), 4500)
+        }
+        return
+      }
+
       if (row.pick.type === 'action_help_modal') {
-        if (!slashSc) return
-        stripSlashAndFocus(slashSc.start)
+        if (slashSc) stripSlashAndFocus(slashSc.start)
         setHelpModalOpen(true)
         return
       }
 
       if (row.pick.type === 'action_clear') {
-        if (!slashSc) return
-        stripSlashAndFocus(slashSc.start)
+        if (slashSc) stripSlashAndFocus(slashSc.start)
         reset()
         return
       }
 
       if (row.pick.type === 'action_copy_thread') {
-        if (!slashSc) return
-        stripSlashAndFocus(slashSc.start)
+        if (slashSc) stripSlashAndFocus(slashSc.start)
         const text = buildThreadExportText(merged)
         if (!text.trim()) {
           setReasoningCmdHint('Nothing to copy yet.')
@@ -1619,37 +1699,32 @@ export default function AgentExecutor() {
       }
 
       if (row.pick.type === 'action_download_thread') {
-        if (!slashSc) return
-        stripSlashAndFocus(slashSc.start)
+        if (slashSc) stripSlashAndFocus(slashSc.start)
         handleDownloadThread()
         return
       }
 
       if (row.pick.type === 'action_models_modal') {
-        if (!slashSc) return
-        stripSlashAndFocus(slashSc.start)
+        if (slashSc) stripSlashAndFocus(slashSc.start)
         setModelsModalOpen(true)
         loadModelsForModal()
         return
       }
 
       if (row.pick.type === 'action_navigate') {
-        if (!slashSc) return
-        stripSlashAndFocus(slashSc.start)
+        if (slashSc) stripSlashAndFocus(slashSc.start)
         router.push(row.pick.path)
         return
       }
 
       if (row.pick.type === 'action_new_thread') {
-        if (!slashSc) return
-        stripSlashAndFocus(slashSc.start)
+        if (slashSc) stripSlashAndFocus(slashSc.start)
         newConversation()
         return
       }
 
       if (row.pick.type === 'action_stop') {
-        if (!slashSc) return
-        stripSlashAndFocus(slashSc.start)
+        if (slashSc) stripSlashAndFocus(slashSc.start)
         if (isRunning) void stop()
         else {
           setFeedbackCmdHint('Nothing is running.')
@@ -1670,7 +1745,19 @@ export default function AgentExecutor() {
         focusPos(atTrig.start)
       }
     },
-    [query, isRunning, newConversation, stop, merged, handleDownloadThread, loadModelsForModal, reset, router],
+    [
+      query,
+      isRunning,
+      newConversation,
+      stop,
+      merged,
+      handleDownloadThread,
+      loadModelsForModal,
+      reset,
+      router,
+      lastCompletedTurnMeta,
+      isDone,
+    ],
   )
 
   const handleResendEdited = useCallback(() => {
@@ -1780,6 +1867,12 @@ export default function AgentExecutor() {
     const el = e.currentTarget
     const cursor = el.selectionStart ?? query.length
     setQueryCursor(cursor)
+
+    if (quickActionsOpen && e.key === 'Escape') {
+      e.preventDefault()
+      setQuickActionsOpen(false)
+      return
+    }
 
     if (reasoningArgModal) {
       if (e.key === 'Escape') {
@@ -2041,7 +2134,7 @@ export default function AgentExecutor() {
               <div>
                 <p>Start chatting to see responses here.</p>
                 <p className="text-xs text-muted/90 mt-2">
-                  Enter to send, Shift+Enter for newline. After each reply, copy or rate from the row next to cost; download the full thread from the latest reply. Use <span className="font-mono">Edit & resend</span> (below the message box) to retry with changes. Put <span className="font-mono">/</span> at the <strong className="text-[color:var(--text)] font-normal">start of a line</strong> for commands (<span className="font-mono">/reasoning</span> opens a picker; <span className="font-mono">/new</span>, <span className="font-mono">/stop</span>, <span className="font-mono">/feedback</span>) or <span className="font-mono">@</span> after whitespace for snippets and tools.
+                  Enter to send, Shift+Enter for newline. Use <span className="font-mono">Actions</span> beside the message box for quick operations (new thread, stop, copy, feedback, history). You can still type <span className="font-mono">/</span> at the <strong className="text-[color:var(--text)] font-normal">start of a line</strong> for command palette shortcuts, or <span className="font-mono">@</span> after whitespace for snippets and tools.
                 </p>
               </div>
             </div>
@@ -2081,9 +2174,54 @@ export default function AgentExecutor() {
             />
           </details>
           <div>
-            <label className="block text-sm text-muted mb-1" htmlFor="agent-message-input">
-              Message
-            </label>
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <label className="block text-sm text-muted" htmlFor="agent-message-input">
+                Message
+              </label>
+              <div className="relative z-50" ref={quickActionsRef}>
+                <button
+                  type="button"
+                  onClick={() => setQuickActionsOpen((v) => !v)}
+                  className="btn-ghost rounded-md px-2.5 py-1 text-xs"
+                  aria-haspopup="menu"
+                  aria-expanded={quickActionsOpen}
+                  aria-controls="quick-actions-menu"
+                >
+                  Actions
+                </button>
+                {quickActionsOpen && (
+                  <div
+                    id="quick-actions-menu"
+                    role="menu"
+                    aria-label="Quick actions"
+                    className="absolute right-0 top-full z-50 mt-1 w-[min(18rem,calc(100vw-2rem))] overflow-hidden rounded-md border border-[color:var(--border)] bg-[color:var(--bg)] font-sans shadow-lg ring-1 ring-[color:var(--border)]/30"
+                  >
+                    <div className="border-b border-[color:var(--border)]/70 bg-[color:var(--surface-soft)]/45 px-3 py-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Quick Actions</p>
+                    </div>
+                    <div className="max-h-72 overflow-y-auto py-1">
+                      {quickActionRows.map((row) => (
+                        <button
+                          key={row.id}
+                          type="button"
+                          role="menuitem"
+                          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-[color:var(--surface-soft)]/70"
+                          onClick={() => {
+                            const el = queryInputRef.current
+                            const c = el?.selectionStart ?? queryCursor
+                            applySuggestionPick(row, c)
+                            setQuickActionsOpen(false)
+                          }}
+                        >
+                          <span className="text-[color:var(--text)]">{row.label}</span>
+                          <span className="max-w-[9rem] text-right text-[11px] leading-snug text-muted line-clamp-2">{row.hint}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
             <div className="relative isolate z-30">
             {suggestionRows.length > 0 && !isRunning && (
               <div
@@ -2166,7 +2304,7 @@ export default function AgentExecutor() {
               onClick={(e) => setQueryCursor(e.currentTarget.selectionStart ?? query.length)}
               onSelect={(e) => setQueryCursor(e.currentTarget.selectionStart ?? query.length)}
               onKeyDown={handleKeyDown}
-              placeholder="Message — / at line start for commands, @ for inserts. Enter send · Shift+Enter newline"
+              placeholder="Message — use Actions for quick tasks, / for command palette, @ for inserts. Enter send · Shift+Enter newline"
               rows={2}
               disabled={isRunning}
               className="relative z-10 w-full bg-[color:var(--bg-elev)] rounded-lg px-3 py-2 text-sm border border-[color:var(--border)] focus:outline-none focus:border-[color:var(--accent)] resize-none disabled:opacity-50"
@@ -2322,10 +2460,10 @@ export default function AgentExecutor() {
           <div className="relative z-10 w-full max-w-lg rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] shadow-2xl ring-1 ring-[color:var(--border)]/40">
             <div className="border-b border-[color:var(--border)]/80 px-4 py-3">
               <h2 id="slash-help-title" className="text-sm font-semibold text-[color:var(--text)]">
-                Slash commands
+                Quick actions & slash commands
               </h2>
               <p className="mt-1 text-xs text-muted">
-                Type <span className="font-mono">/</span> at the start of a line in the message box to open the palette, or enter a command and press Enter.
+                Use the <span className="font-mono">Actions</span> button next to the message box for common tasks, or type <span className="font-mono">/</span> at the start of a line to open the slash palette.
               </p>
             </div>
             <div className="max-h-[min(60vh,22rem)] overflow-y-auto px-4 py-3 text-sm">
