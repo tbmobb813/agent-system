@@ -1209,10 +1209,8 @@ type QuickActionsMenuProps = {
   isRunning: boolean
   hasMessages: boolean
   hasLastMessage: boolean
-  conversationId: string | null
   reasoningEffortLabel: string
   threadExportEmpty: boolean
-  onClose: () => void
   onNewConversation: () => void
   onStop: () => void
   onClear: () => void
@@ -1267,6 +1265,7 @@ function QuickActionsMenu({
             </svg>
           ),
           label: 'New conversation',
+          disabled: isRunning,
           action: onNewConversation,
         },
         {
@@ -1433,7 +1432,6 @@ function QuickActionsMenu({
   return (
     <div
       className="absolute left-0 bottom-full z-50 mb-2 w-72 rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] shadow-2xl ring-1 ring-[color:var(--border)]/20 font-sans overflow-hidden"
-      role="menu"
       aria-label="Quick actions"
     >
       {groups.map((group, gi) => (
@@ -1446,7 +1444,6 @@ function QuickActionsMenu({
             <button
               key={item.id}
               type="button"
-              role="menuitem"
               disabled={item.disabled}
               onClick={item.action}
               className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors disabled:opacity-40 disabled:pointer-events-none ${
@@ -1587,6 +1584,7 @@ export default function AgentExecutor() {
     setReasoningArgModal(null)
     // Direct (button-triggered) path: set effort without inserting slash text
     if (range.from === -1) {
+      setSuggestDismissed(true)
       if (opt === 'default' || opt === 'clear' || opt === 'env') {
         setReasoningEffortForRequest(undefined)
       } else if (opt === 'off' || opt === 'disable') {
@@ -2976,17 +2974,15 @@ export default function AgentExecutor() {
                       isRunning={isRunning}
                       hasMessages={merged.length > 0 || !!error}
                       hasLastMessage={!!lastUserMessage}
-                      conversationId={conversationId}
                       reasoningEffortLabel={reasoningEffortLabel}
                       threadExportEmpty={!responseText.trim()}
-                      onClose={() => setQuickActionsOpen(false)}
                       onNewConversation={() => { newConversation(); setQuickActionsOpen(false) }}
                       onStop={() => { void stop(); setQuickActionsOpen(false) }}
                       onClear={() => { reset(); setQuickActionsOpen(false) }}
                       onOpenOps={(panel) => { openOpsPanel(panel); setQuickActionsOpen(false) }}
                       onOpenModels={() => { setModelsModalOpen(true); loadModelsForModal(); setQuickActionsOpen(false) }}
                       onOpenHelp={() => { setHelpModalOpen(true); setQuickActionsOpen(false) }}
-                      onOpenReasoningPicker={() => { setReasoningArgModal({ from: -1, to: -1 }); setQuickActionsOpen(false) }}
+                      onOpenReasoningPicker={() => { setSuggestDismissed(true); setReasoningArgModal({ from: -1, to: -1 }); setQuickActionsOpen(false) }}
                       onCopyThread={() => {
                         const text = buildThreadExportText(merged)
                         if (!text.trim()) {
@@ -3039,7 +3035,7 @@ export default function AgentExecutor() {
               {/* Reasoning effort chip */}
               <button
                 type="button"
-                onClick={() => setReasoningArgModal({ from: -1, to: -1 })}
+                onClick={() => { setSuggestDismissed(true); setReasoningArgModal({ from: -1, to: -1 }) }}
                 className="btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-muted hover:text-[color:var(--text)] transition-colors"
                 title="Set reasoning effort"
               >
