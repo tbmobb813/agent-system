@@ -368,6 +368,30 @@ function filterRootSlashRows(filter: string): SuggestRow[] {
   }))
 }
 
+function slashRootByKey(key: string): SlashRootDef | undefined {
+  return SLASH_ROOT.find((r) => r.key === key)
+}
+
+/** Quick Actions row titles — keyed like slash commands; overrides where `/name` isn’t a good menu title. */
+function quickMenuTitle(key: string): string {
+  const special: Partial<Record<string, string>> = {
+    new: 'New conversation',
+    clear: 'Clear thread',
+    mcp: 'MCP servers',
+    models: 'Agent models',
+    stats: 'Stats & costs',
+    feedback: 'Rate this reply',
+    help: 'Help & shortcuts',
+    copy: 'Copy thread',
+    download: 'Download thread',
+  }
+  if (special[key]) return special[key]!
+  const def = slashRootByKey(key)
+  if (!def) return key
+  const s = def.label.replace(/^\//, '')
+  return s.length ? s.charAt(0).toUpperCase() + s.slice(1) : key
+}
+
 /** Shown after `/reasoning ` — order: common levels first, then extras. */
 const REASONING_SUB_KEYS = [
   'off',
@@ -1262,6 +1286,10 @@ function QuickActionsMenu({
   }
   type ActionGroup = { label: string; items: ActionItem[] }
 
+  const qh = (key: string) => slashRootByKey(key)?.hint
+  const statsHint =
+    [slashRootByKey('costs')?.hint, slashRootByKey('stats')?.hint].filter(Boolean).join(' · ') || undefined
+
   const groups: ActionGroup[] = [
     {
       label: 'Conversation',
@@ -1273,7 +1301,8 @@ function QuickActionsMenu({
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
             </svg>
           ),
-          label: 'New conversation',
+          label: quickMenuTitle('new'),
+          hint: qh('new'),
           disabled: isRunning,
           action: onNewConversation,
         },
@@ -1295,7 +1324,8 @@ function QuickActionsMenu({
               <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" />
             </svg>
           ),
-          label: 'Clear thread',
+          label: quickMenuTitle('clear'),
+          hint: qh('clear'),
           disabled: !hasMessages || isRunning,
           action: onClear,
         },
@@ -1306,8 +1336,8 @@ function QuickActionsMenu({
               <rect x="4" y="4" width="16" height="16" rx="2" />
             </svg>
           ),
-          label: 'Stop',
-          hint: 'Stop the current run',
+          label: quickMenuTitle('stop'),
+          hint: qh('stop'),
           disabled: !isRunning,
           danger: true,
           action: onStop,
@@ -1324,8 +1354,8 @@ function QuickActionsMenu({
               <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
             </svg>
           ),
-          label: 'Tools',
-          hint: 'Enable / disable tools',
+          label: quickMenuTitle('tools'),
+          hint: qh('tools'),
           action: () => onOpenOps('tools'),
         },
         {
@@ -1335,8 +1365,8 @@ function QuickActionsMenu({
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
             </svg>
           ),
-          label: 'Skills',
-          hint: 'Skill usage & availability',
+          label: quickMenuTitle('skills'),
+          hint: qh('skills'),
           action: () => onOpenOps('skills'),
         },
         {
@@ -1346,8 +1376,8 @@ function QuickActionsMenu({
               <rect x="2" y="7" width="20" height="14" rx="2" ry="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
             </svg>
           ),
-          label: 'MCP servers',
-          hint: 'Health & readiness',
+          label: quickMenuTitle('mcp'),
+          hint: qh('mcp'),
           action: () => onOpenOps('mcp'),
         },
         {
@@ -1357,8 +1387,8 @@ function QuickActionsMenu({
               <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
             </svg>
           ),
-          label: 'History',
-          hint: 'Recent run log',
+          label: quickMenuTitle('history'),
+          hint: qh('history'),
           action: () => onOpenOps('history'),
         },
         {
@@ -1368,8 +1398,8 @@ function QuickActionsMenu({
               <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
             </svg>
           ),
-          label: 'Stats & costs',
-          hint: 'Budget and latency',
+          label: quickMenuTitle('stats'),
+          hint: statsHint,
           action: () => onOpenOps('stats'),
         },
       ],
@@ -1384,8 +1414,8 @@ function QuickActionsMenu({
               <circle cx="12" cy="12" r="3" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
             </svg>
           ),
-          label: 'Agent models',
-          hint: 'Routing & model list',
+          label: quickMenuTitle('models'),
+          hint: qh('models'),
           action: onOpenModels,
         },
         {
@@ -1396,7 +1426,7 @@ function QuickActionsMenu({
             </svg>
           ),
           label: `Reasoning: ${reasoningEffortLabel}`,
-          hint: 'Set reasoning effort level',
+          hint: qh('reasoning'),
           action: onOpenReasoningPicker,
         },
       ],
@@ -1407,21 +1437,24 @@ function QuickActionsMenu({
         {
           id: 'copy',
           icon: <IconClipboard />,
-          label: 'Copy thread',
+          label: quickMenuTitle('copy'),
+          hint: qh('copy'),
           disabled: threadExportEmpty,
           action: onCopyThread,
         },
         {
           id: 'download',
           icon: <IconDownload />,
-          label: 'Download thread',
+          label: quickMenuTitle('download'),
+          hint: qh('download'),
           disabled: threadExportEmpty,
           action: onDownloadThread,
         },
         {
           id: 'feedback',
           icon: <IconStar />,
-          label: 'Rate this reply',
+          label: quickMenuTitle('feedback'),
+          hint: qh('feedback'),
           action: onFeedback,
         },
         {
@@ -1431,7 +1464,8 @@ function QuickActionsMenu({
               <circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" />
             </svg>
           ),
-          label: 'Help & shortcuts',
+          label: quickMenuTitle('help'),
+          hint: qh('help'),
           action: onOpenHelp,
         },
       ],
