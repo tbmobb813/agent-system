@@ -20,16 +20,18 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 
 from app.config import settings
-from app.models import AgentRequest, AgentResponse
+from app.models import AgentRequest, AgentResponse, WorkflowRunRequest
 from app.utils.auth import verify_api_key
 from app.utils.limiter import limiter
 from app.utils.streaming import format_sse_event
-from app.database import execute
+from app.database import execute, fetch
 from app import database as _db
+from app.routes.schedules import router as schedules_router
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agent", tags=["agent"])
+router.include_router(schedules_router)
 
 
 def _orchestrator(request: Request):
@@ -511,3 +513,75 @@ async def list_models(api_key: str = Depends(verify_api_key)):
         "models": router_instance.get_available_models(),
         "routing_strategy": "complexity_based",
     }
+
+
+@router.get("/stats")
+@limiter.limit("30/minute")
+async def agent_latency_stats(
+    request: Request,
+    days: int = Query(7, ge=1, le=90),
+    api_key: str = Depends(verify_api_key),
+):
+    """p50/p95/p99 latency by endpoint from ``latency_metrics`` (if table exists)."""
+    if not _db.db_pool:
+        return {
+            "window_days": days,
+            "latency_by_endpoint": [],
+            "note": "database_unavailable",
+        }
+    try:
+        rows = await fetch(
+            """
+            SELECT endpoint,
+                   percentile_disc(0.5) WITHIN GROUP (ORDER BY duration_ms) AS p50_ms,
+                   percentile_disc(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95_ms,
+                   percentile_disc(0.99) WITHIN GROUP (ORDER BY duration_ms) AS p99_ms,
+                   COUNT(*)::bigint AS n
+            FROM latency_metrics
+            WHERE created_at >= (NOW() - ($1::int * INTERVAL '1 day'))
+            GROUP BY endpoint
+            ORDER BY endpoint
+            """,
+            days,
+        )
+    except Exception as e:
+        logger.debug("latency stats query failed: %s", e)
+        return {
+            "window_days": days,
+            "latency_by_endpoint": [],
+            "note": "latency_metrics_unavailable",
+        }
+
+    return {
+        "window_days": days,
+        "latency_by_endpoint": [
+            {
+                "endpoint": r["endpoint"],
+                "p50_ms": float(r["p50_ms"]) if r["p50_ms"] is not None else None,
+                "p95_ms": float(r["p95_ms"]) if r["p95_ms"] is not None else None,
+                "p99_ms": float(r["p99_ms"]) if r["p99_ms"] is not None else None,
+                "n": int(r["n"]),
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.post("/workflows/{name}/run")
+@limiter.limit("10/minute")
+async def run_declared_workflow(
+    request: Request,
+    name: str,
+    body: WorkflowRunRequest,
+    api_key: str = Depends(verify_api_key),
+):
+    """Run a YAML workflow from ``backend/data/workflows/{name}.yaml``."""
+    from app.agent.workflows import run_named_workflow
+
+    orchestrator = _orchestrator(request)
+    try:
+        return await run_named_workflow(orchestrator, name, user_id=body.user_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Workflow {name!r} not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

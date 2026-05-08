@@ -1,3 +1,7 @@
+from unittest.mock import AsyncMock
+
+import pytest
+
 from app.agent.router import ModelRouter
 
 
@@ -100,6 +104,105 @@ def test_should_plan_false_for_follow_up_with_history():
         )
         is False
     )
+
+
+@pytest.mark.asyncio
+async def test_should_plan_async_matches_keyword_path_by_default():
+    router = ModelRouter()
+
+    assert (
+        await router.should_plan_async(
+            query="Compare two architectures with pros and cons",
+            has_tools=True,
+            has_history=False,
+        )
+        is True
+    )
+    assert (
+        await router.should_plan_async(
+            query="Compare two architectures with pros and cons",
+            has_tools=False,
+            has_history=False,
+        )
+        is False
+    )
+
+
+@pytest.mark.asyncio
+async def test_should_plan_async_llm_classifier_respects_llm_label(monkeypatch):
+    def pillars_llm():
+        return {
+            "orchestration": {
+                "execution": {"complexity_threshold": "llm_classifier"},
+            },
+            "llm": {
+                "routing_classifier": {"model": "meta-llama/llama-3.1-8b-instruct:free"}
+            },
+        }
+
+    monkeypatch.setattr("app.agent.router.get_pillar_config", pillars_llm)
+    monkeypatch.setattr("app.config.settings.OPENROUTER_API_KEY", "sk-test")
+
+    router = ModelRouter()
+    router._classify_query_llm = AsyncMock(return_value="coding")
+
+    # Keyword path would be "coding" → not complex; LLM says coding → no plan
+    assert (
+        await router.should_plan_async(
+            query="Debug this Python traceback",
+            has_tools=True,
+            has_history=False,
+        )
+        is False
+    )
+
+    router._classify_query_llm = AsyncMock(return_value="complex")
+    assert (
+        await router.should_plan_async(
+            query="Debug this Python traceback",
+            has_tools=True,
+            has_history=False,
+        )
+        is True
+    )
+
+
+@pytest.mark.asyncio
+async def test_should_plan_async_without_api_key_uses_keyword_even_if_yaml_llm_mode(
+    monkeypatch,
+):
+    def pillars_llm():
+        return {
+            "orchestration": {
+                "execution": {"complexity_threshold": "llm_classifier"},
+            },
+        }
+
+    monkeypatch.setattr("app.agent.router.get_pillar_config", pillars_llm)
+    monkeypatch.setattr("app.config.settings.OPENROUTER_API_KEY", "")
+
+    router = ModelRouter()
+
+    assert (
+        await router.should_plan_async(
+            query="Compare two architectures with pros and cons",
+            has_tools=True,
+            has_history=False,
+        )
+        is True
+    )
+
+
+def test_complexity_mode_reads_pillars(monkeypatch):
+    def pillars():
+        return {
+            "orchestration": {
+                "execution": {"complexity_threshold": "llm_classifier"},
+            },
+        }
+
+    monkeypatch.setattr("app.agent.router.get_pillar_config", pillars)
+    assert ModelRouter().complexity_mode() == "llm_classifier"
 
 
 def test_should_remember_false_for_followup_transactional_edit():

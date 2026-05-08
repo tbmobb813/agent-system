@@ -2,8 +2,10 @@
 """
 Evaluation harness for agent-system.
 
-Initial scope:
-- Router behavior checks (query -> expected tier)
+Scope:
+- Router behavior (query -> expected tier)
+- Static text pattern checks (must_contain / must_not_contain)
+- Tool trace expectations (expected_tools_called) against a recorded trace
 
 Usage:
   python backend/evals/run_eval_harness.py
@@ -52,6 +54,84 @@ def _run_router_tier_case(router: ModelRouter, case: dict[str, Any]) -> EvalResu
     )
 
 
+def _run_agent_model_case(router: ModelRouter, case: dict[str, Any]) -> EvalResult:
+    """When tools are enabled, select_for_run picks agent tier unless budget forces free."""
+    case_id = str(case.get("id", "unknown"))
+    query = str(case.get("input", "test"))
+    budget = float(case.get("budget_remaining", 30.0))
+    expect = str(case.get("expect_model_tier", "agent")).strip().lower()
+    if expect == "free":
+        expected = router.MODELS["free"]["model"]
+    else:
+        expected = router.MODELS["agent"]["model"]
+    actual = router.select_for_run(query, has_tools=True, budget_remaining=budget)
+    return EvalResult(
+        case_id=case_id,
+        case_type="router_agent_model",
+        passed=(actual == expected),
+        expected=expected,
+        actual=actual,
+    )
+
+
+def _run_static_text_case(case: dict[str, Any]) -> EvalResult:
+    case_id = str(case.get("id", "unknown"))
+    text = str(case.get("text", ""))
+    must_contain = case.get("must_contain") or []
+    must_not_contain = case.get("must_not_contain") or []
+    failures: list[str] = []
+
+    if isinstance(must_contain, str):
+        must_contain = [must_contain]
+    if isinstance(must_not_contain, str):
+        must_not_contain = [must_not_contain]
+
+    for s in must_contain:
+        if str(s) not in text:
+            failures.append(f"missing:{s!r}")
+    for s in must_not_contain:
+        if str(s) in text:
+            failures.append(f"forbidden_present:{s!r}")
+
+    passed = len(failures) == 0
+    return EvalResult(
+        case_id=case_id,
+        case_type="static_text",
+        passed=passed,
+        expected=f"must_contain={must_contain!r}; must_not_contain={must_not_contain!r}",
+        actual="ok" if passed else "; ".join(failures),
+    )
+
+
+def _run_tool_trace_case(case: dict[str, Any]) -> EvalResult:
+    case_id = str(case.get("id", "unknown"))
+    tools_called = case.get("tools_called") or []
+    expected_tools = case.get("expected_tools_called") or []
+    forbidden = case.get("forbidden_tools_called") or []
+
+    if not isinstance(tools_called, list):
+        tools_called = []
+    if not isinstance(expected_tools, list):
+        expected_tools = []
+    if not isinstance(forbidden, list):
+        forbidden = []
+
+    tools_set = set(str(t) for t in tools_called)
+    missing = [t for t in expected_tools if str(t) not in tools_set]
+    bad = [t for t in forbidden if str(t) in tools_set]
+
+    passed = not missing and not bad
+    return EvalResult(
+        case_id=case_id,
+        case_type="tool_trace",
+        passed=passed,
+        expected=f"need {expected_tools!r}, forbid {forbidden!r}",
+        actual=f"got {list(tools_called)!r}"
+        + (f"; missing {missing!r}" if missing else "")
+        + (f"; forbidden_hit {bad!r}" if bad else ""),
+    )
+
+
 def run_eval_cases(case_file: Path) -> tuple[list[EvalResult], float]:
     data = json.loads(case_file.read_text(encoding="utf-8"))
     cases = data.get("cases", [])
@@ -67,6 +147,15 @@ def run_eval_cases(case_file: Path) -> tuple[list[EvalResult], float]:
         case_type = case.get("type")
         if case_type == "router_tier":
             results.append(_run_router_tier_case(router, case))
+            continue
+        if case_type == "router_agent_model":
+            results.append(_run_agent_model_case(router, case))
+            continue
+        if case_type == "static_text":
+            results.append(_run_static_text_case(case))
+            continue
+        if case_type == "tool_trace":
+            results.append(_run_tool_trace_case(case))
             continue
 
         results.append(
@@ -97,7 +186,9 @@ def print_human(results: list[EvalResult], score: float) -> None:
             print(f"         expected: {r.expected}")
             print(f"         actual:   {r.actual}")
     print()
-    print(f"  Score: {score:.1f}% ({sum(1 for r in results if r.passed)}/{len(results)})")
+    print(
+        f"  Score: {score:.1f}% ({sum(1 for r in results if r.passed)}/{len(results)})"
+    )
 
 
 def print_json(results: list[EvalResult], score: float) -> None:
@@ -127,8 +218,12 @@ def main() -> None:
         help="Path to eval test cases JSON",
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument("--ci", action="store_true", help="Exit 1 if score is below threshold")
-    parser.add_argument("--min-score", type=float, default=80.0, help="CI minimum score percentage")
+    parser.add_argument(
+        "--ci", action="store_true", help="Exit 1 if score is below threshold"
+    )
+    parser.add_argument(
+        "--min-score", type=float, default=80.0, help="CI minimum score percentage"
+    )
     args = parser.parse_args()
 
     case_file = Path(args.cases).resolve()

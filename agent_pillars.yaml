@@ -255,6 +255,7 @@ memory:
     decay_enabled: true               # Implemented: OrchestrationRuntime daily job → memory_manager.apply_relevance_decay
     decay_half_life_days: 90
     consolidation_enabled: true       # Weekly job: dedupe identical memory rows
+    semantic_consolidation_enabled: false  # If true, also merge near-duplicate embeddings (cosine)
     consolidation_frequency: "weekly"
     max_memories_per_user: 10000
     prune_below_relevance: 0.1

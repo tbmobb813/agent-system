@@ -114,6 +114,11 @@ The checklist below is **stricter than the validator**: it lists gaps the automa
 | POST | `/history/{task_id}/feedback` | Task feedback + learning hook |
 | GET | `/memory/search` | Semantic/FTS |
 | GET | `/memory/range` | Memories in `[start, end]` (ISO8601) |
+| POST | `/agent/schedules` | Create cron schedule (`ScheduledTaskCreate` body) |
+| GET | `/agent/schedules` | List schedules (optional `user_id` query) |
+| DELETE | `/agent/schedules/{id}` | Delete schedule (optional `user_id` filter) |
+| GET | `/agent/stats` | p50/p95/p99 latency by endpoint (`latency_metrics`) |
+| POST | `/agent/workflows/{name}/run` | Run YAML workflow from `backend/data/workflows/` |
 
 ---
 

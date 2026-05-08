@@ -6,20 +6,29 @@
 
 ---
 
-## Scoring Summary
+## As of 2026-05-07 reconciliation
 
-| # | Pillar | Score | Status |
-|---|--------|-------|--------|
-| 1 | Define Purpose & Scope | 9/10 | Strong |
-| 2 | System Prompt Design | 5/10 | Needs work |
-| 3 | Choose LLM | 8/10 | Solid |
-| 4 | Tools & Integrations | 5/10 | Skeleton |
-| 5 | Memory Systems | 6/10 | Partial |
-| 6 | Orchestration | 6/10 | Partial |
-| 7 | User Interface | 8/10 | Solid |
-| 8 | Testing & Evals | 2/10 | Critical gap |
+**Live source of truth for “what’s implemented vs planned”:** [REMAINING_WORK_CHECKLIST.md](REMAINING_WORK_CHECKLIST.md) (run `python3 agent_pillar_validator.py --check-code` for automated cross-check).
 
-**Overall Maturity: 49/80 (61%)**
+The May 5 audit below is **preserved for history**. Items struck through in each pillar’s **Now implemented** subsection were completed after the original audit. Remaining work follows the phased roadmap in this repo’s implementation plan (prompt modularization, eval CI gate, user cron schedules, stdio MCP, PWA, optional advanced items).
+
+---
+
+## Scoring Summary (reconciled 2026-05-07)
+
+| # | Pillar | Original (May 5) | Reconciled | Status |
+|---|--------|------------------|------------|--------|
+| 1 | Define Purpose & Scope | 9/10 | 9/10 | Strong; formal `SCOPE.md` added in follow-up work |
+| 2 | System Prompt Design | 5/10 | 7/10 | Persona + fiscal injection live; modular `prompts/` package in follow-up |
+| 3 | Choose LLM | 8/10 | 8/10 | Solid |
+| 4 | Tools & Integrations | 5/10 | 7/10 | Tavily, sub-agent tool, MCP HTTP/SSE, `/agent/tools/health` |
+| 5 | Memory Systems | 6/10 | 8/10 | Temporal `GET /memory/range`, `ExecutionState.working_memory`, consolidation job |
+| 6 | Orchestration | 6/10 | 7/10 | `POST /agent/enqueue`, optional Redis queue, DLQ `failed_tasks`, scheduler loop |
+| 7 | User Interface | 8/10 | 8/10 | Thumbs + `POST /history/.../feedback`; PWA manifest in follow-up |
+| 8 | Testing & Evals | 2/10 | 6/10 | pytest suite, CI + coverage floor, latency + quality hooks, eval harness |
+
+**Original overall: 49/80 (61%)**  
+**Reconciled overall: 60/80 (75%)**
 
 ---
 
@@ -40,6 +49,9 @@
 ### Gaps
 - No formal SLA targets (response time, uptime, accuracy)
 - No defined "out of scope" boundary - what should the agent refuse?
+
+### Now implemented (2026-05-07)
+- ~~Formal scope/SLA doc~~ → **`backend/SCOPE.md`** added in follow-up work (targets + in/out of scope).
 
 ### Actions
 1. Add `SCOPE.md` defining what the agent does and explicitly does NOT do
@@ -71,6 +83,11 @@ Guidelines:
 - **No goal framing** - the prompt doesn't tell the model WHY it exists or what success looks like
 - **No output formatting rules** - no structure for how responses should be organized
 - **Static prompt** - no dynamic injection of user preferences from memory
+
+### Now implemented (2026-05-07)
+- ~~No persona~~ → `build_persona_prompt` + `<assistant_profile>` in [`backend/app/agent/orchestrator.py`](backend/app/agent/orchestrator.py) (see `build_persona_prompt` import; fiscal block ~248–255).
+- ~~No guardrails in prompt~~ → Data-only `<retrieved_context>`, profile safety line, `<fiscal_context>` when budget known (same file; modularized to `backend/app/agent/prompts/` in follow-up).
+- ~~No goal framing~~ → Plan step + `ExecutionState.goal` / `done_when` + `<progress_checkpoint>` (`_format_progress_checkpoint`, `_compose_system_with_progress`).
 
 ### Actions (Priority: HIGH)
 1. Create `backend/app/agent/prompts/system_prompt.py` with a structured prompt builder:
@@ -105,6 +122,12 @@ Guidelines:
 - **No A/B testing** - can't compare model quality across routing decisions
 - **No latency tracking per model** - you track cost but not speed
 
+### Now implemented (2026-05-07)
+- ~~No per-tier sampling~~ → `ModelRouter.sampling_params_for_model` + orchestrator injection for ReAct calls ([`backend/app/agent/router.py`](backend/app/agent/router.py), orchestrator).
+- ~~No latency tracking~~ → `_record_latency_metric` in [`backend/app/routes/agent.py`](backend/app/routes/agent.py); persisted for analysis.
+- **A/B testing** → [`backend/app/agent/ab_testing.py`](backend/app/agent/ab_testing.py) exists (wiring optional).
+- **Optional** → LLM classifier + `/agent/model-stats` remain nice-to-haves.
+
 ### Actions
 1. Add `temperature` and `top_p` to each model tier config in `router.py`
 2. Consider an LLM-based classifier as a lightweight pre-pass (use free model to classify, then route)
@@ -134,6 +157,12 @@ Guidelines:
 - **Several tools are stubs** - browser_automation returns placeholder, code_execution needs E2B key
 - **No tool health checks** - if Tavily is down, you find out at runtime
 - **No tool versioning or capability registry**
+
+### Now implemented (2026-05-07)
+- ~~No MCP~~ → HTTP JSON-RPC [`backend/app/tools/mcp_client.py`](backend/app/tools/mcp_client.py); SSE hub [`backend/app/tools/mcp_hub.py`](backend/app/tools/mcp_hub.py); `load_mcp_tools()` at startup ([`backend/app/main.py`](backend/app/main.py)).
+- ~~No sub-agent~~ → `delegate_sub_agent` on tool registry + [`backend/app/agent/sub_agent.py`](backend/app/agent/sub_agent.py).
+- ~~No health endpoint~~ → `GET /agent/tools/health`.
+- **Still partial** → browser/E2B in prod, stdio MCP (follow-up), tool versioning registry.
 
 ### Actions (Priority: HIGH)
 1. Implement real tool functions - at minimum: web_search (Tavily), code_execution (E2B or local sandbox)
@@ -167,6 +196,12 @@ Guidelines:
 - **No memory decay/pruning** - memories accumulate forever; no relevance decay over time
 - **No memory consolidation** - short-term facts aren't promoted to long-term patterns automatically
 - **File storage** - documents can be uploaded but there's no structured file management
+
+### Now implemented (2026-05-07)
+- ~~No temporal queries~~ → `GET /memory/range` + `search_by_time_range` ([`backend/app/agent/memory.py`](backend/app/agent/memory.py), routes).
+- ~~No working memory~~ → `ExecutionState.working_memory` in orchestrator (ReAct trace across iterations).
+- ~~No consolidation~~ → Weekly dedupe/consolidation when enabled in pillar config ([`REMAINING_WORK_CHECKLIST.md`](REMAINING_WORK_CHECKLIST.md)).
+- **Still partial** → semantic-merge consolidation, richer file management.
 
 ### Actions
 1. Add `session_id` and `timestamp_range` to memory table - enable temporal queries ("what did we discuss last week")
@@ -202,6 +237,13 @@ Guidelines:
 - **No workflow definitions** - no way to define multi-step workflows declaratively
 - **Error handling is basic** - fallback chain for model errors, but no retry with exponential backoff, no dead-letter queue
 
+### Now implemented (2026-05-07)
+- ~~No deferred execution~~ → `POST /agent/enqueue` + in-process worker ([`backend/app/agent/orchestration_runtime.py`](backend/app/agent/orchestration_runtime.py)).
+- ~~No queue~~ → Optional Redis-backed queue when configured + `REDIS_URL`.
+- ~~No Agent2Agent~~ → Sub-agent / `delegate_sub_agent`.
+- ~~No DLQ~~ → `failed_tasks` migration + `_persist_failed_task` when pillar `dead_letter` enabled.
+- **Still partial** → User-defined cron API (follow-up), workflow YAML DSL, Celery/RQ for multi-process.
+
 ### Actions
 1. Add `backend/app/scheduler/` with APScheduler or Celery Beat for scheduled tasks
 2. Create workflow DSL in `backend/app/agent/workflows.py` - define multi-step pipelines as YAML/JSON
@@ -230,6 +272,10 @@ Guidelines:
 - **Frontend is partially skeleton** - some components need implementation (AgentExecutor, CostTracker detail views)
 - **No mobile-native app** - web is responsive but no PWA or native app
 - **No feedback mechanism** - no thumbs up/down or rating on responses
+
+### Now implemented (2026-05-07)
+- ~~No feedback~~ → `submitTaskFeedback` + thumbs in [`frontend/components/AgentExecutor.tsx`](frontend/components/AgentExecutor.tsx) and [`frontend/components/TaskHistory.tsx`](frontend/components/TaskHistory.tsx); API `POST /history/{task_id}/feedback`.
+- **Still partial** → Slack/Discord, PWA manifest (follow-up).
 
 ### Actions
 1. Add user feedback collection: thumbs up/down + optional text on each response
@@ -261,6 +307,14 @@ Guidelines:
 - **No regression testing** - prompt changes could degrade quality silently
 - **No CI/CD integration** - no GitHub Actions running tests on push
 
+### Now implemented (2026-05-07)
+- ~~No test suite~~ → [`backend/tests/`](backend/tests/) (router, memory, tools, orchestrator, etc.).
+- ~~No CI~~ → [`.github/workflows/ci.yml`](.github/workflows/ci.yml) with pytest + `--cov-fail-under`.
+- ~~No latency~~ → `_record_latency_metric` in [`backend/app/routes/agent.py`](backend/app/routes/agent.py).
+- ~~No quality~~ → [`backend/app/agent/quality.py`](backend/app/agent/quality.py) + `_schedule_quality_scoring`.
+- ~~No eval harness~~ → [`backend/evals/run_eval_harness.py`](backend/evals/run_eval_harness.py) + `test_cases.json` (CI eval job in follow-up).
+- **Still partial** → Grafana-style SLO dashboards, eval merge gate strictness, expanded case library.
+
 ### Actions (Priority: CRITICAL)
 1. Create `backend/tests/` with pytest:
    - `test_router.py` - verify query classification maps to correct model tiers
@@ -281,9 +335,14 @@ Guidelines:
 
 ## Priority Action Roadmap
 
-### Phase 1 - Foundation (Week 1-2)
-Impact: Highest. Fixes the critical gap and the two biggest partial gaps.
+**Superseded (2026-05-07):** The original week-by-week table below reflected the May 5 snapshot. Most “Phase 1” and parts of “Phase 2/3” are now shipped — see [REMAINING_WORK_CHECKLIST.md](REMAINING_WORK_CHECKLIST.md) and pillar **Now implemented** notes above.
 
+**Current focus:** prompt modularization (`backend/app/agent/prompts/`), eval expansion + CI eval job, `SCOPE.md`, user cron schedules + `scheduled_tasks` table, stdio MCP, PWA manifest, and optional advanced items (workflow DSL, semantic merge, `/agent/stats`, LLM router, Slack/Discord, prod browser/E2B).
+
+<details>
+<summary>Original roadmap (historical)</summary>
+
+### Phase 1 - Foundation (Week 1-2)
 | Action | Pillar | Effort | Impact |
 |--------|--------|--------|--------|
 | Create pytest test suite | 8 | 4-6 hrs | Critical |
@@ -292,8 +351,6 @@ Impact: Highest. Fixes the critical gap and the two biggest partial gaps.
 | Add latency + quality tracking | 8 | 3-4 hrs | High |
 
 ### Phase 2 - Memory & Orchestration (Week 3-4)
-Impact: Unlocks self-improvement and automation.
-
 | Action | Pillar | Effort | Impact |
 |--------|--------|--------|--------|
 | Add episodic memory + working memory | 5 | 4-6 hrs | High |
@@ -302,8 +359,6 @@ Impact: Unlocks self-improvement and automation.
 | User feedback collection | 7 | 2-3 hrs | Medium |
 
 ### Phase 3 - Advanced (Week 5-8)
-Impact: Production hardening and ecosystem expansion.
-
 | Action | Pillar | Effort | Impact |
 |--------|--------|--------|--------|
 | MCP client integration | 4 | 4-6 hrs | Medium |
@@ -312,6 +367,8 @@ Impact: Production hardening and ecosystem expansion.
 | CI/CD with GitHub Actions | 8 | 2-3 hrs | Medium |
 | Memory decay + consolidation | 5 | 3-4 hrs | Low |
 | LLM-based query classifier | 3 | 2-3 hrs | Low |
+
+</details>
 
 ---
 

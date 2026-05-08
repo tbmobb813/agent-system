@@ -10,6 +10,7 @@ from enum import Enum
 
 class TaskStatus(str, Enum):
     """Task execution status."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -32,18 +33,52 @@ class EventType(str, Enum):
     CONTEXT = "context"
 
 
+class WorkflowRunRequest(BaseModel):
+    """Optional context for executing a named YAML workflow."""
+
+    user_id: Optional[str] = Field(
+        None, description="Passed through to agent/tool steps"
+    )
+
+
+class ScheduledTaskCreate(BaseModel):
+    """Create a cron-driven deferred agent run."""
+
+    cron: str = Field(
+        ...,
+        max_length=120,
+        description="5-field cron (minute hour day month weekday), e.g. '0 9 * * *'",
+    )
+    prompt: str = Field(..., max_length=32_000)
+    context: Optional[str] = Field(
+        None, description="Optional extra context for the run"
+    )
+    user_id: Optional[str] = Field(None, description="Owner id (stored on task rows)")
+    router_tier: Optional[str] = Field(
+        None, description="Optional hint stored in task metadata for analytics"
+    )
+    max_iterations: int = Field(default=10, ge=1, le=50)
+    enabled: bool = True
+
+
 class AgentRequest(BaseModel):
     """Request to execute an agent task."""
-    query: str = Field(..., max_length=32_000, description="Main task/question for the agent")
+
+    query: str = Field(
+        ..., max_length=32_000, description="Main task/question for the agent"
+    )
     context: Optional[str] = Field(None, description="Additional context")
     tools: Optional[list[str]] = Field(
-        default=None,
-        description="Specific tools to use (None = all available)"
+        default=None, description="Specific tools to use (None = all available)"
     )
     max_iterations: int = Field(default=10, description="Max planning/execution steps")
     user_id: Optional[str] = Field(None, description="User identifier")
-    conversation_id: Optional[str] = Field(None, description="Continue an existing conversation")
-    metadata: Optional[dict] = Field(default_factory=dict, description="Custom metadata")
+    conversation_id: Optional[str] = Field(
+        None, description="Continue an existing conversation"
+    )
+    metadata: Optional[dict] = Field(
+        default_factory=dict, description="Custom metadata"
+    )
     reasoning_effort: Optional[str] = Field(
         default=None,
         description=(
@@ -62,7 +97,9 @@ class AgentRequest(BaseModel):
         s = v.strip().lower()
         if s in ("disable",):
             s = "off"
-        allowed = frozenset({"off", "minimal", "low", "medium", "high", "xhigh", "none"})
+        allowed = frozenset(
+            {"off", "minimal", "low", "medium", "high", "xhigh", "none"}
+        )
         if s not in allowed:
             raise ValueError(
                 "reasoning_effort must be one of: off, minimal, low, medium, high, xhigh, none "
@@ -73,14 +110,12 @@ class AgentRequest(BaseModel):
 
 class ExecutionEvent(BaseModel):
     """Single event during agent execution."""
+
     type: EventType
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     content: Optional[str] = None
     model: Optional[str] = None
-    tokens: Optional[dict] = Field(
-        None,
-        description="{'input': int, 'output': int}"
-    )
+    tokens: Optional[dict] = Field(None, description="{'input': int, 'output': int}")
     tool_name: Optional[str] = None
     tool_input: Optional[dict] = None
     tool_result: Optional[str] = None
@@ -93,6 +128,7 @@ class ExecutionEvent(BaseModel):
 
 class AgentResponse(BaseModel):
     """Response from agent execution."""
+
     query: str
     result: str
     status: TaskStatus
@@ -106,6 +142,7 @@ class AgentResponse(BaseModel):
 
 class CostStatus(BaseModel):
     """Budget and cost status."""
+
     budget: float = Field(description="Monthly budget in USD")
     spent_month: float = Field(description="Total spent this month")
     spent_today: float = Field(description="Total spent today")
@@ -117,6 +154,7 @@ class CostStatus(BaseModel):
 
 class Settings(BaseModel):
     """User settings and preferences."""
+
     display_name: Optional[str] = Field(
         default=None,
         max_length=80,
@@ -140,6 +178,7 @@ class Settings(BaseModel):
 
 class ToolDefinition(BaseModel):
     """Definition of an available tool."""
+
     name: str
     description: str
     input_schema: dict
@@ -150,6 +189,7 @@ class ToolDefinition(BaseModel):
 
 class TaskRecord(BaseModel):
     """Stored task record."""
+
     id: str
     user_id: Optional[str] = None
     query: str
@@ -164,6 +204,7 @@ class TaskRecord(BaseModel):
 
 class TaskStep(BaseModel):
     """Single step in task execution."""
+
     step_number: int
     action: str
     tool_used: Optional[str] = None
@@ -175,6 +216,7 @@ class TaskStep(BaseModel):
 
 class Memory(BaseModel):
     """Long-term memory entry."""
+
     id: str
     user_id: str
     category: str  # "preference", "fact", "pattern", "context"
@@ -187,6 +229,7 @@ class Memory(BaseModel):
 
 class ApiKey(BaseModel):
     """API key for authentication."""
+
     key: str
     user_id: str
     created_at: datetime

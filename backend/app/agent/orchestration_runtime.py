@@ -16,7 +16,7 @@ from typing import Any, Awaitable, Callable, Optional
 
 from app.agent.memory import memory_manager
 from app.config import settings
-from app.database import execute
+from app.database import execute, fetch
 from app import database as _db
 
 logger = logging.getLogger(__name__)
@@ -137,11 +137,26 @@ class OrchestrationRuntime:
                 return
             removed = await memory_manager.consolidate_duplicate_memories()
             logger.info("Memory consolidation removed %s duplicate row(s)", removed)
+            if life.get("semantic_consolidation_enabled"):
+                srem = await memory_manager.consolidate_semantic_near_duplicates()
+                logger.info(
+                    "Semantic memory consolidation removed %s near-duplicate row(s)",
+                    srem,
+                )
 
         self.add_interval_job(
             name="memory_consolidation",
             interval_seconds=7 * 24 * 60 * 60,
             callback=_consolidation_job,
+        )
+
+        async def _user_cron_dispatch() -> None:
+            await self._dispatch_due_scheduled_tasks()
+
+        self.add_interval_job(
+            name="user_cron_dispatch",
+            interval_seconds=60,
+            callback=_user_cron_dispatch,
         )
 
         trig = orch.get("triggers") or {}
@@ -406,3 +421,86 @@ class OrchestrationRuntime:
                         seconds=job["interval_seconds"]
                     )
             await asyncio.sleep(1)
+
+    async def _dispatch_due_scheduled_tasks(self) -> None:
+        """Enqueue agent runs for due rows in ``scheduled_tasks`` (DB optional)."""
+        if not _db.db_pool:
+            return
+        try:
+            from croniter import croniter
+        except ImportError:
+            logger.warning("croniter not installed — user schedules disabled")
+            return
+
+        try:
+            rows = await fetch("""
+                SELECT id, user_id, cron_expr, prompt, context, max_iterations, router_tier
+                FROM scheduled_tasks
+                WHERE enabled = true AND next_run_at <= NOW()
+                ORDER BY next_run_at ASC
+                LIMIT 10
+                """)
+        except Exception as e:
+            logger.debug("scheduled_tasks query skipped: %s", e)
+            return
+
+        now = datetime.utcnow()
+        for row in rows:
+            sid = row["id"]
+            uid = row["user_id"]
+            cron_expr = row["cron_expr"]
+            prompt = row["prompt"]
+            ctx = row["context"]
+            max_it = int(row["max_iterations"] or 10)
+            router_tier = row["router_tier"]
+            try:
+                next_run = croniter(cron_expr, now).get_next(datetime)
+            except Exception as e:
+                logger.warning("Invalid cron for schedule %s: %s", sid, e)
+                continue
+
+            task_id = str(uuid.uuid4())
+            meta = {"scheduled_task_id": str(sid), "router_tier": router_tier}
+            try:
+                await execute(
+                    """
+                    INSERT INTO tasks (id, user_id, query, status, cost, created_at, metadata)
+                    VALUES ($1, $2, $3, 'queued', 0, $4, $5::jsonb)
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    task_id,
+                    uid,
+                    prompt,
+                    now,
+                    json.dumps(meta, default=str),
+                )
+            except Exception as e:
+                logger.warning("Schedule %s: task insert failed: %s", sid, e)
+                continue
+
+            await self.enqueue_task(
+                {
+                    "task_id": task_id,
+                    "query": prompt,
+                    "context": ctx,
+                    "tools": None,
+                    "user_id": uid,
+                    "max_iterations": max_it,
+                    "conversation_id": None,
+                    "reasoning_effort": None,
+                }
+            )
+
+            try:
+                await execute(
+                    """
+                    UPDATE scheduled_tasks
+                    SET last_run_at = $2, next_run_at = $3, updated_at = NOW()
+                    WHERE id = $1
+                    """,
+                    sid,
+                    now,
+                    next_run,
+                )
+            except Exception as e:
+                logger.warning("Schedule %s: next_run update failed: %s", sid, e)

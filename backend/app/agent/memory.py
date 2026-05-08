@@ -614,6 +614,48 @@ class MemoryManager:
             logger.warning(f"Memory consolidation failed: {e}")
             return 0
 
+    async def consolidate_semantic_near_duplicates(
+        self,
+        *,
+        max_cosine_distance: float = 0.12,
+        max_deletions: int = 100,
+    ) -> int:
+        """
+        Remove older rows that are near-duplicates by pgvector cosine distance.
+
+        Keeps the row with the larger ``id`` (lexicographic UUID) per pair.
+        """
+        if not _db.db_pool:
+            return 0
+        if max_cosine_distance <= 0 or max_cosine_distance > 1.0:
+            return 0
+        try:
+            async with _db.db_pool.acquire() as conn:
+                result = await conn.execute(
+                    """
+                    DELETE FROM memory AS a
+                    WHERE a.id IN (
+                        SELECT a2.id
+                        FROM memory AS a2
+                        INNER JOIN memory AS b2
+                          ON a2.user_id IS NOT DISTINCT FROM b2.user_id
+                         AND a2.category = b2.category
+                         AND a2.id < b2.id
+                         AND a2.embedding IS NOT NULL
+                         AND b2.embedding IS NOT NULL
+                         AND (a2.embedding <=> b2.embedding) < $1::float8
+                        LIMIT $2
+                    )
+                    """,
+                    max_cosine_distance,
+                    max_deletions,
+                )
+            parts = str(result).split()
+            return int(parts[-1]) if parts else 0
+        except Exception as e:
+            logger.warning(f"Semantic memory consolidation failed: {e}")
+            return 0
+
     async def delete(self, memory_id: str) -> bool:
         """Delete a specific memory by ID."""
         if not _db.db_pool:

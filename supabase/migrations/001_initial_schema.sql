@@ -25,8 +25,8 @@ CREATE TABLE IF NOT EXISTS api_keys (
     is_active BOOLEAN DEFAULT true
 );
 
-CREATE INDEX idx_api_keys_user_id ON api_keys(user_id);
-CREATE INDEX idx_api_keys_hash ON api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
 
 -- Tasks table (execution history)
 CREATE TABLE IF NOT EXISTS tasks (
@@ -45,9 +45,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     metadata JSONB DEFAULT '{}'
 );
 
-CREATE INDEX idx_tasks_user_id ON tasks(user_id);
-CREATE INDEX idx_tasks_created_at ON tasks(created_at);
-CREATE INDEX idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 
 -- Task execution steps
 CREATE TABLE IF NOT EXISTS task_steps (
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS task_steps (
     completed_at TIMESTAMP WITH TIME ZONE
 );
 
-CREATE INDEX idx_task_steps_task_id ON task_steps(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_steps_task_id ON task_steps(task_id);
 
 -- User preferences/settings
 CREATE TABLE IF NOT EXISTS user_settings (
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_user_settings_user_id ON user_settings(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id);
 
 -- Long-term memory/embeddings
 CREATE TABLE IF NOT EXISTS memory (
@@ -95,9 +95,9 @@ CREATE TABLE IF NOT EXISTS memory (
     expires_at TIMESTAMP WITH TIME ZONE -- Optional expiration
 );
 
-CREATE INDEX idx_memory_user_id ON memory(user_id);
-CREATE INDEX idx_memory_category ON memory(category);
-CREATE INDEX idx_memory_embedding ON memory USING ivfflat (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS idx_memory_user_id ON memory(user_id);
+CREATE INDEX IF NOT EXISTS idx_memory_category ON memory(category);
+CREATE INDEX IF NOT EXISTS idx_memory_embedding ON memory USING ivfflat (embedding vector_cosine_ops);
 
 -- Conversation history (for context)
 CREATE TABLE IF NOT EXISTS conversations (
@@ -111,8 +111,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     archived BOOLEAN DEFAULT false
 );
 
-CREATE INDEX idx_conversations_user_id ON conversations(user_id);
-CREATE INDEX idx_conversations_thread_id ON conversations(thread_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_thread_id ON conversations(thread_id);
 
 -- Messages (for context window management)
 CREATE TABLE IF NOT EXISTS messages (
@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
 
 -- View for total message count
 CREATE OR REPLACE VIEW conversation_summary AS
@@ -175,5 +175,5 @@ CREATE POLICY "Users can insert own memory"
     WITH CHECK (user_id = auth.uid());
 
 -- Indexes for common queries
-CREATE INDEX idx_tasks_user_created ON tasks(user_id, created_at DESC);
-CREATE INDEX idx_memory_user_category ON memory(user_id, category);
+CREATE INDEX IF NOT EXISTS idx_tasks_user_created ON tasks(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memory_user_category ON memory(user_id, category);
