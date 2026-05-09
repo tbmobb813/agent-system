@@ -10,20 +10,15 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 
 DEPLOY_ENV_FILE="$REPO_DIR/deploy/.env.deploy"
-trim() {
-	local value="$1"
-	value="${value#"${value%%[![:space:]]*}"}"
-	value="${value%"${value##*[![:space:]]}"}"
-	printf '%s' "$value"
-}
-
 if [[ -f "$DEPLOY_ENV_FILE" ]]; then
 	echo "==> Loading deploy env from deploy/.env.deploy"
+	line_no=0
 	while IFS= read -r line || [[ -n "$line" ]]; do
+		((line_no += 1))
 		[[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
 		if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
 			key="${BASH_REMATCH[1]}"
-			value="$(trim "${BASH_REMATCH[2]}")"
+			value="$(printf '%s' "${BASH_REMATCH[2]}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
 			if [[ "$value" =~ ^\"(.*)\"$ ]]; then
 				value="${BASH_REMATCH[1]}"
 			elif [[ "$value" =~ ^\'(.*)\'$ ]]; then
@@ -31,7 +26,7 @@ if [[ -f "$DEPLOY_ENV_FILE" ]]; then
 			fi
 			export "$key=$value"
 		else
-			echo "[deploy][warn] Ignoring invalid line in deploy/.env.deploy: $line" >&2
+			echo "[deploy][warn] Ignoring invalid line $line_no in deploy/.env.deploy" >&2
 		fi
 	done < "$DEPLOY_ENV_FILE"
 fi
