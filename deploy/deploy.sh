@@ -10,6 +10,19 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 
 DEPLOY_ENV_FILE="$REPO_DIR/deploy/.env.deploy"
+ALLOWED_DEPLOY_ENV_KEYS=("MONITOR_BASE_URL" "ALERT_WEBHOOK_URL")
+
+is_allowed_deploy_env_key() {
+	local key="$1"
+	local allowed_key
+	for allowed_key in "${ALLOWED_DEPLOY_ENV_KEYS[@]}"; do
+		if [[ "$key" == "$allowed_key" ]]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
 trim_whitespace() {
 	local value="$1"
 	local extglob_was_enabled=0
@@ -30,9 +43,13 @@ if [[ -f "$DEPLOY_ENV_FILE" ]]; then
 	line_number=0
 	while IFS= read -r line || [[ -n "$line" ]]; do
 		((line_number += 1))
-		[[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+		[[ -z "$(trim_whitespace "$line")" || "$line" =~ ^[[:space:]]*# ]] && continue
 		if [[ "$line" =~ ^[[:space:]]*([A-Za-z][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
 			key="${BASH_REMATCH[1]}"
+			if ! is_allowed_deploy_env_key "$key"; then
+				echo "[deploy][warn] Ignoring unsupported key '$key' on line $line_number in deploy/.env.deploy" >&2
+				continue
+			fi
 			value="$(trim_whitespace "${BASH_REMATCH[2]}")"
 			if [[ "$value" =~ ^\"(.*)\"$ ]]; then
 				value="${BASH_REMATCH[1]}"

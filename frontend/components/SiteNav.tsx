@@ -1,6 +1,5 @@
 'use client'
 
-import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import ThemeSwitcher from '@/components/ThemeSwitcher'
@@ -27,24 +26,7 @@ export default function SiteNav() {
   return (
     <nav className="app-shell sticky top-0 z-40" aria-label="Primary">
       <div className="mx-auto max-w-6xl px-4 py-3 flex flex-wrap items-center gap-4">
-        <Link href="/" className="brand-lockup mr-2" aria-label="AI Agent dashboard home">
-          <Image
-            src="/brand/logo-mark.svg"
-            alt=""
-            width={22}
-            height={22}
-            className="brand-logo-mark"
-            priority
-          />
-          <span className="brand-title text-sm md:text-base">AI Agent</span>
-          <Image
-            src="/brand/glyph.svg"
-            alt=""
-            width={12}
-            height={12}
-            className="brand-glyph"
-          />
-        </Link>
+        <span className="brand-title text-sm md:text-base mr-2">AI Agent</span>
         {navLinks.map(link => {
           const active = linkIsActive(pathname, link.href)
           return (

@@ -11,14 +11,28 @@ DOMAIN=""
 EMAIL=""
 NO_CERTBOT=0
 
+usage() {
+  echo "Usage: bash deploy/hardening.sh --domain <domain> [--email <email>] [--no-certbot]" >&2
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --domain)
-      DOMAIN="${2:-}"
+      if [[ -z "${2:-}" || "${2:0:2}" == "--" ]]; then
+        echo "Error: --domain requires a value." >&2
+        usage
+        exit 1
+      fi
+      DOMAIN="$2"
       shift 2
       ;;
     --email)
-      EMAIL="${2:-}"
+      if [[ -z "${2:-}" || "${2:0:2}" == "--" ]]; then
+        echo "Error: --email requires a value." >&2
+        usage
+        exit 1
+      fi
+      EMAIL="$2"
       shift 2
       ;;
     --no-certbot)
@@ -27,6 +41,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "Unknown option: $1" >&2
+      usage
       exit 1
       ;;
   esac
@@ -34,6 +49,7 @@ done
 
 if [[ -z "$DOMAIN" ]]; then
   echo "--domain is required" >&2
+  usage
   exit 1
 fi
 

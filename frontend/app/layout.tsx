@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import { Orbitron, Space_Grotesk } from 'next/font/google'
 import SiteNav from '@/components/SiteNav'
 import './globals.css'
-import './design-system.css'
 
 export const metadata: Metadata = {
   title: 'AI Agent System',
