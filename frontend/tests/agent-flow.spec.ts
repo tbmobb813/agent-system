@@ -118,7 +118,7 @@ test('agent flow shows an error when stream request fails', async ({ page }) => 
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ breakdown: {} }),
+      body: JSON.stringify({ breakdown: { by_provider: [], by_model: [], by_day: [] } }),
     })
   })
 

@@ -74,8 +74,8 @@ jobs:
       - name: Run tests
         env:
           BACKEND_API_KEY: sk-agent-local-dev
-          OPENROUTER_BUDGET_MONTHLY: "30.0"
-        run: pytest --cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under=65
+          OPENROUTER_BUDGET_MONTHLY: "30.0"  # spell-checker: disable-line
+        run: pytest --cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under=65  # spell-checker: disable-line
 
   evals:
     name: Eval harness
