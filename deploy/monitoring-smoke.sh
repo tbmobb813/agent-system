@@ -19,6 +19,11 @@ usage() {
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --base-url)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --base-url requires a value." >&2
+        usage
+        exit 1
+      fi
       if [[ -z "${2:-}" || "${2:0:2}" == "--" ]]; then
         echo "Error: --base-url requires a value." >&2
         usage
@@ -28,6 +33,11 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --timeout)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --timeout requires a value." >&2
+        usage
+        exit 1
+      fi
       if [[ -z "${2:-}" || "${2:0:2}" == "--" ]]; then
         echo "Error: --timeout requires a value." >&2
         usage
