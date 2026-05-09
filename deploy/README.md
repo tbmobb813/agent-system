@@ -67,7 +67,7 @@ bash deploy/hardening.sh --domain agent.techtrendwire.com --email you@example.co
 ```
 
 This applies:
-- UFW firewall baseline (allow `22`, `80`, `443`; deny other inbound)
+- UFW firewall baseline (allow `OpenSSH`, `80`, `443`; deny other inbound — if your SSH daemon uses a custom port, allow that port/profile before or when applying hardening)
 - Installs `fail2ban` package baseline (default service/jail configuration from distro package)
 - `logrotate` policy for `logs/*.log`
 - certbot HTTPS setup (unless `--no-certbot` is passed)
