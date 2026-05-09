@@ -34,8 +34,8 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       TIMEOUT="$2"
-      if ! [[ "$TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
-        echo "Error: --timeout must be a positive integer." >&2
+      if ! [[ "$TIMEOUT" =~ ^[0-9]+$ ]]; then
+        echo "Error: --timeout must be a non-negative integer." >&2
         usage
         exit 1
       fi
