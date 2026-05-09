@@ -12,10 +12,23 @@ cd "$REPO_DIR"
 DEPLOY_ENV_FILE="$REPO_DIR/deploy/.env.deploy"
 if [[ -f "$DEPLOY_ENV_FILE" ]]; then
 	echo "==> Loading deploy env from deploy/.env.deploy"
-	set -a
-	# shellcheck disable=SC1090
-	source "$DEPLOY_ENV_FILE"
-	set +a
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		[[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+		if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
+			key="${BASH_REMATCH[1]}"
+			value="${BASH_REMATCH[2]}"
+			value="${value#"${value%%[![:space:]]*}"}"
+			value="${value%"${value##*[![:space:]]}"}"
+			if [[ "$value" =~ ^\"(.*)\"$ ]]; then
+				value="${BASH_REMATCH[1]}"
+			elif [[ "$value" =~ ^\'(.*)\'$ ]]; then
+				value="${BASH_REMATCH[1]}"
+			fi
+			export "$key=$value"
+		else
+			echo "[deploy][warn] Ignoring invalid line in deploy/.env.deploy: $line" >&2
+		fi
+	done < "$DEPLOY_ENV_FILE"
 fi
 
 echo "==> Pulling latest code"

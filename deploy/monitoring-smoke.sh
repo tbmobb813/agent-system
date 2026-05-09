@@ -12,14 +12,28 @@ BASE_URL="https://agent.techtrendwire.com"
 DRY_RUN=0
 TIMEOUT=10
 
+usage() {
+  echo "Usage: bash deploy/monitoring-smoke.sh [--base-url <url>] [--timeout <seconds>] [--dry-run]" >&2
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --base-url)
-      BASE_URL="${2:-}"
+      if [[ $# -lt 2 || -z "${2:-}" || "${2:0:2}" == "--" ]]; then
+        echo "Error: --base-url requires a value." >&2
+        usage
+        exit 1
+      fi
+      BASE_URL="$2"
       shift 2
       ;;
     --timeout)
-      TIMEOUT="${2:-10}"
+      if [[ $# -lt 2 || -z "${2:-}" || "${2:0:2}" == "--" ]]; then
+        echo "Error: --timeout requires a value." >&2
+        usage
+        exit 1
+      fi
+      TIMEOUT="$2"
       shift 2
       ;;
     --dry-run)
@@ -28,19 +42,32 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "Unknown option: $1" >&2
+      usage
       exit 1
       ;;
   esac
 done
 
+json_escape() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
+  printf '%s' "$value"
+}
+
 report_failure() {
   local message="$1"
+  local escaped_message
   echo "[monitoring][error] $message" >&2
 
   if [[ -n "${ALERT_WEBHOOK_URL:-}" ]]; then
+    escaped_message="$(json_escape "$message")"
     curl -sS -m "$TIMEOUT" -X POST "$ALERT_WEBHOOK_URL" \
       -H 'Content-Type: application/json' \
-      -d "{\"text\":\"agent-system monitoring alert: ${message}\"}" >/dev/null || true
+      -d "{\"text\":\"agent-system monitoring alert: ${escaped_message}\"}" >/dev/null || true
   fi
 
   exit 1
