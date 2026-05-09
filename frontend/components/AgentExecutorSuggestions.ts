@@ -167,7 +167,6 @@ export function buildSuggestionRows(value: string, cursor: number, dismissed: bo
   const slashCtx = parseSlashSuggestContext(value, cursor)
   if (slashCtx) {
     if (slashCtx.mode === 'reasoning_sub') {
-      if (slashCtx.subFilter === '') return []
       return REASONING_SUB_KEYS.filter(k => k.startsWith(slashCtx.subFilter)).map(sub => ({
         id: `reasoning-sub-${sub}`, label: `/reasoning ${sub}`, hint: REASONING_SUB_HINTS[sub],
         slashParts: { muted: '/reasoning ', arg: sub }, pick: { type: 'replace', text: `/reasoning ${sub} ` }

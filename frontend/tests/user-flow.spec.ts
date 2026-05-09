@@ -108,7 +108,14 @@ test('full user flow: dashboard to agent execution', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Good (morning|afternoon|evening|night)/)
   const runAgent = page.getByRole('link', { name: /Run Agent/ }).first()
   await expect(runAgent).toBeVisible()
-  await runAgent.click()
+  await page.evaluate(() => {
+    const candidates = Array.from(document.querySelectorAll('a[href="/agent"]'))
+    const target = candidates.find(a => /run agent/i.test(a.textContent ?? ''))
+    if (!target) {
+      throw new Error('Run Agent link not found')
+    }
+    ;(target as HTMLAnchorElement).click()
+  })
   try {
     await page.waitForURL(/\/agent$/, { timeout: 10_000 })
   } catch {

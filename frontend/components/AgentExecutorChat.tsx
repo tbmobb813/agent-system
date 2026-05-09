@@ -209,10 +209,14 @@ export function TurnCopyIcon({ text }: { text: string }) {
   const handle = async () => {
     const t = text.trim()
     if (!t) return
-    await navigator.clipboard.writeText(text)
-    setCopied(true)
-    if (timerRef.current) clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => setCopied(false), 2000)
+    try {
+      await navigator.clipboard.writeText(t)
+      setCopied(true)
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => setCopied(false), 2000)
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error)
+    }
   }
   const empty = !text.trim()
   return (
