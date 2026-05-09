@@ -13,8 +13,9 @@ export async function fillAgentMessage(page: Page, text: string) {
   await expect(input).toHaveValue(text)
 }
 
-/** Transcript lives in a scrollable panel; assert visibility after bringing the row into view. */
+/** Transcript lives in a scrollable panel; scrolls the row into view before asserting visibility. */
 export async function expectTranscriptText(page: Page, text: string | RegExp) {
   const loc = page.getByText(text).first()
+  await loc.scrollIntoViewIfNeeded()
   await expect(loc).toBeVisible({ timeout: 20_000 })
 }

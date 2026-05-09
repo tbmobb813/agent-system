@@ -231,9 +231,12 @@ async def docs_info():
 async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler."""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    content: dict = {"error": "Internal server error"}
+    if settings.ENVIRONMENT == "development":
+        content["detail"] = str(exc)
     return JSONResponse(
         status_code=500,
-        content={"error": "Internal server error"},
+        content=content,
     )
 
 

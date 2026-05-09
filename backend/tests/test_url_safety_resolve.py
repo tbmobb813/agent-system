@@ -1,4 +1,4 @@
-"""URL safety branches that depend on/socket behavior (mocked)."""
+"""URL safety branches that depend on socket behavior (mocked)."""
 
 import socket
 from unittest.mock import MagicMock
