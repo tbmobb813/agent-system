@@ -72,7 +72,7 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       SSH_PORT="$2"
-      if ! [[ "$SSH_PORT" =~ ^[1-9][0-9]*$ ]] || [[ "$SSH_PORT" -gt 65535 ]]; then
+      if ! [[ "$SSH_PORT" =~ ^[1-9][0-9]*$ ]] || [[ "$SSH_PORT" -lt 1 ]] || [[ "$SSH_PORT" -gt 65535 ]]; then
         echo "Error: --ssh-port must be a valid port number (1-65535)." >&2
         usage
         exit 1
@@ -100,7 +100,7 @@ fi
 if [[ -z "$SSH_PORT" ]]; then
   echo "==> Detecting SSH port from sshd_config"
   if [[ -f /etc/ssh/sshd_config ]]; then
-    SSH_PORT=$(grep -E "^[[:space:]]*Port[[:space:]]+" /etc/ssh/sshd_config | awk '{print $2}' | head -n1)
+    SSH_PORT=$(grep -E "^[[:space:]]*Port[[:space:]]+" /etc/ssh/sshd_config | grep -v "^[[:space:]]*#" | awk '{print $2}' | head -n1)
   fi
   if [[ -z "$SSH_PORT" ]]; then
     SSH_PORT="22"
