@@ -14,6 +14,7 @@ sudo apt-get update -q
 sudo apt-get install -y -q \
     curl git build-essential \
     nginx certbot python3-certbot-nginx \
+    ufw fail2ban logrotate \
     python3.12 python3.12-venv python3-pip \
     postgresql postgresql-contrib
 
@@ -73,6 +74,8 @@ echo "  1. Add DATABASE_URL (above) to backend/.env"
 echo "  2. Add domain A record: agent.techtrendwire.com → $(curl -s ifconfig.me)"
 echo "  3. Once DNS propagates, run:"
 echo "       sudo certbot --nginx -d agent.techtrendwire.com"
+echo "  3b. Apply hardening baseline (firewall + logrotate + optional certbot):"
+echo "       bash deploy/hardening.sh --domain agent.techtrendwire.com --email you@example.com"
 echo "  4. Update CORS_ORIGINS + SITE_URL in backend/.env"
 echo "  5. Update BACKEND_URL in frontend/.env.local"
 echo "  6. Run: pm2 restart all"

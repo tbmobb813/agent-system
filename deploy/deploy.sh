@@ -9,6 +9,15 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 
+DEPLOY_ENV_FILE="$REPO_DIR/deploy/.env.deploy"
+if [[ -f "$DEPLOY_ENV_FILE" ]]; then
+	echo "==> Loading deploy env from deploy/.env.deploy"
+	set -a
+	# shellcheck disable=SC1090
+	source "$DEPLOY_ENV_FILE"
+	set +a
+fi
+
 echo "==> Pulling latest code"
 git pull origin main
 
@@ -33,5 +42,20 @@ bash "$REPO_DIR/deploy/preflight.sh"
 
 echo "==> Restarting services"
 pm2 restart all
+
+echo "==> Monitoring smoke checks"
+MONITOR_BASE_URL="${MONITOR_BASE_URL:-https://agent.techtrendwire.com}"
+for attempt in 1 2 3; do
+	if ALERT_WEBHOOK_URL="${ALERT_WEBHOOK_URL:-}" bash "$REPO_DIR/deploy/monitoring-smoke.sh" --base-url "$MONITOR_BASE_URL"; then
+		echo "==> Monitoring checks passed"
+		break
+	fi
+	if [[ "$attempt" -eq 3 ]]; then
+		echo "[deploy][error] Monitoring checks failed after 3 attempts" >&2
+		exit 1
+	fi
+	echo "[deploy][warn] Monitoring checks failed (attempt $attempt/3), retrying..."
+	sleep 5
+done
 
 echo "==> Done. Check logs with: pm2 logs"

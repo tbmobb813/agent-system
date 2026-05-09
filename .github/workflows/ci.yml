@@ -20,6 +20,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       telegram: ${{ steps.filter.outputs.telegram }}
       migrations: ${{ steps.filter.outputs.migrations }}
+      deploy: ${{ steps.filter.outputs.deploy }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,6 +42,10 @@ jobs:
               - '.github/workflows/ci.yml'
             migrations:
               - 'supabase/migrations/**'
+              - '.github/workflows/ci.yml'
+            deploy:
+              - 'deploy/**'
+              - 'DEPLOYMENT_CHECKLIST.md'
               - '.github/workflows/ci.yml'
 
   backend:
@@ -79,7 +84,9 @@ jobs:
 
   evals:
     name: Eval harness
-    needs: backend
+    needs:
+      - changes
+      - backend
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -197,3 +204,30 @@ jobs:
             fi
             echo "✓ $file ($(wc -l < "$file") lines)"
           done
+
+  deploy_baseline:
+    name: Deploy Baseline Checks
+    needs: changes
+    if: needs.changes.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate deploy scripts syntax
+        run: |
+          bash -n deploy/setup.sh
+          bash -n deploy/deploy.sh
+          bash -n deploy/preflight.sh
+          bash -n deploy/hardening.sh
+          bash -n deploy/monitoring-smoke.sh
+
+      - name: Validate logrotate policy
+        run: |
+          test -f deploy/logrotate-agent-system.conf
+          grep -q 'daily' deploy/logrotate-agent-system.conf
+          grep -q 'rotate' deploy/logrotate-agent-system.conf
+          grep -q 'compress' deploy/logrotate-agent-system.conf
+
+      - name: Validate monitoring baseline (dry run)
+        run: bash deploy/monitoring-smoke.sh --dry-run --base-url https://example.com
