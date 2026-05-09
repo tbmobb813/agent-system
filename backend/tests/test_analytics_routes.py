@@ -61,9 +61,9 @@ async def test_analytics_overview_503_when_db_raises(monkeypatch):
         ),
         (
             "/analytics/tools",
-            lambda b: b["tools"]
-            and b["tools"][0]["tool_name"]
-            and b["tools"][0]["uses"] >= 1,
+            lambda b: (
+                b["tools"] and b["tools"][0]["tool_name"] and b["tools"][0]["uses"] >= 1
+            ),
         ),
         (
             "/analytics/decisions",
