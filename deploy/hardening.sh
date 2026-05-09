@@ -27,11 +27,11 @@ is_option_token() {
 }
 
 is_valid_domain() {
-  [[ "${1:-}" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]
+  [[ "${1:-}" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}$ ]]
 }
 
 is_valid_email() {
-  [[ "${1:-}" =~ ^[^[:space:]@]+@[^[:space:]@]+$ ]]
+  [[ "${1:-}" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]
 }
 
 while [[ $# -gt 0 ]]; do
