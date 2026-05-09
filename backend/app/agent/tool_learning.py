@@ -13,8 +13,6 @@ like "For coding tasks, tools that tend to work well: web_search, code_runner"
 import json
 import logging
 from collections import Counter
-from typing import Optional
-
 from app import database as _db
 from app.agent.skill_registry import classify_query
 
@@ -35,23 +33,23 @@ async def learn_tool_chains() -> None:
         return
 
     try:
-        rows = await _db.fetch(
-            """
+        rows = await _db.fetch("""
             SELECT t.query, tc.tool_name
             FROM tool_calls tc
             JOIN tasks t ON t.id::text = tc.task_id
             WHERE t.status = 'completed'
               AND t.created_at > NOW() - INTERVAL '30 days'
             ORDER BY tc.task_id, tc.iteration
-            """
-        )
+            """)
     except Exception as e:
         logger.debug(f"Tool chain mining failed: {e}")
         return
 
     # Group tool names per (task_type, task_id) — preserve call order
     type_sequences: dict[str, list[list[str]]] = {}
-    current_task_tools: dict[str, tuple[str, list[str]]] = {}  # task_key → (type, [tools])
+    current_task_tools: dict[str, tuple[str, list[str]]] = (
+        {}
+    )  # task_key → (type, [tools])
 
     for row in rows:
         query = row["query"] or ""
@@ -97,7 +95,9 @@ async def learn_tool_chains() -> None:
         except Exception as e:
             logger.debug(f"Tool recommendation upsert failed for {task_type}: {e}")
 
-    logger.info(f"Tool chain learning complete: {len(type_sequences)} task types analysed")
+    logger.info(
+        f"Tool chain learning complete: {len(type_sequences)} task types analysed"
+    )
 
 
 async def get_tool_hint(query: str) -> str:

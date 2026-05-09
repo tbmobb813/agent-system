@@ -13,7 +13,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
-from app.database import execute, fetch, fetchrow
+from app.database import fetch, fetchrow
 from app import database as _db
 from app.models import ScheduledTaskCreate
 from app.utils.auth import verify_api_key
