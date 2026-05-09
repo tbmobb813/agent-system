@@ -4,19 +4,7 @@ test('settings page: load and update settings', async ({ page }) => {
   // Mock settings endpoint
   await page.route('**/api/backend/settings', async route => {
     const method = route.request().method()
-    if (method === 'GET') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          preferred_model: 'gpt-4',
-          max_monthly_cost: 50,
-          enable_notifications: true,
-          auto_save_results: false,
-          timezone: 'UTC',
-        }),
-      })
-    } else if (method === 'POST') {
+    if (method === 'POST') {
       const body = await route.request().postDataJSON()
       await route.fulfill({
         status: 200,
@@ -26,9 +14,21 @@ test('settings page: load and update settings', async ({ page }) => {
           settings: body,
         }),
       })
-    } else {
-      await route.continue()
+      return
     }
+    // Fulfill GET and any other method the browser may send (HEAD, OPTIONS, etc.); do not
+    // route.continue() — that can hit the real rewrite target and hang when no backend is up.
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        preferred_model: 'gpt-4',
+        max_monthly_cost: 50,
+        enable_notifications: true,
+        auto_save_results: false,
+        timezone: 'UTC',
+      }),
+    })
   })
 
   await page.goto('/settings')

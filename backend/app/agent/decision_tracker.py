@@ -33,6 +33,7 @@ async def log_decision(
         return
     try:
         import json
+
         await _db.execute(
             """
             INSERT INTO decisions

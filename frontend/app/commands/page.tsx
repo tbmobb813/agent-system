@@ -87,6 +87,9 @@ const sections: Section[] = [
     rows: [
       { cell1: 'OPENROUTER_API_KEY', cell2: 'OpenRouter API key (required)', code: true },
       { cell1: 'BACKEND_API_KEY', cell2: 'Master API key for web UI', code: true },
+      { cell1: 'FRONTEND_REQUIRE_PROXY_AUTH', cell2: 'Set true to require HTTP Basic auth on /api/backend', code: true },
+      { cell1: 'FRONTEND_BASIC_AUTH_USER', cell2: 'Basic auth username for proxy protection', code: true },
+      { cell1: 'FRONTEND_BASIC_AUTH_PASSWORD', cell2: 'Basic auth password for proxy protection', code: true },
       { cell1: 'TELEGRAM_BOT_TOKEN', cell2: 'Telegram bot token', code: true },
       { cell1: 'TELEGRAM_CHAT_ID', cell2: 'Your chat ID for budget alerts', code: true },
       { cell1: 'OPENROUTER_BUDGET_MONTHLY', cell2: 'Monthly budget in USD (default: 30)', code: true },

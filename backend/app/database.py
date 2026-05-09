@@ -49,7 +49,7 @@ async def _reconnect() -> bool:
         except Exception as e:
             logger.warning(f"DB reconnect attempt {attempt} failed: {e}")
             if attempt < 3:
-                await asyncio.sleep(2 ** attempt)  # 2s, 4s backoff
+                await asyncio.sleep(2**attempt)  # 2s, 4s backoff
     logger.error("DB reconnect failed after 3 attempts — running without persistence")
     db_pool = None
     return False

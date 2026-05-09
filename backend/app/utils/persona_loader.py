@@ -9,7 +9,9 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_BACKEND_DIR = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 _PROJECT_DIR = os.path.dirname(_BACKEND_DIR)
 _DEFAULT_DIR = os.path.join(_BACKEND_DIR, "data", "persona")
 
@@ -24,6 +26,7 @@ def _resolved_path_under_repo_roots(resolved: Path) -> bool:
         except ValueError:
             continue
     return False
+
 
 _FILE_ORDER = [
     ("operations", "operations.md"),
@@ -66,7 +69,9 @@ def _resolve_persona_dir(configured_path: Optional[str]) -> str:
         if real.is_dir():
             return str(real)
 
-    logger.warning("No usable persona directory for relative path %r; using default", path)
+    logger.warning(
+        "No usable persona directory for relative path %r; using default", path
+    )
     return _DEFAULT_DIR
 
 

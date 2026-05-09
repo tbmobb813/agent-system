@@ -510,14 +510,14 @@ class OrchestrationRuntime:
     ) -> dict[str, Any]:
         """
         Re-enqueue a payload from failed_tasks.
-        
+
         Args:
             failed_task_id: UUID of the failed_tasks row to replay.
             delete_immediately: If True, delete the dead-letter record immediately after
                 enqueuing (default). If False, keep the record for evidence/audit trail.
                 Note: Deletion happens immediately upon successful enqueue, not after
                 the replayed task completes.
-        
+
         Returns replay metadata including the new task_id.
         """
         if not _db.db_pool:

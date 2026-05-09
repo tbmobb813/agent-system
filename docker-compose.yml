@@ -35,10 +35,18 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_KEY}
+      # Master API keys accepted without DB lookup — set a strong value in .env
+      - BACKEND_API_KEY=${BACKEND_API_KEY:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:3000","http://localhost:3003","http://localhost:8000"]}
       - SEARXNG_URL=${SEARXNG_URL:-http://localhost:8888}
       - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY:-}
       - E2B_API_KEY=${E2B_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,8 +73,15 @@ services:
       - BACKEND_API_KEY=${BACKEND_API_KEY:-sk-agent-local-dev}
       - NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_KEY}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3003/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -84,9 +99,11 @@ services:
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - BACKEND_API_URL=http://backend:8000
-      - TELEGRAM_BOT_API_KEY=sk-agent-telegram-bot
+      # Must match an entry in the backend's BACKEND_API_KEY list — set in .env
+      - TELEGRAM_BOT_API_KEY=${TELEGRAM_BOT_API_KEY:-}
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - agent-network

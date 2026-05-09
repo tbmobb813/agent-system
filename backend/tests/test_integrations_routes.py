@@ -27,7 +27,10 @@ async def test_slack_webhook_rejects_event_without_secret_by_default():
 
 
 async def test_slack_webhook_accepts_event_with_explicit_insecure_flag(monkeypatch):
-    monkeypatch.setattr("app.integrations.slack_discord_bot.slack_discord_bot.allow_insecure_webhooks", True)
+    monkeypatch.setattr(
+        "app.integrations.slack_discord_bot.slack_discord_bot.allow_insecure_webhooks",
+        True,
+    )
     try:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -36,7 +39,10 @@ async def test_slack_webhook_accepts_event_with_explicit_insecure_flag(monkeypat
                 json={"event": {"text": "hello from slack", "user": "U123"}},
             )
     finally:
-        monkeypatch.setattr("app.integrations.slack_discord_bot.slack_discord_bot.allow_insecure_webhooks", False)
+        monkeypatch.setattr(
+            "app.integrations.slack_discord_bot.slack_discord_bot.allow_insecure_webhooks",
+            False,
+        )
 
     assert response.status_code == 200
     payload = response.json()
@@ -45,17 +51,25 @@ async def test_slack_webhook_accepts_event_with_explicit_insecure_flag(monkeypat
 
 
 async def test_discord_webhook_accepts_event_with_secret_header(monkeypatch):
-    monkeypatch.setattr("app.integrations.slack_discord_bot.slack_discord_bot.webhook_secret", "test-secret")
+    monkeypatch.setattr(
+        "app.integrations.slack_discord_bot.slack_discord_bot.webhook_secret",
+        "test-secret",
+    )
     try:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
                 "/integrations/discord/webhook",
                 headers={"X-Bot-Secret": "test-secret"},
-                json={"content": "hello from discord", "author": {"username": "tester"}},
+                json={
+                    "content": "hello from discord",
+                    "author": {"username": "tester"},
+                },
             )
     finally:
-        monkeypatch.setattr("app.integrations.slack_discord_bot.slack_discord_bot.webhook_secret", "")
+        monkeypatch.setattr(
+            "app.integrations.slack_discord_bot.slack_discord_bot.webhook_secret", ""
+        )
 
     assert response.status_code == 200
     payload = response.json()
@@ -64,15 +78,23 @@ async def test_discord_webhook_accepts_event_with_secret_header(monkeypatch):
 
 
 async def test_discord_webhook_rejects_event_without_secret_header(monkeypatch):
-    monkeypatch.setattr("app.integrations.slack_discord_bot.slack_discord_bot.webhook_secret", "test-secret")
+    monkeypatch.setattr(
+        "app.integrations.slack_discord_bot.slack_discord_bot.webhook_secret",
+        "test-secret",
+    )
     try:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
                 "/integrations/discord/webhook",
-                json={"content": "hello from discord", "author": {"username": "tester"}},
+                json={
+                    "content": "hello from discord",
+                    "author": {"username": "tester"},
+                },
             )
     finally:
-        monkeypatch.setattr("app.integrations.slack_discord_bot.slack_discord_bot.webhook_secret", "")
+        monkeypatch.setattr(
+            "app.integrations.slack_discord_bot.slack_discord_bot.webhook_secret", ""
+        )
 
     assert response.status_code == 401

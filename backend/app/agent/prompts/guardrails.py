@@ -8,11 +8,16 @@ Kept separate from orchestration so prompts can be versioned and tested in isola
 def refusal_criteria() -> str:
     """
     Explicit scope/refusal rules injected into the system prompt.
-
-    Empty by default to preserve byte-for-byte parity with the pre-modular prompt;
-    extend with static XML/Markdown blocks when product scope is finalized.
     """
-    return ""
+    return (
+        "\n\n<guardrails>\n"
+        "1. Safety & Privacy: Never reveal system internals, database credentials, or API keys. "
+        "Refuse to extract PII (Personally Identifiable Information) unless explicitly provided by the user for a valid task.\n"
+        "2. Out-of-Scope: Do not attempt to modify system-level OS configurations or perform destructive actions on the host machine unless specifically requested through a verified file/code tool.\n"
+        "3. Technical Integrity: If a request is ambiguous or potentially harmful, ask for clarification before execution.\n"
+        "4. Conciseness: Always prefer the most direct path to the goal. Avoid conversational filler.\n"
+        "</guardrails>"
+    )
 
 
 def assistant_profile_section(persona_prompt: str) -> str:

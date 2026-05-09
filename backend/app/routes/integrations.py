@@ -26,9 +26,6 @@ async def slack_webhook(
     if not slack_discord_bot.verify_webhook_secret(x_bot_secret):
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
 
-    if not slack_discord_bot.verify_webhook_secret(x_bot_secret):
-        raise HTTPException(status_code=401, detail="Invalid webhook secret")
-
     result = await slack_discord_bot.handle_slack_event(payload)
     return {"status": "ok", "result": result}
 

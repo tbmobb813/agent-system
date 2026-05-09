@@ -9,14 +9,14 @@ from typing import Any, Dict
 def format_sse_event(data: Dict[str, Any]) -> str:
     """
     Format data as SSE event.
-    
+
     Format:
     event: {event_type}
     data: {json_data}
-    
+
     (blank line)
     """
-    
+
     # Get event type for the SSE event: header
     event_type = data.get("type", "message")
 
@@ -46,33 +46,39 @@ class SSEFormat:
     """
     Utility class for creating SSE events.
     """
-    
+
     @staticmethod
     def status(message: str) -> str:
         """Status update event."""
-        return format_sse_event({
-            "type": "status",
-            "message": message,
-        })
-    
+        return format_sse_event(
+            {
+                "type": "status",
+                "message": message,
+            }
+        )
+
     @staticmethod
     def tool_call(tool_name: str, tool_input: Dict) -> str:
         """Tool call event."""
-        return format_sse_event({
-            "type": "tool_call",
-            "tool_name": tool_name,
-            "tool_input": tool_input,
-        })
-    
+        return format_sse_event(
+            {
+                "type": "tool_call",
+                "tool_name": tool_name,
+                "tool_input": tool_input,
+            }
+        )
+
     @staticmethod
-    def tool_result(tool_name: str, result: str) -> str:
+    def tool_result(tool_name: str, tool_result: str) -> str:
         """Tool result event."""
-        return format_sse_event({
-            "type": "tool_result",
-            "tool_name": tool_name,
-            "result": result,
-        })
-    
+        return format_sse_event(
+            {
+                "type": "tool_result",
+                "tool_name": tool_name,
+                "tool_result": tool_result,
+            }
+        )
+
     @staticmethod
     def text_delta(content: str, model: str = None) -> str:
         """Text chunk event."""
@@ -83,15 +89,17 @@ class SSEFormat:
         if model:
             data["model"] = model
         return format_sse_event(data)
-    
+
     @staticmethod
     def error(error: str) -> str:
         """Error event."""
-        return format_sse_event({
-            "type": "error",
-            "error": error,
-        })
-    
+        return format_sse_event(
+            {
+                "type": "error",
+                "error": error,
+            }
+        )
+
     @staticmethod
     def done(cost: float = None) -> str:
         """Completion event."""
@@ -110,7 +118,7 @@ if __name__ == "__main__":
         {"type": "text_delta", "content": "world!"},
         {"type": "done", "cost": 0.05},
     ]
-    
+
     for event in events:
         print(format_sse_event(event))
         print()

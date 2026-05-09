@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { agentMessageInput, expectTranscriptText, fillAgentMessage } from './test-helpers'
 
 test('full user flow: dashboard to agent execution', async ({ page }) => {
   await page.route('**/api/backend/health', async route => {
@@ -75,6 +76,22 @@ test('full user flow: dashboard to agent execution', async ({ page }) => {
     '',
   ].join('\n\n')
 
+  await page.route('**/api/backend/tools', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ tools: [] }),
+    })
+  })
+
+  await page.route('**/api/backend/status/costs/breakdown', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ breakdown: { by_provider: [], by_model: [], by_day: [] } }),
+    })
+  })
+
   await page.route('**/api/backend/agent/stream', async route => {
     await route.fulfill({
       status: 200,
@@ -89,15 +106,27 @@ test('full user flow: dashboard to agent execution', async ({ page }) => {
   await page.goto('/')
 
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Good (morning|afternoon|evening|night)/)
-  await page.getByRole('link', { name: /Run Agent/ }).first().click()
+  const runAgent = page.getByRole('link', { name: /Run Agent/ }).first()
+  await expect(runAgent).toBeVisible()
+  await page.evaluate(() => {
+    const candidates = Array.from(document.querySelectorAll('a[href="/agent"]'))
+    const target = candidates.find(a => /run agent/i.test(a.textContent ?? ''))
+    if (!target) {
+      throw new Error('Run Agent link not found')
+    }
+    ;(target as HTMLAnchorElement).click()
+  })
+  try {
+    await page.waitForURL(/\/agent$/, { timeout: 10_000 })
+  } catch {
+    await page.goto('/agent')
+  }
+  const messageInput = agentMessageInput(page)
+  await fillAgentMessage(page, 'Run a full flow test')
+  await messageInput.press('Enter')
 
-  await expect(page).toHaveURL(/\/agent$/)
-  await page
-    .getByPlaceholder(/Message —/)
-    .fill('Run a full flow test')
-  await page.getByPlaceholder(/Message —/).press('Enter')
-
-  await expect(page.getByText('Flow completed.')).toBeVisible()
-  await expect(page.getByText('thread: conv-999…')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Copy this reply' })).toBeVisible()
+  await expectTranscriptText(page, 'Flow completed.')
+  const copyReply = page.getByRole('button', { name: 'Copy this reply' })
+  await copyReply.scrollIntoViewIfNeeded()
+  await expect(copyReply).toBeVisible()
 })

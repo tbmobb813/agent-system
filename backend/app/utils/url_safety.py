@@ -58,6 +58,12 @@ def validate_agent_outbound_url(url: str) -> tuple[bool, str]:
     Blocks non-http(s) schemes, missing hosts, obvious metadata / loopback
     names, literal non-global IPs, and hostnames whose DNS resolves only to
     addresses where ipaddress.is_global is False.
+
+    Known limitation — DNS rebinding: resolution happens here, but the actual
+    TCP connection is made later by httpx/playwright. A TTL-0 DNS response could
+    flip from a public IP to 169.254.x.x between the two calls. Full mitigation
+    requires connecting to the pre-resolved IP (httpx transport customisation).
+    For this personal-use deployment the risk is accepted.
     """
     try:
         parsed = urlparse(url)

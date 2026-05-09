@@ -56,7 +56,9 @@ async def get_history(
             ORDER BY t.created_at DESC
             LIMIT $1 OFFSET $2
             """,
-            limit, offset, pattern,
+            limit,
+            offset,
+            pattern,
         )
         total = await fetchval(
             "SELECT COUNT(*) FROM tasks WHERE query ILIKE $1 OR result ILIKE $1",
@@ -83,7 +85,8 @@ async def get_history(
             ORDER BY t.created_at DESC
             LIMIT $1 OFFSET $2
             """,
-            limit, offset,
+            limit,
+            offset,
         )
         total = await fetchval("SELECT COUNT(*) FROM tasks")
     return {
@@ -129,13 +132,17 @@ async def submit_task_feedback(
     api_key: str = Depends(verify_api_key),
 ):
     """Store explicit user feedback for a completed task and promote note-based learning."""
-    task = await fetchrow("SELECT id, query, user_id, status FROM tasks WHERE id = $1", task_id)
+    task = await fetchrow(
+        "SELECT id, query, user_id, status FROM tasks WHERE id = $1", task_id
+    )
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
     task_status = task.get("status") if isinstance(task, dict) else task["status"]
     if task_status != "completed":
-        raise HTTPException(status_code=409, detail="Feedback can only be submitted for completed tasks")
+        raise HTTPException(
+            status_code=409, detail="Feedback can only be submitted for completed tasks"
+        )
 
     task_user_id = task.get("user_id") if isinstance(task, dict) else task["user_id"]
     task_query = task.get("query") if isinstance(task, dict) else task["query"]
@@ -164,7 +171,9 @@ async def submit_task_feedback(
             )
         except Exception as e:
             # Log promotion failure but don't fail the request—feedback is already recorded
-            logger.warning("Feedback learning promotion failed for task %s: %s", task_id, e)
+            logger.warning(
+                "Feedback learning promotion failed for task %s: %s", task_id, e
+            )
 
     return {
         "status": "recorded",

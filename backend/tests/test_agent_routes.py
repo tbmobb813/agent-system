@@ -523,6 +523,13 @@ def test_agent_request_reasoning_effort_normalizes():
     assert AgentRequest(query="x", reasoning_effort="DISABLE").reasoning_effort == "off"
 
 
+def test_agent_request_reasoning_effort_handles_empty_and_non_string_values():
+    assert AgentRequest(query="x", reasoning_effort="").reasoning_effort is None
+
+    with pytest.raises(ValidationError):
+        AgentRequest(query="x", reasoning_effort=123)
+
+
 def test_agent_request_reasoning_effort_rejects_unknown():
     with pytest.raises(ValidationError):
         AgentRequest(query="x", reasoning_effort="bogus")

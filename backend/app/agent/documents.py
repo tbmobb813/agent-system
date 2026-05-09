@@ -21,9 +21,9 @@ from app.agent.memory import _embed
 
 logger = logging.getLogger(__name__)
 
-CHUNK_TOKENS   = 400   # target tokens per chunk
-CHUNK_OVERLAP  = 50    # overlap tokens between adjacent chunks
-MAX_CHUNKS     = 500   # hard cap per document
+CHUNK_TOKENS = 400  # target tokens per chunk
+CHUNK_OVERLAP = 50  # overlap tokens between adjacent chunks
+MAX_CHUNKS = 500  # hard cap per document
 
 _tokenizer = None
 
@@ -45,7 +45,9 @@ def _count_tokens(text: str) -> int:
     return len(text) // 4
 
 
-def _token_chunks(text: str, chunk_tokens: int = CHUNK_TOKENS, overlap: int = CHUNK_OVERLAP) -> list[str]:
+def _token_chunks(
+    text: str, chunk_tokens: int = CHUNK_TOKENS, overlap: int = CHUNK_OVERLAP
+) -> list[str]:
     """Split text into overlapping token-based chunks."""
     enc = _get_tokenizer()
     if enc:
@@ -79,9 +81,11 @@ def _token_chunks(text: str, chunk_tokens: int = CHUNK_TOKENS, overlap: int = CH
 # Parsers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _parse_pdf(data: bytes) -> str:
     try:
         import PyPDF2
+
         reader = PyPDF2.PdfReader(io.BytesIO(data))
         pages = []
         for page in reader.pages:
@@ -97,6 +101,7 @@ def _parse_pdf(data: bytes) -> str:
 def _parse_docx(data: bytes) -> str:
     try:
         import docx
+
         doc = docx.Document(io.BytesIO(data))
         paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
         return "\n\n".join(paragraphs)
@@ -135,6 +140,7 @@ def parse_document(filename: str, data: bytes) -> str:
 # Ingest pipeline
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def ingest_document(
     filename: str,
     data: bytes,
@@ -159,7 +165,9 @@ async def ingest_document(
     raw_chunks = _token_chunks(text)
     chunks = raw_chunks[:MAX_CHUNKS]
     if len(raw_chunks) > MAX_CHUNKS:
-        logger.warning(f"Document {filename} truncated to {MAX_CHUNKS} chunks (was {len(raw_chunks)})")
+        logger.warning(
+            f"Document {filename} truncated to {MAX_CHUNKS} chunks (was {len(raw_chunks)})"
+        )
 
     # 3. Create document record
     doc_id = str(uuid.uuid4())
@@ -169,7 +177,13 @@ async def ingest_document(
             INSERT INTO documents (id, user_id, filename, file_type, file_size, chunk_count, created_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             """,
-            doc_id, user_id, filename, file_type, len(data), len(chunks), datetime.utcnow(),
+            doc_id,
+            user_id,
+            filename,
+            file_type,
+            len(data),
+            len(chunks),
+            datetime.utcnow(),
         )
 
     # 4. Embed chunks with bounded concurrency, then store
@@ -196,8 +210,13 @@ async def ingest_document(
                         (id, document_id, chunk_index, content, token_count, embedding, created_at)
                     VALUES ($1, $2, $3, $4, $5, $6::vector, $7)
                     """,
-                    str(uuid.uuid4()), doc_id, i, chunk_text,
-                    token_count, str(embedding), now,
+                    str(uuid.uuid4()),
+                    doc_id,
+                    i,
+                    chunk_text,
+                    token_count,
+                    str(embedding),
+                    now,
                 )
             else:
                 await conn.execute(
@@ -206,8 +225,12 @@ async def ingest_document(
                         (id, document_id, chunk_index, content, token_count, created_at)
                     VALUES ($1, $2, $3, $4, $5, $6)
                     """,
-                    str(uuid.uuid4()), doc_id, i, chunk_text,
-                    token_count, now,
+                    str(uuid.uuid4()),
+                    doc_id,
+                    i,
+                    chunk_text,
+                    token_count,
+                    now,
                 )
             stored += 1
 
@@ -225,6 +248,7 @@ async def ingest_document(
 # ─────────────────────────────────────────────────────────────────────────────
 # Search
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def search_documents(
     query: str,
@@ -337,7 +361,7 @@ async def get_context_for_query(
         header = f"\n[{chunk['filename']} — chunk {chunk['chunk_index']}]"
         snippet = chunk["content"]
         if total + len(snippet) > max_chars:
-            snippet = snippet[:max_chars - total]
+            snippet = snippet[: max_chars - total]
         lines.append(f"{header}\n{snippet}")
         total += len(snippet)
         if total >= max_chars:

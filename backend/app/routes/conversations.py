@@ -27,7 +27,11 @@ async def get_conversation(
 ):
     """Get full message history for a conversation."""
     messages = await conversation_manager.load_messages(conversation_id, max_turns=50)
-    return {"conversation_id": conversation_id, "messages": messages, "total": len(messages)}
+    return {
+        "conversation_id": conversation_id,
+        "messages": messages,
+        "total": len(messages),
+    }
 
 
 @router.delete("/{conversation_id}")
@@ -37,4 +41,7 @@ async def delete_conversation(
 ):
     """Delete a conversation and all its messages."""
     success = await conversation_manager.delete_conversation(conversation_id)
-    return {"status": "deleted" if success else "error", "conversation_id": conversation_id}
+    return {
+        "status": "deleted" if success else "error",
+        "conversation_id": conversation_id,
+    }

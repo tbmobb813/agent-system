@@ -26,7 +26,9 @@ class MCPClient:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    async def call_tool(self, tool_name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def call_tool(
+        self, tool_name: str, arguments: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         payload = {
             "jsonrpc": "2.0",
             "id": str(uuid.uuid4()),
