@@ -63,6 +63,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+BASE_URL="${BASE_URL%/}"
+
 json_escape() {
   local value="$1"
   if command -v python3 >/dev/null 2>&1; then
