@@ -69,13 +69,13 @@ class SSEFormat:
         )
 
     @staticmethod
-    def tool_result(tool_name: str, result: str) -> str:
+    def tool_result(tool_name: str, tool_result: str) -> str:
         """Tool result event."""
         return format_sse_event(
             {
                 "type": "tool_result",
                 "tool_name": tool_name,
-                "result": result,
+                "tool_result": tool_result,
             }
         )
 

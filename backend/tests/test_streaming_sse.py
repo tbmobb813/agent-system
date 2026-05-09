@@ -18,7 +18,7 @@ def test_stream_sse_dict_and_primitive():
 def test_sse_format_helpers():
     assert "status" in SSEFormat.status("busy")
     assert "tool_search" in SSEFormat.tool_call("tool_search", {"q": "a"})
-    assert "result" in SSEFormat.tool_result("t", "ok")
+    assert '"tool_result"' in SSEFormat.tool_result("t", "ok")
     assert "Hello" in SSEFormat.text_delta("Hello")
     assert '"model"' in SSEFormat.text_delta("x", model="m")
     assert "bad" in SSEFormat.error("bad")
