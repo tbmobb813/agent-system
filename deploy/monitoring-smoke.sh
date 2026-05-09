@@ -55,24 +55,31 @@ done
 
 json_escape() {
   local value="$1"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$value"
+    return
+  fi
+
   value="${value//\\/\\\\}"
   value="${value//\"/\\\"}"
   value="${value//$'\n'/\\n}"
   value="${value//$'\r'/\\r}"
   value="${value//$'\t'/\\t}"
-  printf '%s' "$value"
+  printf '"%s"' "$value"
 }
 
 report_failure() {
   local message="$1"
+  local alert_message
   local escaped_message
   echo "[monitoring][error] $message" >&2
 
   if [[ -n "${ALERT_WEBHOOK_URL:-}" ]]; then
-    escaped_message="$(json_escape "$message")"
+    alert_message="agent-system monitoring alert: $message"
+    escaped_message="$(json_escape "$alert_message")"
     curl -sS -m "$TIMEOUT" -X POST "$ALERT_WEBHOOK_URL" \
       -H 'Content-Type: application/json' \
-      -d "{\"text\":\"agent-system monitoring alert: ${escaped_message}\"}" >/dev/null || true
+      -d "{\"text\":${escaped_message}}" >/dev/null || true
   fi
 
   exit 1

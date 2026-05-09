@@ -10,15 +10,24 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 
 DEPLOY_ENV_FILE="$REPO_DIR/deploy/.env.deploy"
+trim_whitespace() {
+	local value="$1"
+	shopt -s extglob
+	value="${value##+([[:space:]])}"
+	value="${value%%+([[:space:]])}"
+	shopt -u extglob
+	printf '%s' "$value"
+}
+
 if [[ -f "$DEPLOY_ENV_FILE" ]]; then
 	echo "==> Loading deploy env from deploy/.env.deploy"
 	line_number=0
 	while IFS= read -r line || [[ -n "$line" ]]; do
 		((line_number += 1))
 		[[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
-		if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
+		if [[ "$line" =~ ^[[:space:]]*([A-Za-z][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
 			key="${BASH_REMATCH[1]}"
-			value="$(printf '%s' "${BASH_REMATCH[2]}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+			value="$(trim_whitespace "${BASH_REMATCH[2]}")"
 			if [[ "$value" =~ ^\"(.*)\"$ ]]; then
 				value="${BASH_REMATCH[1]}"
 			elif [[ "$value" =~ ^\'(.*)\'$ ]]; then
