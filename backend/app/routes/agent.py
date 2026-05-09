@@ -380,7 +380,17 @@ async def stream_agent(
         except Exception as e:
             stream_status = "failed"
             logger.error(f"Stream error: {e}", exc_info=True)
-            yield format_sse_event({"type": "error", "error": "Stream failed"})
+            if isinstance(e, PermissionError):
+                error_code = "auth_error"
+            elif isinstance(e, (ConnectionError, OSError)):
+                error_code = "connection_error"
+            elif isinstance(e, ValueError):
+                error_code = "invalid_request"
+            else:
+                error_code = "stream_error"
+            yield format_sse_event(
+                {"type": "error", "error": error_code, "task_id": task_id}
+            )
         finally:
             elapsed_ms = int((datetime.utcnow() - started_at).total_seconds() * 1000)
             await _record_latency_metric(
