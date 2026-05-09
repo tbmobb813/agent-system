@@ -89,7 +89,7 @@ report_failure() {
     escaped_message="$(json_escape "$alert_message")"
     curl -sS -m "$TIMEOUT" -X POST "$ALERT_WEBHOOK_URL" \
       -H 'Content-Type: application/json' \
-      -d "{\"text\":${escaped_message}}" >/dev/null || true
+      -d "{\"text\":${escaped_message},\"content\":${escaped_message}}" >/dev/null || true
   fi
 
   exit 1
