@@ -175,6 +175,18 @@ async def test_analytics_tools_schema_error_returns_empty_tools(monkeypatch):
     assert r.json()["tools"] == []
 
 
+async def test_analytics_tools_runtime_error_returns_503(monkeypatch):
+    async def boom(*_args, **_kwargs):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr("app.routes.analytics.fetch", AsyncMock(side_effect=boom))
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.get("/analytics/tools?days=5", headers=AUTH)
+
+    assert r.status_code == 503
+
+
 async def test_analytics_alerts_risk_high(monkeypatch):
     monkeypatch.setattr("app.routes.analytics.fetchval", AsyncMock(return_value=999.0))
 

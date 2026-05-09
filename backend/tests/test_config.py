@@ -1,7 +1,7 @@
 """Tests for configuration module."""
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 from app.config import Settings, CostTracker
 
 
@@ -53,6 +53,48 @@ async def test_cost_tracker_close_no_pool():
     """Test CostTracker close with no pool."""
     tracker = CostTracker()
     await tracker.close()  # Should not raise
+
+
+@pytest.mark.asyncio
+async def test_cost_tracker_initialize_success(monkeypatch):
+    """Test CostTracker initializes a pool successfully."""
+    tracker = CostTracker()
+    mock_pool = AsyncMock()
+
+    async def _create_pool(*args, **kwargs):
+        return mock_pool
+
+    monkeypatch.setattr("app.config.asyncpg.create_pool", _create_pool)
+    await tracker.initialize("postgresql://user:pass@localhost/db")
+
+    assert tracker.db_pool is mock_pool
+
+
+@pytest.mark.asyncio
+async def test_cost_tracker_fallback_helpers_without_pool():
+    """Test helper fallbacks when no database pool exists."""
+    tracker = CostTracker()
+
+    assert await tracker.get_spent_month() == 0.0
+    assert await tracker.get_spent_today_date() == 0.0
+    assert await tracker.get_spent_by_model() == {}
+    assert tracker.pop_call_info("missing") == {
+        "cost": 0.0,
+        "model": None,
+        "usage": None,
+    }
+    assert tracker._pop_call_info("missing") == {
+        "cost": 0.0,
+        "model": None,
+        "usage": None,
+    }
+    assert await tracker.get_last_call_cost() == 0.0
+    assert tracker.get_last_model() is None
+    assert tracker.get_last_usage() is None
+    assert tracker.get_model_pricing("unknown-model") == {
+        "input": 3.0,
+        "output": 15.0,
+    }
 
 
 def test_settings_budget_defaults():

@@ -74,6 +74,32 @@ async def test_telegram_handles_non_200_response(monkeypatch):
     await mgr._telegram("hello")
 
 
+async def test_telegram_success_response(monkeypatch):
+    mgr = AlertManager()
+    monkeypatch.setattr("app.config.settings.TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.setattr("app.config.settings.TELEGRAM_CHAT_ID", "chat")
+
+    class _Resp:
+        status_code = 200
+        text = "ok"
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return _Resp()
+
+    monkeypatch.setattr(
+        "app.utils.alerts.httpx.AsyncClient", lambda timeout=10.0: _Client()
+    )
+
+    await mgr._telegram("hello")
+
+
 async def test_telegram_handles_exception(monkeypatch):
     mgr = AlertManager()
     monkeypatch.setattr("app.config.settings.TELEGRAM_BOT_TOKEN", "token")
