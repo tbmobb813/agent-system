@@ -42,7 +42,7 @@ test('agent full flow: submit query, receive stream, and show completion control
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ by_provider: [], by_model: [], by_day: [] }),
+      body: JSON.stringify({ breakdown: {} }),
     })
   })
 
@@ -118,7 +118,7 @@ test('agent flow shows an error when stream request fails', async ({ page }) => 
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ by_provider: [], by_model: [], by_day: [] }),
+      body: JSON.stringify({ breakdown: {} }),
     })
   })
 

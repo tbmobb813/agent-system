@@ -88,7 +88,7 @@ test('full user flow: dashboard to agent execution', async ({ page }) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ by_provider: [], by_model: [], by_day: [] }),
+      body: JSON.stringify({ breakdown: {} }),
     })
   })
 
