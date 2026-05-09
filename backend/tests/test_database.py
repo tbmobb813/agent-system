@@ -124,10 +124,11 @@ async def test_init_db_with_error():
 async def test_init_db_success():
     """Test successful database initialization."""
     mock_pool = AsyncMock()
+
     # Create an awaitable mock for create_pool
     async def async_create_pool(*args, **kwargs):
         return mock_pool
-    
+
     with patch("asyncpg.create_pool", side_effect=async_create_pool):
         with patch.object(_db, "run_migrations"):
             await _db.init_db()

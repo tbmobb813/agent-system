@@ -28,7 +28,10 @@ def test_settings_model_defaults():
     assert settings.DEFAULT_MODEL_CODING
     assert settings.DEFAULT_MODEL_AGENT
     assert "deepseek" in settings.DEFAULT_MODEL_SIMPLE
-    assert "claude" in settings.DEFAULT_MODEL_AGENT or "claude" in settings.DEFAULT_MODEL_ADVANCED
+    assert (
+        "claude" in settings.DEFAULT_MODEL_AGENT
+        or "claude" in settings.DEFAULT_MODEL_ADVANCED
+    )
 
 
 def test_cost_tracker_initialization():
