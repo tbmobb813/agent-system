@@ -380,6 +380,7 @@ async def stream_agent(
         except Exception as e:
             stream_status = "failed"
             logger.error(f"Stream error: {e}", exc_info=True)
+            # PermissionError must be checked before OSError (it is a subclass of OSError)
             if isinstance(e, PermissionError):
                 error_code = "auth_error"
             elif isinstance(e, (ConnectionError, OSError)):
