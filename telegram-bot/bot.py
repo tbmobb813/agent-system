@@ -26,8 +26,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-BACKEND_URL = os.getenv("BACKEND_API_URL", "http://localhost:8000")
-API_KEY = os.getenv("TELEGRAM_BOT_API_KEY", "sk-agent-telegram-bot")
+BACKEND_URL = os.getenv("BACKEND_API_URL", "http://backend:8000")
+API_KEY = os.getenv("TELEGRAM_BOT_API_KEY", "")
 
 
 def _parse_chat_id(raw_value: str) -> int:
@@ -420,6 +420,8 @@ def main():
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN is not set")
+    if not API_KEY:
+        raise ValueError("TELEGRAM_BOT_API_KEY is not set")
 
     app = Application.builder().token(token).build()
 

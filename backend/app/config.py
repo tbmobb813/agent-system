@@ -49,7 +49,6 @@ class Settings(BaseSettings):
         default=[
             "http://localhost:3003",
             "http://localhost:8000",
-            "http://167.88.45.213:3003",
         ]
     )
     SITE_URL: str = Field(default="http://localhost:3003")
@@ -66,8 +65,9 @@ class Settings(BaseSettings):
     # Comma-separated host suffixes for browser_automation (e.g. wikipedia.org,.github.io). Empty = SSRF checks only.
     BROWSER_AUTOMATION_ALLOWED_HOST_SUFFIXES: str = Field(default="")
 
-    # Master API keys — comma-separated, bypass DB validation (set in .env)
-    BACKEND_API_KEY: str = Field(default="sk-agent-local-dev,sk-agent-telegram-bot")
+    # Master API keys — comma-separated, bypass DB validation.
+    # Must be set explicitly via .env — the empty default forces DB validation for every request.
+    BACKEND_API_KEY: str = Field(default="")
 
     # Telegram
     TELEGRAM_BOT_TOKEN: str = Field(default="")

@@ -840,12 +840,23 @@ class ToolRegistry:
                         )
 
                     elif action == "screenshot":
-                        path = screenshot_path or os.path.join(
-                            settings.AGENT_WORKSPACE_DIR, "screenshot.png"
+                        ws_root = (
+                            Path(settings.AGENT_WORKSPACE_DIR).expanduser().resolve()
                         )
-                        os.makedirs(os.path.dirname(path), exist_ok=True)
-                        await page.screenshot(path=path, full_page=True)
-                        return f"Screenshot saved to {path}"
+                        ws_root.mkdir(parents=True, exist_ok=True)
+                        if screenshot_path:
+                            try:
+                                candidate = (
+                                    ws_root / Path(screenshot_path).name
+                                ).resolve()
+                                candidate.relative_to(ws_root)
+                            except ValueError:
+                                return "Error: screenshot path must be inside the workspace"
+                            safe_ss_path = str(candidate)
+                        else:
+                            safe_ss_path = str(ws_root / "screenshot.png")
+                        await page.screenshot(path=safe_ss_path, full_page=True)
+                        return f"Screenshot saved to {safe_ss_path}"
 
                     elif action == "click":
                         if not selector:

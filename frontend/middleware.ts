@@ -39,7 +39,10 @@ export function middleware(request: NextRequest) {
   }
 
   const apiKey = process.env.BACKEND_API_KEY || process.env.API_KEY
-  if (!apiKey) return NextResponse.next()
+  if (!apiKey) {
+    console.warn('[middleware] BACKEND_API_KEY is not set — forwarding request without Authorization header')
+    return NextResponse.next()
+  }
 
   const requestHeaders = new Headers(request.headers)
   requestHeaders.set('Authorization', `Bearer ${apiKey}`)
