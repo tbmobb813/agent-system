@@ -18,101 +18,59 @@ function HistoryView({ onNavigate }) {
   const statuses = ['all', 'completed', 'running', 'failed', 'stopped'];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div className="dr-history-stack">
       <header>
         <Eyebrow>Logs</Eyebrow>
         <SectionTitle size="32px">History</SectionTitle>
-        <p style={{ fontFamily: 'var(--font-body)', fontSize: '15px', color: 'var(--muted)', margin: '8px 0 0', lineHeight: 1.55 }}>
+        <p className="dr-history-summary">
           {rows.length} runs · total cost {formatCost(totalCost)}
         </p>
       </header>
 
       <Panel>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '14px' }}>
+        <div className="dr-history-controls">
           <input
             type="text"
             placeholder="Filter by query…"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            style={{
-              background: 'var(--bg-elev)',
-              color: 'var(--text)',
-              fontFamily: 'inherit',
-              fontSize: '13px',
-              border: '1px solid var(--border)',
-              borderRadius: '8px',
-              padding: '8px 12px',
-              outline: 'none',
-              minWidth: '240px',
-              flex: 1,
-            }}
+            className="dr-history-filter-input"
           />
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          <div className="dr-history-status-row">
             {statuses.map(s => (
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
-                style={{
-                  background: statusFilter === s ? 'var(--surface)' : 'transparent',
-                  border: '1px solid ' + (statusFilter === s ? 'var(--accent)' : 'var(--border)'),
-                  color: statusFilter === s ? 'var(--text)' : 'var(--muted)',
-                  fontFamily: 'inherit',
-                  fontSize: '11px',
-                  letterSpacing: '0.12em',
-                  textTransform: 'uppercase',
-                  padding: '6px 10px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                }}
+                className={`dr-history-status-btn ${statusFilter === s ? 'is-active' : ''}`}
               >{s}</button>
             ))}
           </div>
         </div>
 
         <div>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '90px minmax(0, 1fr) 130px 90px 70px',
-            gap: '14px',
-            paddingBottom: '8px',
-            borderBottom: '1px solid var(--border)',
-            fontFamily: 'var(--font-body)',
-            fontSize: '10px',
-            letterSpacing: '0.18em',
-            textTransform: 'uppercase',
-            color: 'var(--muted)',
-          }}>
+          <div className="dr-history-head-row">
             <span>Status</span>
             <span>Query</span>
             <span>Model</span>
-            <span style={{ textAlign: 'right' }}>Time</span>
-            <span style={{ textAlign: 'right' }}>Cost</span>
+            <span className="dr-align-right">Time</span>
+            <span className="dr-align-right">Cost</span>
           </div>
           {rows.map((task) => (
-            <div key={task.id} style={{
-              display: 'grid',
-              gridTemplateColumns: '90px minmax(0, 1fr) 130px 90px 70px',
-              gap: '14px',
-              alignItems: 'center',
-              padding: '12px 0',
-              borderBottom: '1px solid var(--border)',
-              fontFamily: 'var(--font-body)',
-              fontSize: '13px',
-            }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <div key={task.id} className="dr-history-data-row">
+              <span className="dr-inline-status">
                 <StatusDot status={task.status} />
                 <StatusText status={task.status} />
               </span>
-              <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span className="dr-row-query">
                 {task.query}
               </span>
-              <Code style={{ justifySelf: 'start' }}>{shortModel(task.model)}</Code>
-              <span style={{ color: 'var(--muted)', fontSize: '11px', textAlign: 'right' }}>{timeAgo(task.created_at)}</span>
-              <span style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)', textAlign: 'right' }}>{formatCost(task.cost)}</span>
+              <Code className="dr-code-start">{shortModel(task.model)}</Code>
+              <span className="dr-row-time">{timeAgo(task.created_at)}</span>
+              <span className="dr-row-cost">{formatCost(task.cost)}</span>
             </div>
           ))}
           {rows.length === 0 && (
-            <div style={{ padding: '32px', textAlign: 'center', color: 'var(--muted)', fontFamily: 'var(--font-body)', fontSize: '13px' }}>
+            <div className="dr-history-empty">
               No runs match your filter.
             </div>
           )}
