@@ -140,7 +140,7 @@ bash deploy/monitoring-smoke.sh --base-url https://agent.techtrendwire.com
 # One-shot health checks
 bash deploy/monitoring-smoke.sh --base-url https://agent.techtrendwire.com
 
-# Send failure alerts to your webhook (Slack/Discord compatible JSON payload)
+# Send failure alerts to your webhook (Slack-style JSON payload)
 ALERT_WEBHOOK_URL=https://hooks.example.com/xxx \
       bash deploy/monitoring-smoke.sh --base-url https://agent.techtrendwire.com
 ```
