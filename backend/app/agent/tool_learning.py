@@ -47,9 +47,9 @@ async def learn_tool_chains() -> None:
 
     # Group tool names per (task_type, task_id) — preserve call order
     type_sequences: dict[str, list[list[str]]] = {}
-    current_task_tools: dict[str, tuple[str, list[str]]] = (
-        {}
-    )  # task_key → (type, [tools])
+    current_task_tools: dict[
+        str, tuple[str, list[str]]
+    ] = {}  # task_key → (type, [tools])
 
     for row in rows:
         query = row["query"] or ""

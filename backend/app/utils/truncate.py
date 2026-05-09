@@ -44,12 +44,16 @@ def truncate_head(
 
     for i, line in enumerate(lines):
         if i >= max_lines:
-            _append_truncation_note(kept, total_lines, total_bytes, i, byte_count, "head")
+            _append_truncation_note(
+                kept, total_lines, total_bytes, i, byte_count, "head"
+            )
             return "\n".join(kept)
 
         line_bytes = len((line + "\n").encode("utf-8"))
         if byte_count + line_bytes > max_bytes:
-            _append_truncation_note(kept, total_lines, total_bytes, i, byte_count, "head")
+            _append_truncation_note(
+                kept, total_lines, total_bytes, i, byte_count, "head"
+            )
             return "\n".join(kept)
 
         kept.append(line)
@@ -101,6 +105,7 @@ def truncate_tail(
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
+
 
 def _append_truncation_note(
     kept: list[str],

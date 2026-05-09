@@ -18,12 +18,11 @@ from app import database as _db
 
 logger = logging.getLogger(__name__)
 
-MAX_HISTORY_TURNS = 10   # pairs (user + assistant) to load
-DEFAULT_USER      = "default"
+MAX_HISTORY_TURNS = 10  # pairs (user + assistant) to load
+DEFAULT_USER = "default"
 
 
 class ConversationManager:
-
     # ── Create / resume ───────────────────────────────────────────────────────
 
     async def get_or_create(
@@ -55,7 +54,9 @@ class ConversationManager:
                     INSERT INTO conversations (id, user_id, created_at, updated_at)
                     VALUES ($1, $2, $3, $3)
                     """,
-                    new_id, user_id, now,
+                    new_id,
+                    user_id,
+                    now,
                 )
             logger.info(f"Created conversation {new_id}")
         except Exception as e:
@@ -100,7 +101,7 @@ class ConversationManager:
                     ORDER BY created_at ASC
                     """,
                     conversation_id,
-                    max_turns * 2,   # *2 because each turn = user + assistant
+                    max_turns * 2,  # *2 because each turn = user + assistant
                 )
             return [{"role": r["role"], "content": r["content"]} for r in rows]
         except Exception as e:
@@ -129,15 +130,28 @@ class ConversationManager:
                     VALUES ($1, $2, $3, $4, $5, $6)
                     """,
                     [
-                        (str(uuid.uuid4()), conversation_id, "user",
-                         user_message, user_tokens, now),
-                        (str(uuid.uuid4()), conversation_id, "assistant",
-                         assistant_message, assistant_tokens, now),
+                        (
+                            str(uuid.uuid4()),
+                            conversation_id,
+                            "user",
+                            user_message,
+                            user_tokens,
+                            now,
+                        ),
+                        (
+                            str(uuid.uuid4()),
+                            conversation_id,
+                            "assistant",
+                            assistant_message,
+                            assistant_tokens,
+                            now,
+                        ),
                     ],
                 )
                 await conn.execute(
                     "UPDATE conversations SET updated_at = $1 WHERE id = $2",
-                    now, conversation_id,
+                    now,
+                    conversation_id,
                 )
             logger.debug(f"Saved turn to conversation {conversation_id}")
         except Exception as e:
@@ -166,7 +180,8 @@ class ConversationManager:
                     ORDER BY c.updated_at DESC
                     LIMIT $2
                     """,
-                    user_id, limit,
+                    user_id,
+                    limit,
                 )
             return [dict(r) for r in rows]
         except Exception as e:
@@ -213,7 +228,7 @@ class ConversationManager:
         """
         if not _db.db_pool:
             return
-        keep_messages = keep_recent * 2   # user + assistant per turn
+        keep_messages = keep_recent * 2  # user + assistant per turn
         now = datetime.utcnow()
         try:
             async with _db.db_pool.acquire() as conn:
@@ -225,7 +240,8 @@ class ConversationManager:
                     ORDER BY created_at DESC
                     LIMIT $2
                     """,
-                    conversation_id, keep_messages,
+                    conversation_id,
+                    keep_messages,
                 )
                 keep_ids = [r["id"] for r in recent_ids]
 
@@ -237,7 +253,8 @@ class ConversationManager:
                         WHERE conversation_id = $1
                           AND id != ALL($2::uuid[])
                         """,
-                        conversation_id, keep_ids,
+                        conversation_id,
+                        keep_ids,
                     )
                 else:
                     await conn.execute(
@@ -261,12 +278,15 @@ class ConversationManager:
                     INSERT INTO messages (id, conversation_id, role, content, tokens, created_at)
                     VALUES ($1, $2, 'assistant', $3, $4, $5)
                     """,
-                    str(uuid.uuid4()), conversation_id,
+                    str(uuid.uuid4()),
+                    conversation_id,
                     compaction_prefix + summary,
                     len(summary) // 4,
                     now,
                 )
-            logger.info(f"Compacted conversation {conversation_id}, kept {keep_messages} messages")
+            logger.info(
+                f"Compacted conversation {conversation_id}, kept {keep_messages} messages"
+            )
         except Exception as e:
             logger.warning(f"Compaction failed: {e}")
 

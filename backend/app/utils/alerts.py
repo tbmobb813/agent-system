@@ -81,15 +81,20 @@ class AlertManager:
         url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(url, json={
-                    "chat_id": settings.TELEGRAM_CHAT_ID,
-                    "text": message,
-                    "parse_mode": "Markdown",
-                })
+                resp = await client.post(
+                    url,
+                    json={
+                        "chat_id": settings.TELEGRAM_CHAT_ID,
+                        "text": message,
+                        "parse_mode": "Markdown",
+                    },
+                )
                 if resp.status_code == 200:
                     logger.info("Budget alert sent via Telegram")
                 else:
-                    logger.warning(f"Telegram alert failed: {resp.status_code} {resp.text}")
+                    logger.warning(
+                        f"Telegram alert failed: {resp.status_code} {resp.text}"
+                    )
         except Exception as e:
             logger.warning(f"Telegram alert error: {e}")
 

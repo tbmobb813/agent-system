@@ -146,6 +146,7 @@ async def post_task_reflection(
     # surfaces them as few-shot examples in future similar tasks.
     if learned_rules:
         from app.agent.memory import memory_manager
+
         for rule in learned_rules[:3]:  # cap to avoid bloat
             rule = rule.strip()
             if len(rule) < 10:
@@ -156,4 +157,6 @@ async def post_task_reflection(
                 user_id=user_id,
                 relevance_score=1.1,
             )
-        logger.info(f"Reflection complete for task {task_id}: rating={self_rating}, rules={len(learned_rules)}")
+        logger.info(
+            f"Reflection complete for task {task_id}: rating={self_rating}, rules={len(learned_rules)}"
+        )

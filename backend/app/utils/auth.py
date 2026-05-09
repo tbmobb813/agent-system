@@ -48,6 +48,7 @@ async def verify_api_key(
     # Master key bypass — accepts any comma-separated key in BACKEND_API_KEY.
     # Skips DB validation entirely.
     from app.config import settings as app_settings
+
     allowed = [k.strip() for k in app_settings.BACKEND_API_KEY.split(",") if k.strip()]
     for k in allowed:
         if len(k) != len(token):
@@ -94,17 +95,22 @@ async def verify_api_key(
                 status_code=503,
                 detail="Unable to validate API key (database error); try again later",
             )
-        logger.warning("API key accepted by format only after DB lookup error (development mode)")
+        logger.warning(
+            "API key accepted by format only after DB lookup error (development mode)"
+        )
         return token
 
     if row is None:
         raise HTTPException(status_code=401, detail="Invalid API key")
     if not row["is_active"]:
         raise HTTPException(status_code=401, detail="API key is disabled")
+
     # Fire-and-forget last_used update — log but don't fail auth on DB error
     async def _update_last_used():
         try:
-            await execute("UPDATE api_keys SET last_used = NOW() WHERE key_hash = $1", key_hash)
+            await execute(
+                "UPDATE api_keys SET last_used = NOW() WHERE key_hash = $1", key_hash
+            )
         except Exception as e:
             logger.debug(f"Could not update last_used for key: {e}")
 
@@ -125,15 +131,15 @@ class APIKeyManager:
     """
     Manages API key generation and validation.
     """
-    
+
     @staticmethod
     def generate_key(user_id: str) -> str:
         """Generate a new API key for a user."""
         import secrets
-        
+
         random_suffix = secrets.token_urlsafe(16)
         return f"sk-agent-{user_id}-{random_suffix}"
-    
+
     @staticmethod
     def validate_key(key: str) -> bool:
         """Validate API key format."""

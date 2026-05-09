@@ -80,13 +80,13 @@ def test_parse_document_detects_empty_content():
 
 
 async def test_ingest_document_raises_when_db_not_connected(monkeypatch):
-    monkeypatch.setattr('app.agent.documents._db.db_pool', None)
+    monkeypatch.setattr("app.agent.documents._db.db_pool", None)
 
     try:
-        await ingest_document('a.txt', b'hello')
-        assert False, 'Expected RuntimeError'
+        await ingest_document("a.txt", b"hello")
+        assert False, "Expected RuntimeError"
     except RuntimeError as e:
-        assert 'Database not connected' in str(e)
+        assert "Database not connected" in str(e)
 
 
 async def test_ingest_document_raises_for_empty_parsed_text(monkeypatch):
@@ -97,15 +97,15 @@ async def test_ingest_document_raises_for_empty_parsed_text(monkeypatch):
     fake_pool = AsyncMock()
     fake_pool.acquire = lambda: AsyncContextManager(fake_conn)
 
-    monkeypatch.setattr('app.agent.documents._db.db_pool', fake_pool)
-    monkeypatch.setattr('app.agent.documents.parse_document', lambda _f, _d: '   ')
-    monkeypatch.setattr('app.agent.documents._embed', fake_embed)
+    monkeypatch.setattr("app.agent.documents._db.db_pool", fake_pool)
+    monkeypatch.setattr("app.agent.documents.parse_document", lambda _f, _d: "   ")
+    monkeypatch.setattr("app.agent.documents._embed", fake_embed)
 
     try:
-        await ingest_document('a.txt', b'hello')
-        assert False, 'Expected ValueError'
+        await ingest_document("a.txt", b"hello")
+        assert False, "Expected ValueError"
     except ValueError as e:
-        assert 'empty or unreadable' in str(e)
+        assert "empty or unreadable" in str(e)
 
 
 async def test_ingest_document_stores_chunks_and_returns_summary(monkeypatch):
@@ -115,20 +115,24 @@ async def test_ingest_document_stores_chunks_and_returns_summary(monkeypatch):
 
     async def fake_embed(text):
         # First chunk has embedding, second does not.
-        return [0.1, 0.2] if 'chunk1' in text else None
+        return [0.1, 0.2] if "chunk1" in text else None
 
-    monkeypatch.setattr('app.agent.documents._db.db_pool', fake_pool)
-    monkeypatch.setattr('app.agent.documents.parse_document', lambda _f, _d: 'doc text')
-    monkeypatch.setattr('app.agent.documents._token_chunks', lambda _t: ['chunk1', 'chunk2'])
-    monkeypatch.setattr('app.agent.documents._count_tokens', lambda c: 5 if c == 'chunk1' else 7)
-    monkeypatch.setattr('app.agent.documents._embed', fake_embed)
+    monkeypatch.setattr("app.agent.documents._db.db_pool", fake_pool)
+    monkeypatch.setattr("app.agent.documents.parse_document", lambda _f, _d: "doc text")
+    monkeypatch.setattr(
+        "app.agent.documents._token_chunks", lambda _t: ["chunk1", "chunk2"]
+    )
+    monkeypatch.setattr(
+        "app.agent.documents._count_tokens", lambda c: 5 if c == "chunk1" else 7
+    )
+    monkeypatch.setattr("app.agent.documents._embed", fake_embed)
 
-    result = await ingest_document('file.txt', b'bytes', user_id='u1')
+    result = await ingest_document("file.txt", b"bytes", user_id="u1")
 
-    assert result['filename'] == 'file.txt'
-    assert result['file_type'] == 'txt'
-    assert result['chunk_count'] == 2
-    assert result['total_tokens'] == 12
+    assert result["filename"] == "file.txt"
+    assert result["file_type"] == "txt"
+    assert result["chunk_count"] == 2
+    assert result["total_tokens"] == 12
     # 3 execute calls: documents row + 2 chunk rows
     assert fake_conn.execute.await_count == 3
 
@@ -138,15 +142,15 @@ async def test_search_documents_uses_vector_when_embedding_exists(monkeypatch):
         return [0.3, 0.4]
 
     async def fake_vector(_emb, _uid, _limit, _doc_id):
-        return [{'id': 'c1', 'filename': 'doc.txt', 'content': 'hello'}]
+        return [{"id": "c1", "filename": "doc.txt", "content": "hello"}]
 
-    monkeypatch.setattr('app.agent.documents._db.db_pool', object())
-    monkeypatch.setattr('app.agent.documents._embed', fake_embed)
-    monkeypatch.setattr('app.agent.documents._vector_search_docs', fake_vector)
+    monkeypatch.setattr("app.agent.documents._db.db_pool", object())
+    monkeypatch.setattr("app.agent.documents._embed", fake_embed)
+    monkeypatch.setattr("app.agent.documents._vector_search_docs", fake_vector)
 
-    rows = await search_documents('query', user_id='u1', limit=3)
+    rows = await search_documents("query", user_id="u1", limit=3)
     assert len(rows) == 1
-    assert rows[0]['id'] == 'c1'
+    assert rows[0]["id"] == "c1"
 
 
 async def test_search_documents_falls_back_to_fulltext(monkeypatch):
@@ -154,31 +158,31 @@ async def test_search_documents_falls_back_to_fulltext(monkeypatch):
         return None
 
     async def fake_fulltext(_q, _uid, _limit, _doc_id):
-        return [{'id': 'c2', 'filename': 'doc2.txt', 'content': 'world'}]
+        return [{"id": "c2", "filename": "doc2.txt", "content": "world"}]
 
-    monkeypatch.setattr('app.agent.documents._db.db_pool', object())
-    monkeypatch.setattr('app.agent.documents._embed', fake_embed)
-    monkeypatch.setattr('app.agent.documents._fulltext_search_docs', fake_fulltext)
+    monkeypatch.setattr("app.agent.documents._db.db_pool", object())
+    monkeypatch.setattr("app.agent.documents._embed", fake_embed)
+    monkeypatch.setattr("app.agent.documents._fulltext_search_docs", fake_fulltext)
 
-    rows = await search_documents('query', user_id='u1', limit=3)
+    rows = await search_documents("query", user_id="u1", limit=3)
     assert len(rows) == 1
-    assert rows[0]['id'] == 'c2'
+    assert rows[0]["id"] == "c2"
 
 
 async def test_get_context_for_query_formats_chunks(monkeypatch):
     async def fake_search(_q, user_id=None, limit=4, document_id=None):
         return [
-            {'filename': 'a.txt', 'chunk_index': 0, 'content': 'A' * 1500},
-            {'filename': 'b.txt', 'chunk_index': 1, 'content': 'B' * 2000},
+            {"filename": "a.txt", "chunk_index": 0, "content": "A" * 1500},
+            {"filename": "b.txt", "chunk_index": 1, "content": "B" * 2000},
         ]
 
-    monkeypatch.setattr('app.agent.documents.search_documents', fake_search)
+    monkeypatch.setattr("app.agent.documents.search_documents", fake_search)
 
-    ctx = await get_context_for_query('topic', user_id='u1', limit=4, max_chars=2000)
+    ctx = await get_context_for_query("topic", user_id="u1", limit=4, max_chars=2000)
 
-    assert ctx.startswith('Relevant content from your documents:')
-    assert '[a.txt — chunk 0]' in ctx
-    assert '[b.txt — chunk 1]' in ctx
+    assert ctx.startswith("Relevant content from your documents:")
+    assert "[a.txt — chunk 0]" in ctx
+    assert "[b.txt — chunk 1]" in ctx
     assert len(ctx) < 2600
 
 
@@ -186,36 +190,36 @@ async def test_vector_search_docs_returns_rows(monkeypatch):
     from app.agent.documents import _vector_search_docs
 
     fake_conn = AsyncMock()
-    fake_conn.fetch = AsyncMock(return_value=[{'id': 'c1', 'content': 'alpha'}])
+    fake_conn.fetch = AsyncMock(return_value=[{"id": "c1", "content": "alpha"}])
 
     class FakePool:
         def acquire(self):
             return AsyncContextManager(fake_conn)
 
-    monkeypatch.setattr('app.agent.documents._db.db_pool', FakePool())
+    monkeypatch.setattr("app.agent.documents._db.db_pool", FakePool())
 
-    rows = await _vector_search_docs([0.1, 0.2], 'u1', 3, None)
+    rows = await _vector_search_docs([0.1, 0.2], "u1", 3, None)
 
     assert len(rows) == 1
-    assert rows[0]['id'] == 'c1'
+    assert rows[0]["id"] == "c1"
 
 
 async def test_fulltext_search_docs_returns_rows(monkeypatch):
     from app.agent.documents import _fulltext_search_docs
 
     fake_conn = AsyncMock()
-    fake_conn.fetch = AsyncMock(return_value=[{'id': 'c2', 'content': 'beta'}])
+    fake_conn.fetch = AsyncMock(return_value=[{"id": "c2", "content": "beta"}])
 
     class FakePool:
         def acquire(self):
             return AsyncContextManager(fake_conn)
 
-    monkeypatch.setattr('app.agent.documents._db.db_pool', FakePool())
+    monkeypatch.setattr("app.agent.documents._db.db_pool", FakePool())
 
-    rows = await _fulltext_search_docs('query', 'u1', 2, None)
+    rows = await _fulltext_search_docs("query", "u1", 2, None)
 
     assert len(rows) == 1
-    assert rows[0]['id'] == 'c2'
+    assert rows[0]["id"] == "c2"
 
 
 async def test_ingest_document_truncates_chunk_count(monkeypatch):
@@ -228,15 +232,17 @@ async def test_ingest_document_truncates_chunk_count(monkeypatch):
     async def fake_embed(_text):
         return [0.1, 0.2]
 
-    monkeypatch.setattr('app.agent.documents._db.db_pool', FakePool())
-    monkeypatch.setattr('app.agent.documents.MAX_CHUNKS', 2)
-    monkeypatch.setattr('app.agent.documents.parse_document', lambda _f, _d: 'doc text')
-    monkeypatch.setattr('app.agent.documents._token_chunks', lambda _t: ['c1', 'c2', 'c3'])
-    monkeypatch.setattr('app.agent.documents._count_tokens', lambda _c: 5)
-    monkeypatch.setattr('app.agent.documents._embed', fake_embed)
+    monkeypatch.setattr("app.agent.documents._db.db_pool", FakePool())
+    monkeypatch.setattr("app.agent.documents.MAX_CHUNKS", 2)
+    monkeypatch.setattr("app.agent.documents.parse_document", lambda _f, _d: "doc text")
+    monkeypatch.setattr(
+        "app.agent.documents._token_chunks", lambda _t: ["c1", "c2", "c3"]
+    )
+    monkeypatch.setattr("app.agent.documents._count_tokens", lambda _c: 5)
+    monkeypatch.setattr("app.agent.documents._embed", fake_embed)
 
-    out = await ingest_document('test.txt', b'data', user_id='u1')
+    out = await ingest_document("test.txt", b"data", user_id="u1")
 
-    assert out['chunk_count'] == 2
+    assert out["chunk_count"] == 2
     # document insert + 2 chunk inserts
     assert fake_conn.execute.await_count == 3

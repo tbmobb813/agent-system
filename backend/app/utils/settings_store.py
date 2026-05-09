@@ -6,10 +6,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_BACKEND_DIR = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 _DATA_DIR = os.path.join(_BACKEND_DIR, "data")
 os.makedirs(_DATA_DIR, exist_ok=True)
-SETTINGS_FILE = os.environ.get("SETTINGS_FILE", os.path.join(_DATA_DIR, "agent-settings.json"))
+SETTINGS_FILE = os.environ.get(
+    "SETTINGS_FILE", os.path.join(_DATA_DIR, "agent-settings.json")
+)
 
 
 def load_settings_dict() -> dict:

@@ -47,7 +47,9 @@ async def update_settings(
 async def get_persona_preview(api_key: str = Depends(verify_api_key)):
     """Return the resolved persona prompt block for debugging settings and file paths."""
     data = _load()
-    normalized = UserSettings(**data).model_dump() if data else UserSettings().model_dump()
+    normalized = (
+        UserSettings(**data).model_dump() if data else UserSettings().model_dump()
+    )
     preview = build_persona_prompt(normalized)
     return {
         "enabled": normalized["agent_persona_enabled"],

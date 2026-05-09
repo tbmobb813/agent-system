@@ -698,7 +698,7 @@ class AgentOrchestrator:
                                 delay = err.retry_delays[used]
                                 retry_counts[reason_key] = used + 1
                                 logger.warning(
-                                    f"{err.reason.value} error (attempt {used+1}) — retrying in {delay:.0f}s"
+                                    f"{err.reason.value} error (attempt {used + 1}) — retrying in {delay:.0f}s"
                                 )
                                 yield ExecutionEvent(
                                     type=EventType.STATUS,

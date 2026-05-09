@@ -27,13 +27,18 @@ async def upload_document(
     data = await file.read()
 
     if len(data) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail=f"File too large (max {MAX_FILE_SIZE // 1_000_000} MB)")
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large (max {MAX_FILE_SIZE // 1_000_000} MB)",
+        )
 
     if not data:
         raise HTTPException(status_code=400, detail="Empty file")
 
     try:
-        result = await ingest_document(filename=file.filename or "upload.txt", data=data)
+        result = await ingest_document(
+            filename=file.filename or "upload.txt", data=data
+        )
         return result
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -59,7 +64,8 @@ async def list_documents(
         ORDER BY created_at DESC
         LIMIT $1 OFFSET $2
         """,
-        limit, offset,
+        limit,
+        offset,
     )
     total = await fetchval("SELECT COUNT(*) FROM documents") or 0
     return {

@@ -36,9 +36,9 @@ EFFICIENCY_SWAP_THRESHOLD = 1.20
 class EfficiencyScore:
     model: str
     avg_cost: float
-    thumbs_up_rate: float   # 0–1 from task_feedback
+    thumbs_up_rate: float  # 0–1 from task_feedback
     sample_count: int
-    efficiency: float       # thumbs_up_rate / avg_cost  (higher = better value)
+    efficiency: float  # thumbs_up_rate / avg_cost  (higher = better value)
     last_updated: datetime = field(default_factory=datetime.utcnow)
 
 
@@ -56,7 +56,9 @@ async def refresh_efficiency_cache() -> None:
 
     if not _db.db_pool:
         return
-    if _last_refresh and datetime.utcnow() - _last_refresh < timedelta(hours=CACHE_TTL_HOURS):
+    if _last_refresh and datetime.utcnow() - _last_refresh < timedelta(
+        hours=CACHE_TTL_HOURS
+    ):
         return
 
     try:
@@ -85,7 +87,7 @@ async def refresh_efficiency_cache() -> None:
     new_cache: dict[str, EfficiencyScore] = {}
     for row in rows:
         model = row["model"]
-        avg_cost = float(row["avg_cost"] or 0.001)   # avoid div/0
+        avg_cost = float(row["avg_cost"] or 0.001)  # avoid div/0
         feedback_count = int(row["feedback_count"] or 0)
         thumbs_up = int(row["thumbs_up"] or 0)
 

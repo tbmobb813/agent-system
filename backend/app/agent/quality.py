@@ -18,6 +18,7 @@ from app import database as _db
 logger = logging.getLogger(__name__)
 _response_quality_table_exists: bool | None = None
 
+
 def _judge_client() -> AsyncOpenAI:
     return AsyncOpenAI(
         base_url=settings.OPENROUTER_BASE_URL,
@@ -69,7 +70,9 @@ async def _quality_table_available() -> bool:
         _response_quality_table_exists = False
         return False
     try:
-        exists = await fetchval("SELECT to_regclass('public.response_quality') IS NOT NULL")
+        exists = await fetchval(
+            "SELECT to_regclass('public.response_quality') IS NOT NULL"
+        )
         _response_quality_table_exists = bool(exists)
     except Exception:
         _response_quality_table_exists = False
@@ -103,8 +106,8 @@ async def score_response_quality(
         "- overall_score (1-5 integer)\n"
         "- rationale (max 240 chars)\n\n"
         "Return STRICT JSON only with keys:\n"
-        "{\"helpfulness\":int,\"accuracy\":int,\"conciseness\":int,"
-        "\"tool_usage_appropriateness\":int,\"overall_score\":int,\"rationale\":string}\n\n"
+        '{"helpfulness":int,"accuracy":int,"conciseness":int,'
+        '"tool_usage_appropriateness":int,"overall_score":int,"rationale":string}\n\n'
         f"User query:\n{query}\n\nAssistant response:\n{response}"
     )
 

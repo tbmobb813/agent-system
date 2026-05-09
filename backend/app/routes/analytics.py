@@ -264,7 +264,9 @@ async def get_skills_profile(api_key: str = Depends(verify_api_key)):
 
 
 @router.get("/decisions")
-async def get_decision_analytics(days: int = 30, api_key: str = Depends(verify_api_key)):
+async def get_decision_analytics(
+    days: int = 30, api_key: str = Depends(verify_api_key)
+):
     """Decision patterns: most common choices and confidence by decision point."""
     safe_days = min(max(days, 1), 180)
     try:
@@ -346,7 +348,10 @@ async def get_cost_efficiency(api_key: str = Depends(verify_api_key)):
     """
     scores = get_efficiency_scores()
     if not scores:
-        return {"note": "No efficiency data yet — run tasks and give feedback to populate.", "models": []}
+        return {
+            "note": "No efficiency data yet — run tasks and give feedback to populate.",
+            "models": [],
+        }
 
     ranked = sorted(scores.values(), key=lambda s: s.efficiency, reverse=True)
     return {
@@ -386,16 +391,26 @@ async def get_ab_tests(limit: int = 20, api_key: str = Depends(verify_api_key)):
     for r in rows:
         ra = json.loads(r["result_a"] or "{}")
         rb = json.loads(r["result_b"] or "{}")
-        tests.append({
-            "task": r["task_description"],
-            "approach_a": json.loads(r["approach_a"] or "{}"),
-            "approach_b": json.loads(r["approach_b"] or "{}"),
-            "result_a": {"cost": ra.get("cost"), "time_ms": ra.get("time_ms"), "success": ra.get("success")},
-            "result_b": {"cost": rb.get("cost"), "time_ms": rb.get("time_ms"), "success": rb.get("success")},
-            "winner": r["winner"],
-            "win_reason": r["win_reason"],
-            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
-        })
+        tests.append(
+            {
+                "task": r["task_description"],
+                "approach_a": json.loads(r["approach_a"] or "{}"),
+                "approach_b": json.loads(r["approach_b"] or "{}"),
+                "result_a": {
+                    "cost": ra.get("cost"),
+                    "time_ms": ra.get("time_ms"),
+                    "success": ra.get("success"),
+                },
+                "result_b": {
+                    "cost": rb.get("cost"),
+                    "time_ms": rb.get("time_ms"),
+                    "success": rb.get("success"),
+                },
+                "winner": r["winner"],
+                "win_reason": r["win_reason"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            }
+        )
     return {"tests": tests}
 
 

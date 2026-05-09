@@ -37,11 +37,7 @@ def get_pillar_config(*, force_reload: bool = False) -> dict:
         mtime = path.stat().st_mtime
     except OSError:
         return {}
-    if (
-        not force_reload
-        and _config_cache is not None
-        and _config_mtime == mtime
-    ):
+    if not force_reload and _config_cache is not None and _config_mtime == mtime:
         return _config_cache
     try:
         with open(path, encoding="utf-8") as f:

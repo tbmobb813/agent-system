@@ -20,7 +20,9 @@ class SlackDiscordBot:
         self.slack_bot_token = os.getenv("SLACK_BOT_TOKEN", "")
         self.discord_bot_token = os.getenv("DISCORD_BOT_TOKEN", "")
         self.webhook_secret = os.getenv("BOT_WEBHOOK_SECRET", "")
-        self.allow_insecure_webhooks = os.getenv("BOT_WEBHOOK_ALLOW_INSECURE", "").lower() in {
+        self.allow_insecure_webhooks = os.getenv(
+            "BOT_WEBHOOK_ALLOW_INSECURE", ""
+        ).lower() in {
             "1",
             "true",
             "yes",

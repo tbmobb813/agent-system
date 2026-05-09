@@ -21,41 +21,123 @@ from app import database as _db
 logger = logging.getLogger(__name__)
 
 REFRESH_INTERVAL_HOURS = 6
-MIN_SAMPLE_SIZE = 3           # ignore task types with fewer examples
+MIN_SAMPLE_SIZE = 3  # ignore task types with fewer examples
 EXPERT_THRESHOLD = 0.85
 COMPETENT_THRESHOLD = 0.65
 
 # Keyword → task_type mapping (first match wins, checked in order).
 _TASK_TYPE_KEYWORDS: list[tuple[str, list[str]]] = [
-    ("coding", [
-        "code", "function", "class", "method", "bug", "debug", "implement",
-        "python", "javascript", "typescript", "sql", "script", "refactor",
-        "test", "unittest", "error in", "fix the", "write a program",
-    ]),
-    ("research", [
-        "research", "find out", "look up", "what is", "who is", "when did",
-        "explain", "how does", "tell me about", "search for", "summarize the",
-    ]),
-    ("analysis", [
-        "analyze", "analysis", "compare", "evaluate", "assess", "review",
-        "what are the differences", "pros and cons", "tradeoffs",
-    ]),
-    ("writing", [
-        "write", "draft", "compose", "email", "letter", "blog post",
-        "summarize", "rewrite", "proofread", "edit this",
-    ]),
-    ("automation", [
-        "automate", "workflow", "schedule", "pipeline", "batch", "cron",
-        "run every", "trigger", "webhook",
-    ]),
-    ("data", [
-        "data", "csv", "spreadsheet", "chart", "graph", "dataset",
-        "calculate", "statistics", "aggregate", "query",
-    ]),
-    ("planning", [
-        "plan", "roadmap", "strategy", "outline", "steps to", "how to",
-        "best way to", "approach for", "design",
-    ]),
+    (
+        "coding",
+        [
+            "code",
+            "function",
+            "class",
+            "method",
+            "bug",
+            "debug",
+            "implement",
+            "python",
+            "javascript",
+            "typescript",
+            "sql",
+            "script",
+            "refactor",
+            "test",
+            "unittest",
+            "error in",
+            "fix the",
+            "write a program",
+        ],
+    ),
+    (
+        "research",
+        [
+            "research",
+            "find out",
+            "look up",
+            "what is",
+            "who is",
+            "when did",
+            "explain",
+            "how does",
+            "tell me about",
+            "search for",
+            "summarize the",
+        ],
+    ),
+    (
+        "analysis",
+        [
+            "analyze",
+            "analysis",
+            "compare",
+            "evaluate",
+            "assess",
+            "review",
+            "what are the differences",
+            "pros and cons",
+            "tradeoffs",
+        ],
+    ),
+    (
+        "writing",
+        [
+            "write",
+            "draft",
+            "compose",
+            "email",
+            "letter",
+            "blog post",
+            "summarize",
+            "rewrite",
+            "proofread",
+            "edit this",
+        ],
+    ),
+    (
+        "automation",
+        [
+            "automate",
+            "workflow",
+            "schedule",
+            "pipeline",
+            "batch",
+            "cron",
+            "run every",
+            "trigger",
+            "webhook",
+        ],
+    ),
+    (
+        "data",
+        [
+            "data",
+            "csv",
+            "spreadsheet",
+            "chart",
+            "graph",
+            "dataset",
+            "calculate",
+            "statistics",
+            "aggregate",
+            "query",
+        ],
+    ),
+    (
+        "planning",
+        [
+            "plan",
+            "roadmap",
+            "strategy",
+            "outline",
+            "steps to",
+            "how to",
+            "best way to",
+            "approach for",
+            "design",
+        ],
+    ),
 ]
 
 _LAST_UPDATE: Optional[datetime] = None
@@ -87,7 +169,9 @@ async def update_skills() -> None:
     global _LAST_UPDATE
     if not _db.db_pool:
         return
-    if _LAST_UPDATE and datetime.utcnow() - _LAST_UPDATE < timedelta(hours=REFRESH_INTERVAL_HOURS):
+    if _LAST_UPDATE and datetime.utcnow() - _LAST_UPDATE < timedelta(
+        hours=REFRESH_INTERVAL_HOURS
+    ):
         return
 
     try:
@@ -114,7 +198,9 @@ async def update_skills() -> None:
     type_stats: dict[str, dict] = {}  # task_type → {total, success, tools: set}
     for row in rows:
         task_type = classify_query(row["query"] or "")
-        stats = type_stats.setdefault(task_type, {"total": 0, "success": 0, "tools": set()})
+        stats = type_stats.setdefault(
+            task_type, {"total": 0, "success": 0, "tools": set()}
+        )
         stats["total"] += 1
         if row["status"] == "completed":
             stats["success"] += 1
@@ -205,7 +291,9 @@ async def get_agent_profile() -> dict:
             "total_uses": row["total_uses"],
             "proficiency_level": row["proficiency_level"],
             "required_tools": json.loads(row["required_tools"] or "[]"),
-            "last_computed": row["last_computed"].isoformat() if row["last_computed"] else None,
+            "last_computed": row["last_computed"].isoformat()
+            if row["last_computed"]
+            else None,
         }
         if (row["success_rate"] or 0) < COMPETENT_THRESHOLD:
             growth_areas.append(entry)
