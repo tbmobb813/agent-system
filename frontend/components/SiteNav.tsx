@@ -26,7 +26,9 @@ export default function SiteNav() {
   return (
     <nav className="app-shell sticky top-0 z-40" aria-label="Primary">
       <div className="mx-auto max-w-6xl px-4 py-3 flex flex-wrap items-center gap-4">
-        <span className="brand-title text-sm md:text-base mr-2">AI Agent</span>
+        <Link href="/" className="brand-title text-sm md:text-base mr-2" aria-label="AI Agent dashboard home">
+          AI Agent
+        </Link>
         {navLinks.map(link => {
           const active = linkIsActive(pathname, link.href)
           return (

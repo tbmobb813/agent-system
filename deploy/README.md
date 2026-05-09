@@ -61,6 +61,17 @@ Once DNS propagates (check with `dig agent.techtrendwire.com`):
 sudo certbot --nginx -d agent.techtrendwire.com
 ```
 
+### 7b. Apply security hardening baseline
+```bash
+bash deploy/hardening.sh --domain agent.techtrendwire.com --email you@example.com
+```
+
+This applies:
+- UFW firewall baseline (allow `OpenSSH`, `80`, `443`; deny other inbound — if your SSH daemon uses a custom port, allow that port/profile before or when applying hardening)
+- Installs `fail2ban` package baseline (default service/jail configuration from distro package)
+- `logrotate` policy for `logs/*.log`
+- certbot HTTPS setup (unless `--no-certbot` is passed)
+
 ### 8. Update env for HTTPS and restart
 In `backend/.env`:
 ```
@@ -81,11 +92,31 @@ pm2 restart all
 
 ## Deploying Updates
 
+Create an optional deploy env file once:
+```bash
+cp deploy/.env.deploy.example deploy/.env.deploy
+nano deploy/.env.deploy
+```
+
 After pushing changes to GitHub:
 ```bash
 cd ~/agent-system
 bash deploy/deploy.sh
 ```
+
+`deploy/deploy.sh` auto-loads `deploy/.env.deploy` when present.
+
+### Optional: persist deploy monitoring env vars
+Add this block to your shell profile (`~/.bashrc`) if you want these defaults every session:
+
+```bash
+# agent-system deploy defaults
+export MONITOR_BASE_URL="https://agent.techtrendwire.com"
+# Leave empty to disable webhook alerts from deploy/monitoring-smoke.sh
+export ALERT_WEBHOOK_URL=""
+```
+
+Use shell-profile exports only if you prefer host-wide defaults over a repo-local `deploy/.env.deploy`.
 
 ---
 
@@ -99,6 +130,25 @@ pm2 logs agent-frontend # frontend only
 pm2 restart all         # restart both
 sudo nginx -t           # test nginx config
 sudo systemctl reload nginx
+bash deploy/monitoring-smoke.sh --base-url https://agent.techtrendwire.com
+```
+
+## Monitoring Baseline
+
+### Smoke checks with optional alert hook
+```bash
+# One-shot health checks
+bash deploy/monitoring-smoke.sh --base-url https://agent.techtrendwire.com
+
+# Send failure alerts to your webhook (Slack-style JSON payload)
+ALERT_WEBHOOK_URL=https://hooks.example.com/xxx \
+      bash deploy/monitoring-smoke.sh --base-url https://agent.techtrendwire.com
+```
+
+### Recommended cron (every 5 minutes)
+```bash
+crontab -e
+*/5 * * * * ALERT_WEBHOOK_URL=https://hooks.example.com/xxx /bin/bash ~/agent-system/deploy/monitoring-smoke.sh --base-url https://agent.techtrendwire.com >> ~/agent-system/logs/monitoring-cron.log 2>&1
 ```
 
 ---

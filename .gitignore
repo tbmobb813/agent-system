@@ -2,6 +2,13 @@
 .env
 .env.local
 .env.*.local
+backend/.env
+frontend/.env
+telegram-bot/.env
+deploy/.env.deploy
+**/.env
+**/.env.local
+**/.env.*.local
 
 # Python
 __pycache__/
