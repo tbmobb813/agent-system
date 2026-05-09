@@ -3,21 +3,22 @@
 # hardening.sh — Production hardening helper (UFW, logrotate, SSL via certbot)
 # Usage:
 #   bash deploy/hardening.sh --domain agent.example.com --email ops@example.com
-#   bash deploy/hardening.sh --domain agent.example.com --no-certbot
+#   bash deploy/hardening.sh --domain agent.example.com --ssh-port 2222 --no-certbot
 # =============================================================================
 set -euo pipefail
 
 DOMAIN=""
 EMAIL=""
 NO_CERTBOT=0
+SSH_PORT=""
 
 usage() {
-  echo "Usage: bash deploy/hardening.sh --domain <domain> [--email <email>] [--no-certbot]" >&2
+  echo "Usage: bash deploy/hardening.sh --domain <domain> [--email <email>] [--ssh-port <port>] [--no-certbot]" >&2
 }
 
 is_option_token() {
   case "${1:-}" in
-    --domain|--email|--no-certbot)
+    --domain|--email|--ssh-port|--no-certbot)
       return 0
       ;;
     *)
@@ -64,6 +65,20 @@ while [[ $# -gt 0 ]]; do
       fi
       shift 2
       ;;
+    --ssh-port)
+      if [[ -z "${2:-}" ]] || is_option_token "$2"; then
+        echo "Error: --ssh-port requires a value." >&2
+        usage
+        exit 1
+      fi
+      SSH_PORT="$2"
+      if ! [[ "$SSH_PORT" =~ ^[1-9][0-9]*$ ]] || [[ "$SSH_PORT" -gt 65535 ]]; then
+        echo "Error: --ssh-port must be a valid port number (1-65535)." >&2
+        usage
+        exit 1
+      fi
+      shift 2
+      ;;
     --no-certbot)
       NO_CERTBOT=1
       shift
@@ -80,6 +95,19 @@ if [[ -z "$DOMAIN" ]]; then
   echo "--domain is required" >&2
   usage
   exit 1
+fi
+
+if [[ -z "$SSH_PORT" ]]; then
+  echo "==> Detecting SSH port from sshd_config"
+  if [[ -f /etc/ssh/sshd_config ]]; then
+    SSH_PORT=$(grep -E "^[[:space:]]*Port[[:space:]]+" /etc/ssh/sshd_config | awk '{print $2}' | head -n1)
+  fi
+  if [[ -z "$SSH_PORT" ]]; then
+    SSH_PORT="22"
+    echo "    No custom SSH port found, defaulting to 22"
+  else
+    echo "    Detected SSH port: $SSH_PORT"
+  fi
 fi
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -102,7 +130,7 @@ need_cmd logrotate
 
 
 echo "==> [2/4] Applying firewall baseline (UFW)"
-sudo ufw allow OpenSSH
+sudo ufw allow "$SSH_PORT/tcp" comment 'SSH'
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 sudo ufw default deny incoming
