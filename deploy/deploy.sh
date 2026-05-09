@@ -12,10 +12,16 @@ cd "$REPO_DIR"
 DEPLOY_ENV_FILE="$REPO_DIR/deploy/.env.deploy"
 trim_whitespace() {
 	local value="$1"
+	local extglob_was_enabled=0
+	if shopt -q extglob; then
+		extglob_was_enabled=1
+	fi
 	shopt -s extglob
 	value="${value##+([[:space:]])}"
 	value="${value%%+([[:space:]])}"
-	shopt -u extglob
+	if [[ "$extglob_was_enabled" -eq 0 ]]; then
+		shopt -u extglob
+	fi
 	printf '%s' "$value"
 }
 
