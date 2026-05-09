@@ -1,0 +1,472 @@
+/* Mirrors frontend/app/globals.css from tbmobb813/agent-system,
+   plus semantic helpers for designers building new artifacts.
+   ============================================================ */
+
+/* --- 1. Webfonts (Google Fonts CDN) ---------------------------- */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+/* ============================================================
+   2. THEME TOKENS — switch via [data-theme] on <html> or <body>
+   ============================================================ */
+
+:root,
+:root[data-theme='neon-command'] {
+  /* Neon Command — default. Deep blue-black command center,
+     teal/cyan glow. The "operations deck" baseline. */
+  --bg:           #060b12;
+  --bg-elev:      #0c1521;
+  --surface:      rgba(13, 21, 32, 0.72);
+  --surface-soft: rgba(19, 29, 44, 0.64);
+  --border:       rgba(108, 140, 179, 0.26);
+  --text:         #eaf4ff;
+  --muted:        #91a5bf;
+  --accent:       #2be3c6;  /* primary teal */
+  --accent-2:     #59a7ff;  /* secondary blue */
+  --success:      #2fd67d;
+  --warn:         #ffba49;
+  --danger:       #ff6a76;
+  --glow:         43 227 198; /* RGB triplet — used as rgba(var(--glow), …) */
+  --chart-primary:   #2be3c6;
+  --chart-secondary: #59a7ff;
+  --chart-tertiary:  #9d7dff;
+}
+
+:root[data-theme='starforge'] {
+  /* Starforge — gold + indigo. Analyst / longform reading. */
+  --bg:           #05050b;
+  --bg-elev:      #111120;
+  --surface:      rgba(18, 18, 33, 0.78);
+  --surface-soft: rgba(24, 24, 43, 0.66);
+  --border:       rgba(132, 124, 190, 0.28);
+  --text:         #f4f4ff;
+  --muted:        #b0b2cf;
+  --accent:       #f4a524;
+  --accent-2:     #73c3ff;
+  --success:      #43d994;
+  --warn:         #ffd256;
+  --danger:       #ff7a84;
+  --glow:         244 165 36;
+  --chart-primary:   #f4a524;
+  --chart-secondary: #73c3ff;
+  --chart-tertiary:  #b99cff;
+}
+
+:root[data-theme='retro-grid'] {
+  /* Retro Grid — magenta + cyan, synthwave. Streamer profile. */
+  --bg:           #09060f;
+  --bg-elev:      #161026;
+  --surface:      rgba(21, 14, 37, 0.76);
+  --surface-soft: rgba(30, 20, 48, 0.66);
+  --border:       rgba(205, 91, 252, 0.28);
+  --text:         #ffeafd;
+  --muted:        #d7acd8;
+  --accent:       #ff4fd8;
+  --accent-2:     #54f2ff;
+  --success:      #5ef1b2;
+  --warn:         #ffc04a;
+  --danger:       #ff6f9c;
+  --glow:         255 79 216;
+  --chart-primary:   #ff4fd8;
+  --chart-secondary: #54f2ff;
+  --chart-tertiary:  #ff9d5c;
+}
+
+:root[data-theme='clean-tech'] {
+  /* Clean Tech — light mode. Pure-information / focus profile. */
+  --bg:           #f2f7ff;
+  --bg-elev:      #ffffff;
+  --surface:      rgba(255, 255, 255, 0.78);
+  --surface-soft: rgba(245, 250, 255, 0.84);
+  --border:       rgba(68, 96, 134, 0.23);
+  --text:         #13213a;
+  --muted:        #50678a;
+  --accent:       #007cf5;
+  --accent-2:     #15c2a6;
+  --success:      #129a55;
+  --warn:         #c78612;
+  --danger:       #d2414f;
+  --glow:         0 124 245;
+  --chart-primary:   #007cf5;
+  --chart-secondary: #15c2a6;
+  --chart-tertiary:  #6f95d1;
+}
+
+/* ============================================================
+   3. TYPOGRAPHY
+   - Display: Orbitron — futurist, geometric. Used for brand,
+     section titles, eyebrow labels (with letter-spacing).
+   - Body: Space Grotesk — humanist + technical, very legible.
+   - Mono: JetBrains Mono — code, model names, command tokens.
+   ============================================================ */
+
+:root {
+  --font-display: 'Orbitron', 'Space Grotesk', system-ui, sans-serif;
+  --font-body:    'Space Grotesk', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Type scale — pixel values mirror the Tailwind defaults the
+     app uses. Line heights tuned for the Space Grotesk body. */
+  --fs-xs:   0.75rem;  /* 12px — meta, captions */
+  --fs-sm:   0.875rem; /* 14px — secondary text */
+  --fs-base: 1rem;     /* 16px — body */
+  --fs-lg:   1.125rem; /* 18px — sub-titles */
+  --fs-xl:   1.25rem;  /* 20px — small headers */
+  --fs-2xl:  1.5rem;   /* 24px — h2 */
+  --fs-3xl:  1.875rem; /* 30px — h1 */
+  --fs-4xl:  2.25rem;  /* 36px — hero h1 (md+) */
+
+  --lh-tight: 1.15;
+  --lh-snug:  1.35;
+  --lh-body:  1.55;
+
+  --tracking-eyebrow: 0.22em;  /* uppercase eyebrow labels */
+  --tracking-display: 0.08em;  /* brand + section titles */
+  --tracking-section: 0.06em;  /* "section-title" class */
+  --tracking-pill:    0.18em;  /* pill / chip uppercase */
+}
+
+/* ============================================================
+   4. SPACING, RADIUS, ELEVATION, MOTION
+   ============================================================ */
+
+:root {
+  /* Radii — panels are 0.95rem at default density, 0.75rem
+     compact. Buttons / chips: 0.5–0.75rem. Pills: 999px. */
+  --radius-sm:    0.375rem;
+  --radius-md:    0.5rem;
+  --radius-lg:    0.75rem;
+  --radius-panel: 0.95rem;
+  --radius-pill:  999px;
+
+  /* Spacing — multiples of 4px. Density-compact pulls panel
+     padding from p-6 (24px) to p-5 (20px). */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 1.75rem;
+  --space-8: 2rem;
+
+  /* Elevation — panels combine inner-highlight + outer drop.
+     The "glow" shadow on hover/active states uses the theme's
+     --glow rgb triplet. */
+  --shadow-panel: inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+                  0 12px 40px rgba(0, 0, 0, 0.24);
+  --shadow-glow:  0 10px 24px rgba(var(--glow), 0.20);
+  --shadow-glow-strong: 0 0 14px rgba(var(--glow), 0.50);
+  --shadow-text-glow:   0 0 18px rgba(var(--glow), 0.32);
+  --shadow-skip:  0 8px 28px rgba(0, 0, 0, 0.35);
+
+  /* Motion — fast, springless. Cinematic profile uses these
+     defaults; minimal profile collapses them to 1ms. */
+  --ease-out:  cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in:   cubic-bezier(0.55, 0, 0.78, 0);
+  --dur-quick: 150ms;
+  --dur-base:  180ms;
+  --dur-slow:  420ms;
+  --dur-stage: 620ms; /* fade-up-delay */
+
+  /* Backdrop blur — used on .panel and .app-shell. */
+  --blur-panel: 12px;
+  --blur-shell: 14px;
+}
+
+/* ============================================================
+   5. SEMANTIC ELEMENT STYLES
+   Use bare semantic tags for quick prototypes; on the real
+   product they are layered via Tailwind utilities + .panel.
+   ============================================================ */
+
+html, body {
+  font-family: var(--font-body);
+  font-size:   var(--fs-base);
+  line-height: var(--lh-body);
+  color:       var(--text);
+  background:  var(--bg);
+}
+
+h1, .h1 {
+  font-family: var(--font-display);
+  font-size:   var(--fs-3xl);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-section);
+  font-weight: 700;
+  color:       var(--text);
+}
+
+h2, .h2 {
+  font-family: var(--font-display);
+  font-size:   var(--fs-2xl);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--tracking-section);
+  font-weight: 600;
+  color:       var(--text);
+}
+
+h3, .h3 {
+  font-family: var(--font-body);
+  font-size:   var(--fs-lg);
+  line-height: var(--lh-snug);
+  font-weight: 600;
+  color:       var(--text);
+}
+
+p, .body {
+  font-family: var(--font-body);
+  font-size:   var(--fs-base);
+  line-height: var(--lh-body);
+  color:       var(--text);
+}
+
+small, .meta, .text-muted {
+  color:     var(--muted);
+  font-size: var(--fs-xs);
+}
+
+code, kbd, .mono {
+  font-family: var(--font-mono);
+  font-size:   0.85em;
+  color:       var(--accent-2);
+}
+
+/* Brand mark — uppercase, tracked, glowing accent. Used in
+   the top-left of the app shell. */
+.brand-title {
+  font-family: var(--font-display);
+  letter-spacing: var(--tracking-display);
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: var(--shadow-text-glow);
+}
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+}
+
+.brand-logo-mark {
+  filter: drop-shadow(0 0 10px rgba(var(--glow), 0.28));
+}
+
+.brand-glyph {
+  opacity: 0.78;
+  filter: drop-shadow(0 0 8px rgba(var(--glow), 0.35));
+}
+
+.page-header-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.page-header-glyph {
+  opacity: 0.78;
+  filter: drop-shadow(0 0 8px rgba(var(--glow), 0.32));
+}
+
+.page-header-eyebrow {
+  position: relative;
+  margin-left: 0.5rem;
+  padding-left: 0.55rem;
+}
+
+.page-header-eyebrow::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 0.25rem;
+  height: 0.25rem;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(var(--glow), 0.45);
+}
+
+/* Eyebrow — tiny uppercase label above page titles. */
+.eyebrow {
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Section title — display font with looser tracking. Used
+   for h1/h2 inside panels and on the dashboard. */
+.section-title {
+  font-family: var(--font-display);
+  letter-spacing: var(--tracking-section);
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* ============================================================
+   6. PANEL — the core surface primitive
+   Frosted-glass card with inner highlight + outer drop.
+   ============================================================ */
+
+.panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow-panel);
+  -webkit-backdrop-filter: blur(var(--blur-panel));
+  backdrop-filter: blur(var(--blur-panel));
+}
+
+.panel-soft { background: var(--surface-soft); }
+
+/* App shell — sticky top nav. */
+.app-shell {
+  background: color-mix(in oklab, var(--bg-elev), black 6%);
+  border-bottom: 1px solid var(--border);
+  -webkit-backdrop-filter: blur(var(--blur-shell));
+  backdrop-filter: blur(var(--blur-shell));
+}
+
+/* Background atmosphere — radial accent washes + faint grid.
+   Apply to <body> for the full operations-deck look. */
+.atmosphere {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(var(--glow), 0.18), transparent 30%),
+    radial-gradient(circle at 84% 0%, color-mix(in oklab, var(--accent-2), transparent 78%), transparent 34%),
+    linear-gradient(180deg, var(--bg) 0%, color-mix(in oklab, var(--bg), black 12%) 100%);
+  background-attachment: fixed;
+  position: relative;
+}
+
+.atmosphere::before {
+  content: '';
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 36px 36px;
+  -webkit-mask-image: radial-gradient(circle at center, black, transparent 76%);
+          mask-image: radial-gradient(circle at center, black, transparent 76%);
+  opacity: 0.18;
+  z-index: -1;
+}
+
+/* ============================================================
+   7. BUTTONS
+   ============================================================ */
+
+.btn-ghost {
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text);
+  padding: 0.5rem 0.85rem;
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: transform var(--dur-quick) var(--ease-out),
+              box-shadow var(--dur-quick) var(--ease-out),
+              border-color var(--dur-quick) var(--ease-out);
+}
+.btn-ghost:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+}
+
+.btn-accent {
+  border: 1px solid var(--accent);
+  background: linear-gradient(130deg, var(--accent),
+              color-mix(in oklab, var(--accent), var(--accent-2) 35%));
+  color: #091017;
+  font-weight: 700;
+  padding: 0.5rem 0.85rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  transition: transform var(--dur-quick) var(--ease-out);
+}
+.btn-accent:hover { transform: translateY(-1px); }
+.btn-accent:active { transform: translateY(0); }
+
+/* ============================================================
+   8. NAV LINK + STATE COLORS
+   Status text colors used across history rows, budget cards. */
+
+.nav-link {
+  color: var(--muted);
+  transition: color var(--dur-quick) var(--ease-out),
+              text-shadow var(--dur-quick) var(--ease-out);
+}
+.nav-link:hover {
+  color: var(--text);
+  text-shadow: 0 0 14px rgba(var(--glow), 0.36);
+}
+.nav-link[aria-current='page'] {
+  color: var(--text);
+  font-weight: 600;
+  text-shadow: 0 0 12px rgba(var(--glow), 0.28);
+}
+
+.status-ok       { color: var(--success); }
+.status-warn     { color: var(--warn); }
+.status-danger   { color: var(--danger); }
+.status-running  { color: var(--accent-2); }
+
+/* ============================================================
+   9. PROGRESS / METER
+   Used for the monthly-budget bar. Linear gradient between
+   the two chart colors with a soft glow. */
+
+.budget-progress {
+  width: 100%;
+  height: 0.5rem;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--bg), white 7%);
+}
+.budget-progress::-webkit-progress-bar {
+  background: color-mix(in oklab, var(--bg), white 7%);
+  border-radius: var(--radius-pill);
+}
+.budget-progress::-webkit-progress-value {
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--chart-primary), var(--chart-secondary));
+  box-shadow: var(--shadow-glow-strong);
+}
+.budget-progress::-moz-progress-bar {
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--chart-primary), var(--chart-secondary));
+  box-shadow: var(--shadow-glow-strong);
+}
+
+/* ============================================================
+   10. ANIMATIONS — keep cheap, additive only
+   ============================================================ */
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+.fade-up        { animation: fade-up var(--dur-slow)  var(--ease-out) both; }
+.fade-up-delay  { animation: fade-up var(--dur-stage) var(--ease-out) both; }
+
+/* Density modifier — the app supports an Alt-keyed compact
+   profile that tightens chrome without losing legibility. */
+:root[data-density='compact'] { font-size: 15px; }
+:root[data-density='compact'] .panel { border-radius: var(--radius-lg); }
+
+/* Motion modifier — minimum-motion accessibility profile. */
+:root[data-motion='minimal'] *,
+:root[data-motion='minimal'] *::before,
+:root[data-motion='minimal'] *::after {
+  animation-duration:  1ms !important;
+  animation-delay:     0ms !important;
+  transition-duration: 1ms !important;
+  scroll-behavior:     auto !important;
+}
