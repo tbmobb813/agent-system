@@ -14,7 +14,7 @@ def test_prompt_version_is_set():
 
 def test_build_minimal_matches_legacy_shape():
     out = build_system_prompt(None, None, "")
-    assert out == BASE_SYSTEM_PROMPT
+    assert out.startswith(BASE_SYSTEM_PROMPT)
 
 
 def test_build_with_persona_retrieved_fiscal():

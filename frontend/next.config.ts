@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next'
+import path from 'path'
 
 /** Proxy target for /api/backend/* (server-side). Use service hostname in Docker, localhost locally. */
 function backendRewriteBase(): string {
@@ -8,6 +9,9 @@ function backendRewriteBase(): string {
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  allowedDevOrigins: ['127.0.0.1', 'localhost'],
+  /** Monorepo: silence wrong workspace-root inference when parent lockfiles exist (see Next.js docs). */
+  outputFileTracingRoot: path.join(process.cwd(), '..'),
   async rewrites() {
     const base = backendRewriteBase()
     return [

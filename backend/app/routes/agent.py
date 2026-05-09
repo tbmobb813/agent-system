@@ -380,7 +380,7 @@ async def stream_agent(
         except Exception as e:
             stream_status = "failed"
             logger.error(f"Stream error: {e}", exc_info=True)
-            yield format_sse_event({"type": "error", "error": str(e)})
+            yield format_sse_event({"type": "error", "error": "Stream failed"})
         finally:
             elapsed_ms = int((datetime.utcnow() - started_at).total_seconds() * 1000)
             await _record_latency_metric(

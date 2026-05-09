@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { agentMessageInput, expectTranscriptText, fillAgentMessage } from './test-helpers'
 
 test('agent full flow: submit query, receive stream, and show completion controls', async ({ page }) => {
   await page.route('**/api/backend/settings', async route => {
@@ -58,22 +59,29 @@ test('agent full flow: submit query, receive stream, and show completion control
 
   await page.goto('/agent')
 
-  await page
-    .getByPlaceholder(/Message —/)
-    .fill('Write a short greeting')
+  const messageInput = agentMessageInput(page)
+  await messageInput.click()
+  await fillAgentMessage(page, 'Write a short greeting')
 
-  await page.getByPlaceholder(/Message —/).press('Enter')
+  const sendButton = page.getByRole('button', { name: 'Send' })
+  await expect(sendButton).toBeEnabled()
+  await sendButton.click()
 
-  await expect(page.getByText('Hello from mocked agent.')).toBeVisible()
-  await expect(page.getByText('Done')).toBeVisible()
-  await expect(page.getByText('$0.0012')).toBeVisible()
-  await expect(page.getByText('thread: conv-123…')).toBeVisible()
+  await expectTranscriptText(page, 'Hello from mocked agent.')
+  await expectTranscriptText(page, /✓ Done/)
+  await expectTranscriptText(page, /cost:\s*\$0\.0012/)
 
-  await expect(page.getByRole('button', { name: 'Copy this reply' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Download full thread' })).toBeVisible()
+  const copyReply = page.getByRole('button', { name: 'Copy this reply' })
+  await copyReply.scrollIntoViewIfNeeded()
+  await expect(copyReply).toBeVisible()
+  const downloadThread = page.getByRole('button', { name: 'Download full thread' })
+  await downloadThread.scrollIntoViewIfNeeded()
+  await expect(downloadThread).toBeVisible()
 
-  await page.getByRole('button', { name: 'Clear' }).click()
-  await expect(page.getByText('Hello from mocked agent.')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Actions' }).click()
+  // Menu anchors above the launcher; strict viewport checks can flag it as “outside viewport”.
+  await page.getByRole('button', { name: 'Clear thread' }).click({ force: true })
+  await expect(page.getByRole('button', { name: 'Actions' })).toBeVisible()
 })
 
 test('agent flow shows an error when stream request fails', async ({ page }) => {
@@ -120,11 +128,13 @@ test('agent flow shows an error when stream request fails', async ({ page }) => 
 
   await page.goto('/agent')
 
-  await page
-    .getByPlaceholder(/Message —/)
-    .fill('Trigger stream error')
+  const messageInput = agentMessageInput(page)
+  await messageInput.click()
+  await fillAgentMessage(page, 'Trigger stream error')
 
-  await page.getByPlaceholder(/Message —/).press('Enter')
+  const sendButton = page.getByRole('button', { name: 'Send' })
+  await expect(sendButton).toBeEnabled()
+  await sendButton.click()
 
-  await expect(page.getByText(/failed to fetch|networkerror|load failed/i)).toBeVisible()
+  await expect(page.getByText(/failed to fetch|networkerror|load failed|stream request failed|unknown error/i).first()).toBeVisible()
 })

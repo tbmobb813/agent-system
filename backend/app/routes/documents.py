@@ -39,7 +39,7 @@ async def upload_document(
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         logger.error(f"Document ingestion failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {e}")
+        raise HTTPException(status_code=500, detail="Ingestion failed")
 
 
 @router.get("")

@@ -65,11 +65,17 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Lint with ruff
+        run: ruff check .
+
+      - name: Check formatting with ruff
+        run: ruff format --check .
+
       - name: Run tests
         env:
           BACKEND_API_KEY: sk-agent-local-dev
           OPENROUTER_BUDGET_MONTHLY: "30.0"
-        run: pytest --cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under=55
+        run: pytest --cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under=65
 
   evals:
     name: Eval harness
