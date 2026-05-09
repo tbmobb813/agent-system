@@ -1,7 +1,7 @@
 'use client'
 
-import { useMemo, useEffect, useCallback } from 'react'
-import dynamic from 'next/dynamic'
+import { useMemo, useCallback } from 'react'
+import type { StreamEvent } from '@/lib/hooks'
 import {
   EventLine,
   TurnDoneFooter,
@@ -26,18 +26,17 @@ import {
   parseSlashSuggestContext,
   parseInputTrigger,
   REASONING_SUB_KEYS,
+  type SuggestRow,
 } from './AgentExecutorSuggestions'
-
-const MarkdownContent = dynamic(() => import('./MarkdownContent'), { ssr: false })
 
 export default function AgentExecutor() {
   const {
     query, setQuery, context, setContext, editLastOpen, setEditLastOpen, showThinkingLive,
     reasoningPhaseOpenByTurn, reasoningEffortForRequest, setReasoningEffortForRequest,
-    showFeedbackNudge, dismissFeedbackNudge, feedbackDetailsRef, contextPanelRef, queryInputRef,
+    dismissFeedbackNudge, feedbackDetailsRef, contextPanelRef, queryInputRef,
     toolNames, queryCursor, setQueryCursor, suggestDismissed, setSuggestDismissed, suggestHighlight, setSuggestHighlight,
     quickActionsOpen, setQuickActionsOpen, reasoningArgModal, setReasoningArgModal, helpModalOpen, setHelpModalOpen,
-    modelsModalOpen, setModelsModalOpen, modelsModalState, opsModalOpen, setOpsModalOpen, opsPanel, opsModalState,
+    modelsModalOpen, setModelsModalOpen, modelsModalState, opsModalOpen, setOpsModalOpen, opsPanel,
     quickActionsRef, quickActionsButtonRef,
     events, merged, isRunning, error, conversationId, run, stop, reset, newConversation,
     latestRunCost, lastUserMessage, openOpsPanel, loadModelsForModal, skipReasoningModalSig
@@ -88,7 +87,7 @@ export default function AgentExecutor() {
     return false
   }, [])
 
-  const applySuggestionPick = useCallback((row: any, cursorPos: number) => {
+  const applySuggestionPick = useCallback((row: SuggestRow, cursorPos: number) => {
     const slashSc = parseSlashSuggestContext(query, cursorPos)
     const atTrig = parseInputTrigger(query, cursorPos)
     const focusPos = (pos: number) => { 
@@ -134,8 +133,8 @@ export default function AgentExecutor() {
   }
 
   const turnItems = useMemo(() => {
-    type TurnItem = { kind: 'turn'; id: number; user?: any; events: any[] }
-    type DividerItem = { kind: 'divider'; event: any }
+    type TurnItem = { kind: 'turn'; id: number; user?: StreamEvent; events: StreamEvent[] }
+    type DividerItem = { kind: 'divider'; event: StreamEvent }
     const items: Array<TurnItem | DividerItem> = []
     let current: TurnItem | null = null
     let nextId = 1
@@ -179,7 +178,21 @@ export default function AgentExecutor() {
                         </div>
                       )}
                       {(showThinkingLive && phase.length > 0 ? rest : chatEvents).filter(ev => ev.type !== 'done').map((ev, idx) => <EventLine key={`turn-${item.id}-event-${idx}`} event={ev} />)}
-                      {turnHasDone && <TurnDoneFooter turnId={item.id} events={item.events} isRunning={isRunning} dismissFeedbackNudge={dismissFeedbackNudge} showThreadDownload={true} threadExportEmpty={false} onDownloadThread={handleDownloadThread} omitDoneCost={false} />}
+                      {turnHasDone && (
+                        <TurnDoneFooter
+                          turnId={item.id}
+                          events={item.events}
+                          isRunning={isRunning}
+                          dismissFeedbackNudge={dismissFeedbackNudge}
+                          registerFeedbackRef={(el) => {
+                            feedbackDetailsRef.current = el
+                          }}
+                          showThreadDownload={true}
+                          threadExportEmpty={false}
+                          onDownloadThread={handleDownloadThread}
+                          omitDoneCost={false}
+                        />
+                      )}
                     </div>
                   )
                 })}

@@ -1,5 +1,3 @@
-import { StreamEvent } from '@/lib/hooks'
-
 export type InputTrigger = { kind: '/' | '@'; start: number; filter: string }
 
 export function parseInputTrigger(value: string, cursor: number): InputTrigger | null {
@@ -111,9 +109,36 @@ export const SLASH_ROOT: SlashRootDef[] = [
 ]
 
 export function slashRootToPick(r: SlashRootDef): SuggestPick {
-  if (r.kind === 'action_ops_modal') return { type: 'action_ops_modal', panel: r.panel! }
-  if (r.kind === 'action_navigate') return { type: 'action_navigate', path: r.path! }
-  return { type: r.kind, text: r.text! } as any
+  switch (r.kind) {
+    case 'action_ops_modal':
+      return { type: 'action_ops_modal', panel: r.panel! }
+    case 'action_navigate':
+      return { type: 'action_navigate', path: r.path! }
+    case 'replace':
+      return { type: 'replace', text: r.text ?? '' }
+    case 'replace_then_reasoning_modal':
+      return { type: 'replace_then_reasoning_modal', text: r.text ?? '' }
+    case 'action_feedback_panel':
+      return { type: 'action_feedback_panel' }
+    case 'action_new_thread':
+      return { type: 'action_new_thread' }
+    case 'action_stop':
+      return { type: 'action_stop' }
+    case 'action_help_modal':
+      return { type: 'action_help_modal' }
+    case 'action_clear':
+      return { type: 'action_clear' }
+    case 'action_copy_thread':
+      return { type: 'action_copy_thread' }
+    case 'action_download_thread':
+      return { type: 'action_download_thread' }
+    case 'action_models_modal':
+      return { type: 'action_models_modal' }
+    default: {
+      const _exhaustive: never = r.kind
+      return _exhaustive
+    }
+  }
 }
 
 export function filterRootSlashRows(filter: string): SuggestRow[] {

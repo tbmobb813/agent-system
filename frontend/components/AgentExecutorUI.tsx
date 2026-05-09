@@ -1,4 +1,4 @@
-import { ReactNode, useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { StreamEvent } from '@/lib/hooks'
 import { formatCost } from '@/lib/utils'
 import {
@@ -77,6 +77,15 @@ export type QuickActionsMenuProps = {
   onEditResend: () => void
 }
 
+type QuickMenuItem = {
+  id: string
+  icon: ReactNode
+  label: string
+  disabled?: boolean
+  danger?: boolean
+  action: () => void
+}
+
 export function QuickActionsMenu({
   isRunning,
   hasMessages,
@@ -95,7 +104,7 @@ export function QuickActionsMenu({
   onFeedback,
   onEditResend,
 }: QuickActionsMenuProps) {
-  const groups = [
+  const groups: { label: string; items: QuickMenuItem[] }[] = [
     {
       label: 'Conversation',
       items: [
@@ -140,7 +149,7 @@ export function QuickActionsMenu({
           {gi > 0 && <div className="border-t border-[color:var(--border)]/60" />}
           <div className="px-3 pt-2 pb-0.5"><span className="text-[10px] uppercase tracking-widest text-muted font-semibold">{group.label}</span></div>
           {group.items.map((item) => (
-            <button key={item.id} type="button" disabled={item.disabled} onClick={item.action} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors disabled:opacity-40 disabled:pointer-events-none ${item.danger ? 'hover:bg-[color:var(--danger)]/10 text-[color:var(--danger)]' : 'hover:bg-[color:var(--surface-soft)] text-[color:var(--text)]'}`}>
+            <button key={item.id} type="button" disabled={item.disabled ?? false} onClick={item.action} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors disabled:opacity-40 disabled:pointer-events-none ${item.danger ? 'hover:bg-[color:var(--danger)]/10 text-[color:var(--danger)]' : 'hover:bg-[color:var(--surface-soft)] text-[color:var(--text)]'}`}>
               <span className="w-5 shrink-0 flex items-center justify-center">{item.icon}</span>
               <span className="flex-1 min-w-0">
                 <span className="block">{item.label}</span>

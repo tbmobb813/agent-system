@@ -1,25 +1,36 @@
-import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useAgentStream, StreamEvent } from '@/lib/hooks'
 import {
   getAgentModels,
   getAgentToolsHealth,
+  getAgentStats,
   getAnalyticsSkills,
   getCostStatus,
   getHistory,
   getMcpServers,
   getSettings,
   getTools,
-  deleteMcpServer,
 } from '@/lib/api'
-import {
-  visibleChatEvents,
-  splitLeadingPhaseEvents,
-  phaseSummaryPreview,
-} from './AgentExecutorChat'
 import { OpsPanel } from './AgentExecutorUI'
 
 const FEEDBACK_NUDGE_EVERY = 5
 const REASONING_EFFORT_STORAGE_KEY = 'agent_ui_reasoning_effort'
+
+type OpsPanelSlice = 'loading' | { ok: unknown } | { err: string }
+
+export type OpsModalState = Record<OpsPanel, OpsPanelSlice>
+
+const INITIAL_OPS_MODAL_STATE: OpsModalState = {
+  tools: 'loading',
+  skills: 'loading',
+  mcp: 'loading',
+  stats: 'loading',
+  history: 'loading',
+}
+
+function errMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e)
+}
 
 export function useAgentExecutorState() {
   const [query, setQuery] = useState('')
@@ -49,7 +60,7 @@ export function useAgentExecutorState() {
   const [opsModalOpen, setOpsModalOpen] = useState(false)
   const [opsPanel, setOpsPanel] = useState<OpsPanel>('tools')
   const [mcpDeleteBusyName, setMcpDeleteBusyName] = useState<string | null>(null)
-  const [opsModalState, setOpsModalState] = useState<any>({ tools: 'loading', skills: 'loading', mcp: 'loading', stats: 'loading', history: 'loading' })
+  const [opsModalState, setOpsModalState] = useState<OpsModalState>(() => ({ ...INITIAL_OPS_MODAL_STATE }))
   const quickActionsRef = useRef<HTMLDivElement>(null)
   const quickActionsButtonRef = useRef<HTMLButtonElement>(null)
 
@@ -128,30 +139,106 @@ export function useAgentExecutorState() {
   }, [])
 
   const loadOpsPanel = useCallback((panel: OpsPanel) => {
-    setOpsModalState((s: any) => ({ ...s, [panel]: 'loading' }))
+    setOpsModalState((prev) => ({ ...prev, [panel]: 'loading' }))
     if (panel === 'tools') {
-      Promise.all([getTools(), getSettings()]).then(([toolsData, settingsData]) => {
-        const rawTools = (toolsData as any)?.tools || []
-        const tools = rawTools.map((t: any) => typeof t === 'string' ? { name: t, description: '' } : { name: t.name, description: t.description || '' })
-        const defaults = (settingsData as any)?.default_tools || []
-        setOpsModalState((s: any) => ({ ...s, tools: { ok: { tools, enabledSet: new Set(defaults) } } }))
-      }).catch((e) => setOpsModalState((s: any) => ({ ...s, tools: { err: String(e) } })))
+      Promise.all([getTools(), getSettings()])
+        .then(([toolsData, settingsData]) => {
+          const td = toolsData as { tools?: unknown }
+          const rawTools = Array.isArray(td.tools) ? td.tools : []
+          const tools = rawTools.map((t): { name: string; description: string } => {
+            if (typeof t === 'string') return { name: t, description: '' }
+            if (t && typeof t === 'object' && 'name' in t) {
+              const o = t as { name: unknown; description?: unknown }
+              return {
+                name: String(o.name),
+                description: typeof o.description === 'string' ? o.description : '',
+              }
+            }
+            return { name: '', description: '' }
+          })
+          const sd = settingsData as { default_tools?: unknown }
+          const defaultsRaw = sd.default_tools
+          const defaults = Array.isArray(defaultsRaw)
+            ? defaultsRaw.filter((x): x is string => typeof x === 'string')
+            : []
+          setOpsModalState((prev) => ({
+            ...prev,
+            tools: { ok: { tools, enabledSet: new Set(defaults) } },
+          }))
+        })
+        .catch((e: unknown) => setOpsModalState((prev) => ({ ...prev, tools: { err: errMessage(e) } })))
     } else if (panel === 'skills') {
-      getAnalyticsSkills().then((d: any) => {
-        setOpsModalState((s: any) => ({ ...s, skills: { ok: { skills: d.skills || [], growthAreas: d.growth_areas || [] } } }))
-      }).catch((e) => setOpsModalState((s: any) => ({ ...s, skills: { err: String(e) } })))
+      getAnalyticsSkills()
+        .then((d: unknown) => {
+          const o = d as { skills?: unknown; growth_areas?: unknown }
+          setOpsModalState((prev) => ({
+            ...prev,
+            skills: {
+              ok: {
+                skills: Array.isArray(o.skills) ? o.skills : [],
+                growthAreas: Array.isArray(o.growth_areas) ? o.growth_areas : [],
+              },
+            },
+          }))
+        })
+        .catch((e: unknown) => setOpsModalState((prev) => ({ ...prev, skills: { err: errMessage(e) } })))
     } else if (panel === 'stats') {
-      Promise.all([getCostStatus(), getAgentStats(7)]).then(([c, s]: any) => {
-        setOpsModalState((s2: any) => ({ ...s2, stats: { ok: { budget: { spentToday: c.spent_today, spentMonth: c.spent_month, remaining: c.remaining, percentUsed: c.percent_used, status: c.status }, latency: s.latency_by_endpoint || [] } } }))
-      }).catch((e) => setOpsModalState((s: any) => ({ ...s, stats: { err: String(e) } })))
+      Promise.all([getCostStatus(), getAgentStats(7)])
+        .then(([c, s]) => {
+          const cost = c as Record<string, unknown>
+          const stats = s as Record<string, unknown>
+          const latency = stats.latency_by_endpoint
+          setOpsModalState((prev) => ({
+            ...prev,
+            stats: {
+              ok: {
+                budget: {
+                  spentToday: cost.spent_today,
+                  spentMonth: cost.spent_month,
+                  remaining: cost.remaining,
+                  percentUsed: cost.percent_used,
+                  status: cost.status,
+                },
+                latency: Array.isArray(latency) ? latency : [],
+              },
+            },
+          }))
+        })
+        .catch((e: unknown) => setOpsModalState((prev) => ({ ...prev, stats: { err: errMessage(e) } })))
     } else if (panel === 'history') {
-      getHistory(8, 0).then((d: any) => {
-        setOpsModalState((s: any) => ({ ...s, history: { ok: { tasks: d.tasks || [], total: d.total || 0 } } }))
-      }).catch((e) => setOpsModalState((s: any) => ({ ...s, history: { err: String(e) } })))
+      getHistory(8, 0)
+        .then((d: unknown) => {
+          const o = d as { tasks?: unknown; total?: unknown }
+          setOpsModalState((prev) => ({
+            ...prev,
+            history: {
+              ok: {
+                tasks: Array.isArray(o.tasks) ? o.tasks : [],
+                total: typeof o.total === 'number' ? o.total : 0,
+              },
+            },
+          }))
+        })
+        .catch((e: unknown) => setOpsModalState((prev) => ({ ...prev, history: { err: errMessage(e) } })))
     } else if (panel === 'mcp') {
-      Promise.all([getAgentToolsHealth(), getMcpServers()]).then(([h, sv]: any) => {
-        setOpsModalState((s: any) => ({ ...s, mcp: { ok: { checks: h.checks || [], healthyCount: h.healthy_count || 0, total: h.total || 0, servers: sv.servers || [] } } }))
-      }).catch((e) => setOpsModalState((s: any) => ({ ...s, mcp: { err: String(e) } })))
+      Promise.all([getAgentToolsHealth(), getMcpServers()])
+        .then(([h, sv]) => {
+          const health = h as Record<string, unknown>
+          const servers = sv as Record<string, unknown>
+          setOpsModalState((prev) => ({
+            ...prev,
+            mcp: {
+              ok: {
+                checks: Array.isArray(health.checks) ? health.checks : [],
+                healthyCount:
+                  typeof health.healthy_count === 'number' ? health.healthy_count : 0,
+                total: typeof health.total === 'number' ? health.total : 0,
+                servers: Array.isArray(servers.servers) ? servers.servers : [],
+              },
+            },
+          }))
+        })
+        .catch((e: unknown) => setOpsModalState((prev) => ({ ...prev, mcp: { err: errMessage(e) } })))
     }
   }, [])
 
