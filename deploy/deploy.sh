@@ -12,9 +12,9 @@ cd "$REPO_DIR"
 DEPLOY_ENV_FILE="$REPO_DIR/deploy/.env.deploy"
 if [[ -f "$DEPLOY_ENV_FILE" ]]; then
 	echo "==> Loading deploy env from deploy/.env.deploy"
-	line_no=0
+	line_number=0
 	while IFS= read -r line || [[ -n "$line" ]]; do
-		((line_no += 1))
+		((line_number += 1))
 		[[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
 		if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
 			key="${BASH_REMATCH[1]}"
@@ -26,7 +26,7 @@ if [[ -f "$DEPLOY_ENV_FILE" ]]; then
 			fi
 			export "$key=$value"
 		else
-			echo "[deploy][warn] Ignoring invalid line $line_no in deploy/.env.deploy" >&2
+			echo "[deploy][warn] Ignoring invalid line $line_number in deploy/.env.deploy" >&2
 		fi
 	done < "$DEPLOY_ENV_FILE"
 fi
