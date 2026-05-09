@@ -15,24 +15,53 @@ usage() {
   echo "Usage: bash deploy/hardening.sh --domain <domain> [--email <email>] [--no-certbot]" >&2
 }
 
+is_option_token() {
+  case "${1:-}" in
+    --domain|--email|--no-certbot)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+is_valid_domain() {
+  [[ "${1:-}" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]
+}
+
+is_valid_email() {
+  [[ "${1:-}" =~ ^[^[:space:]@]+@[^[:space:]@]+$ ]]
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --domain)
-      if [[ -z "${2:-}" || "${2:0:2}" == "--" ]]; then
+      if [[ -z "${2:-}" ]] || is_option_token "$2"; then
         echo "Error: --domain requires a value." >&2
         usage
         exit 1
       fi
       DOMAIN="$2"
+      if ! is_valid_domain "$DOMAIN"; then
+        echo "Error: --domain must be a valid domain value." >&2
+        usage
+        exit 1
+      fi
       shift 2
       ;;
     --email)
-      if [[ -z "${2:-}" || "${2:0:2}" == "--" ]]; then
+      if [[ -z "${2:-}" ]] || is_option_token "$2"; then
         echo "Error: --email requires a value." >&2
         usage
         exit 1
       fi
       EMAIL="$2"
+      if ! is_valid_email "$EMAIL"; then
+        echo "Error: --email must be a valid email value." >&2
+        usage
+        exit 1
+      fi
       shift 2
       ;;
     --no-certbot)

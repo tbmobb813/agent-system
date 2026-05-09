@@ -43,7 +43,7 @@ if [[ -f "$DEPLOY_ENV_FILE" ]]; then
 	line_number=0
 	while IFS= read -r line || [[ -n "$line" ]]; do
 		((line_number += 1))
-		[[ -z "$(trim_whitespace "$line")" || "$line" =~ ^[[:space:]]*# ]] && continue
+		[[ "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*# ]] && continue
 		if [[ "$line" =~ ^[[:space:]]*([A-Za-z][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
 			key="${BASH_REMATCH[1]}"
 			if ! is_allowed_deploy_env_key "$key"; then
