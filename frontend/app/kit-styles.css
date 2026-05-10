@@ -579,6 +579,7 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
+  min-height: 62vh;
 }
 
 .dr-agent-summary {
@@ -685,14 +686,53 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 14px 16px;
-  max-height: 320px;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
   font-family: var(--font-body);
   font-size: 13px;
   line-height: 1.55;
+}
+
+.dr-agent-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dr-agent-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(100%, 360px);
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.dr-agent-attachment-chip.is-ready {
+  border-color: var(--success);
+}
+
+.dr-agent-attachment-chip.is-error {
+  border-color: var(--danger);
+}
+
+.dr-agent-attachment-status {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.dr-agent-attachment-remove {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
 }
 
 .dr-agent-cursor,

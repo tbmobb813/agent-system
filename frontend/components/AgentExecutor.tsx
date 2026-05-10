@@ -1,7 +1,16 @@
 'use client'
 
-import { useMemo, useCallback } from 'react'
+import { useMemo, useCallback, useEffect, useRef, useState } from 'react'
 import type { StreamEvent } from '@/lib/hooks'
+import {
+  addMcpServer,
+  deleteMcpServer,
+  deleteAnalyticsSkill,
+  getSettings,
+  updateSettings,
+  uploadDocument,
+  upsertAnalyticsSkill,
+} from '@/lib/api'
 import {
   EventLine,
   TurnDoneFooter,
@@ -31,16 +40,31 @@ import {
 
 export default function AgentExecutor() {
   const {
-    query, setQuery, context, setContext, editLastOpen, setEditLastOpen, showThinkingLive,
+    query, setQuery, editLastOpen, setEditLastOpen, showThinkingLive,
     reasoningPhaseOpenByTurn, reasoningEffortForRequest, setReasoningEffortForRequest,
-    dismissFeedbackNudge, feedbackDetailsRef, contextPanelRef, queryInputRef,
+    dismissFeedbackNudge, feedbackDetailsRef, queryInputRef,
     toolNames, queryCursor, setQueryCursor, suggestDismissed, setSuggestDismissed, suggestHighlight, setSuggestHighlight,
     quickActionsOpen, setQuickActionsOpen, reasoningArgModal, setReasoningArgModal, helpModalOpen, setHelpModalOpen,
-    modelsModalOpen, setModelsModalOpen, modelsModalState, opsModalOpen, setOpsModalOpen, opsPanel,
+    modelsModalOpen, setModelsModalOpen, modelsModalState, opsModalOpen, setOpsModalOpen, opsPanel, opsModalState,
     quickActionsRef, quickActionsButtonRef,
     events, merged, isRunning, error, conversationId, run, stop, reset, newConversation,
     latestRunCost, lastUserMessage, openOpsPanel, loadModelsForModal, skipReasoningModalSig
   } = useAgentExecutorState()
+
+  type PendingAttachment = {
+    id: string
+    filename: string
+    status: 'uploading' | 'ready' | 'error'
+    error?: string
+  }
+
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const streamEndRef = useRef<HTMLDivElement>(null)
+  const [opsBusy, setOpsBusy] = useState<string | null>(null)
+  const [opsNotice, setOpsNotice] = useState<string | null>(null)
+  const [mcpForm, setMcpForm] = useState({ name: '', transport: 'http_json', url: '', command: '', args: '' })
+  const [skillForm, setSkillForm] = useState({ task_type: '', skill_name: '', required_tools: '' })
 
   const suggestionRows = useMemo(
     () => buildSuggestionRows(query, queryCursor, suggestDismissed, toolNames),
@@ -128,9 +152,161 @@ export default function AgentExecutor() {
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault(); const raw = el.value.trim(); if (!raw || isRunning) return
-      run(raw, context.trim() || undefined, conversationId, reasoningEffortForRequest); setQuery('')
+      const readyNames = attachments.filter(a => a.status === 'ready').map(a => a.filename)
+      const attachmentContext = readyNames.length > 0
+        ? `Attached files in document store: ${readyNames.join(', ')}`
+        : undefined
+      run(raw, attachmentContext, conversationId, reasoningEffortForRequest); setQuery('')
     }
   }
+
+  const handlePickFiles = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  const handleAttachFiles = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (files.length === 0) return
+
+    const queue = files.map(file => ({
+      id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
+      filename: file.name,
+      status: 'uploading' as const,
+    }))
+
+    setAttachments(prev => [...queue, ...prev])
+
+    await Promise.all(queue.map(async (item, idx) => {
+      try {
+        await uploadDocument(files[idx])
+        setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, status: 'ready' } : a))
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Upload failed'
+        setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, status: 'error', error: msg } : a))
+      }
+    }))
+
+    // Allow selecting the same file again later.
+    e.currentTarget.value = ''
+  }, [])
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments(prev => prev.filter(a => a.id !== id))
+  }, [])
+
+  useEffect(() => {
+    streamEndRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' })
+  }, [merged])
+
+  const refreshOpsPanel = useCallback(() => {
+    openOpsPanel(opsPanel)
+  }, [openOpsPanel, opsPanel])
+
+  const toggleDefaultTool = useCallback(async (toolName: string, enable: boolean) => {
+    setOpsBusy(`tool:${toolName}`)
+    setOpsNotice(null)
+    try {
+      const current = await getSettings() as { default_tools?: string[] | null }
+      const nextSet = new Set(Array.isArray(current.default_tools) ? current.default_tools : [])
+      if (enable) nextSet.add(toolName)
+      else nextSet.delete(toolName)
+      await updateSettings({ ...current, default_tools: Array.from(nextSet) })
+      setOpsNotice(`Tool ${enable ? 'enabled' : 'disabled'}: ${toolName}`)
+      openOpsPanel('tools')
+    } catch (err) {
+      setOpsNotice(err instanceof Error ? err.message : 'Tool update failed')
+    } finally {
+      setOpsBusy(null)
+    }
+  }, [openOpsPanel])
+
+  const createMcpServer = useCallback(async () => {
+    const name = mcpForm.name.trim()
+    const transport = mcpForm.transport as 'http_json' | 'sse' | 'stdio'
+    if (!name) {
+      setOpsNotice('MCP name is required')
+      return
+    }
+
+    setOpsBusy('mcp:add')
+    setOpsNotice(null)
+    try {
+      if (transport === 'stdio') {
+        await addMcpServer({
+          name,
+          transport,
+          command: mcpForm.command.trim(),
+          args: mcpForm.args.split(',').map(s => s.trim()).filter(Boolean),
+        })
+      } else {
+        await addMcpServer({
+          name,
+          transport,
+          url: mcpForm.url.trim(),
+        })
+      }
+      setOpsNotice(`MCP server added: ${name}`)
+      setMcpForm({ name: '', transport: 'http_json', url: '', command: '', args: '' })
+      openOpsPanel('mcp')
+    } catch (err) {
+      setOpsNotice(err instanceof Error ? err.message : 'Could not add MCP server')
+    } finally {
+      setOpsBusy(null)
+    }
+  }, [mcpForm, openOpsPanel])
+
+  const removeMcpServer = useCallback(async (name: string) => {
+    setOpsBusy(`mcp:del:${name}`)
+    setOpsNotice(null)
+    try {
+      await deleteMcpServer(name)
+      setOpsNotice(`MCP server deleted: ${name}`)
+      openOpsPanel('mcp')
+    } catch (err) {
+      setOpsNotice(err instanceof Error ? err.message : 'Could not delete MCP server')
+    } finally {
+      setOpsBusy(null)
+    }
+  }, [openOpsPanel])
+
+  const addSkill = useCallback(async () => {
+    const taskType = skillForm.task_type.trim()
+    const skillName = skillForm.skill_name.trim()
+    if (!taskType || !skillName) {
+      setOpsNotice('Skill task type and name are required')
+      return
+    }
+    setOpsBusy('skill:add')
+    setOpsNotice(null)
+    try {
+      await upsertAnalyticsSkill({
+        task_type: taskType,
+        skill_name: skillName,
+        required_tools: skillForm.required_tools.split(',').map(s => s.trim()).filter(Boolean),
+      })
+      setOpsNotice(`Skill saved: ${taskType}`)
+      setSkillForm({ task_type: '', skill_name: '', required_tools: '' })
+      openOpsPanel('skills')
+    } catch (err) {
+      setOpsNotice(err instanceof Error ? err.message : 'Could not save skill')
+    } finally {
+      setOpsBusy(null)
+    }
+  }, [skillForm, openOpsPanel])
+
+  const removeSkill = useCallback(async (taskType: string) => {
+    setOpsBusy(`skill:del:${taskType}`)
+    setOpsNotice(null)
+    try {
+      await deleteAnalyticsSkill(taskType)
+      setOpsNotice(`Skill deleted: ${taskType}`)
+      openOpsPanel('skills')
+    } catch (err) {
+      setOpsNotice(err instanceof Error ? err.message : 'Could not delete skill')
+    } finally {
+      setOpsBusy(null)
+    }
+  }, [openOpsPanel])
 
   const turnItems = useMemo(() => {
     type TurnItem = { kind: 'turn'; id: number; user?: StreamEvent; events: StreamEvent[] }
@@ -149,12 +325,274 @@ export default function AgentExecutor() {
     return items
   }, [merged])
 
+  const opsPanelContent = useMemo(() => {
+    const state = opsModalState[opsPanel]
+    if (state === 'loading') {
+      return <p className="text-sm text-muted">Loading {opsPanel}…</p>
+    }
+    if ('err' in state) {
+      return <p className="text-sm text-[color:var(--danger)]">{state.err}</p>
+    }
+
+    const data = state.ok as Record<string, unknown>
+
+    if (opsPanel === 'tools') {
+      const tools = Array.isArray(data.tools) ? data.tools as Array<{ name?: string; description?: string }> : []
+      const enabledSet = data.enabledSet instanceof Set ? data.enabledSet as Set<string> : new Set<string>()
+      return (
+        <div className="space-y-3">
+          <div className="text-xs text-muted">{tools.length} available · {enabledSet.size} enabled by default</div>
+          {tools.length === 0 ? <p className="text-sm text-muted">No tools available.</p> : null}
+          {tools.map((tool, i) => (
+            <div key={`${tool.name ?? 'tool'}-${i}`} className="panel panel-soft p-3 rounded-lg flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">{tool.name ?? 'Unnamed tool'}</p>
+                {tool.description ? <p className="text-xs text-muted mt-1 leading-relaxed">{tool.description}</p> : null}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className={`text-[10px] uppercase tracking-[0.14em] px-2 py-1 rounded border ${enabledSet.has(tool.name ?? '') ? 'border-[color:var(--success)] text-[color:var(--success)]' : 'border-[color:var(--border)] text-muted'}`}>
+                  {enabledSet.has(tool.name ?? '') ? 'enabled' : 'optional'}
+                </span>
+                <button
+                  type="button"
+                  disabled={!tool.name || opsBusy === `tool:${tool.name}`}
+                  onClick={() => {
+                    if (!tool.name) return
+                    void toggleDefaultTool(tool.name, !enabledSet.has(tool.name))
+                  }}
+                  className="dr-btn-ghost px-2 py-1 rounded text-xs disabled:opacity-50"
+                >
+                  {enabledSet.has(tool.name ?? '') ? 'Disable' : 'Enable'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )
+    }
+
+    if (opsPanel === 'skills') {
+      const skills = Array.isArray(data.skills) ? data.skills : []
+      const growthAreas = Array.isArray(data.growthAreas) ? data.growthAreas : []
+      const allSkills = [...skills, ...growthAreas] as Array<Record<string, unknown>>
+      return (
+        <div className="space-y-3">
+          <div className="panel panel-soft p-3 rounded-lg space-y-2">
+            <p className="text-xs uppercase tracking-[0.14em] text-muted">Add or update skill</p>
+            <div className="grid sm:grid-cols-2 gap-2">
+              <input value={skillForm.task_type} onChange={(e) => setSkillForm(prev => ({ ...prev, task_type: e.target.value }))} placeholder="task type (e.g. coding)" className="dr-agent-model-select h-9" />
+              <input value={skillForm.skill_name} onChange={(e) => setSkillForm(prev => ({ ...prev, skill_name: e.target.value }))} placeholder="skill name" className="dr-agent-model-select h-9" />
+            </div>
+            <input value={skillForm.required_tools} onChange={(e) => setSkillForm(prev => ({ ...prev, required_tools: e.target.value }))} placeholder="required tools (comma separated)" className="dr-agent-model-select h-9 w-full" />
+            <button type="button" onClick={() => void addSkill()} disabled={opsBusy === 'skill:add'} className="dr-btn-accent px-3 py-1.5 rounded text-xs disabled:opacity-50">{opsBusy === 'skill:add' ? 'Saving…' : 'Save Skill'}</button>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="panel panel-soft p-3 rounded-lg">
+              <p className="text-xs uppercase tracking-[0.14em] text-muted">Tracked skills</p>
+              <p className="text-lg font-semibold mt-1">{skills.length}</p>
+            </div>
+            <div className="panel panel-soft p-3 rounded-lg">
+              <p className="text-xs uppercase tracking-[0.14em] text-muted">Growth areas</p>
+              <p className="text-lg font-semibold mt-1">{growthAreas.length}</p>
+            </div>
+          </div>
+          {skills.length === 0 ? <p className="text-sm text-muted">No skill analytics found yet.</p> : null}
+          {skills.length > 0 ? (
+            <div className="panel panel-soft rounded-lg overflow-hidden">
+              <div className="grid grid-cols-[1.5fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-muted border-b border-[color:var(--border)]">
+                <span>Skill</span>
+                <span className="text-right">Success</span>
+                <span className="text-right">Uses</span>
+              </div>
+              {skills.map((skill, i) => {
+                const row = skill as Record<string, unknown>
+                const name = String(row.skill ?? row.name ?? `Skill ${i + 1}`)
+                const taskType = String(row.task_type ?? row.taskType ?? name)
+                const success = row.success_rate ?? row.success ?? row.win_rate
+                const uses = row.count ?? row.uses ?? row.total ?? '—'
+                return (
+                  <div key={`skill-row-${i}`} className="grid grid-cols-[1.5fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-sm border-b last:border-b-0 border-[color:var(--border)]/50">
+                    <div className="min-w-0 flex items-center gap-2">
+                      <span className="truncate" title={name}>{name}</span>
+                      <button type="button" onClick={() => void removeSkill(taskType)} disabled={opsBusy === `skill:del:${taskType}`} className="dr-btn-ghost px-2 py-0.5 rounded text-[10px] disabled:opacity-50">Delete</button>
+                    </div>
+                    <span className="text-right text-muted">{success == null ? '—' : String(success)}</span>
+                    <span className="text-right text-muted">{String(uses)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
+          {growthAreas.length > 0 ? (
+            <div className="panel panel-soft p-3 rounded-lg">
+              <p className="text-xs uppercase tracking-[0.14em] text-muted mb-2">Top growth areas</p>
+              <div className="flex flex-wrap gap-2">
+                {growthAreas.map((area, i) => (
+                  <span key={`growth-${i}`} className="text-xs px-2 py-1 rounded border border-[color:var(--border)] bg-[color:var(--surface-soft)]">{String(area)}</span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {allSkills.length === 0 ? <p className="text-xs text-muted">Skills can be learned automatically or added manually above.</p> : null}
+        </div>
+      )
+    }
+
+    if (opsPanel === 'stats') {
+      const budget = (data.budget ?? {}) as Record<string, unknown>
+      const latency = Array.isArray(data.latency) ? data.latency : []
+
+      const percentUsed = typeof budget.percentUsed === 'number' ? budget.percentUsed : Number(budget.percentUsed ?? 0)
+      const safePercent = Number.isFinite(percentUsed) ? Math.max(0, Math.min(100, percentUsed)) : 0
+
+      return (
+        <div className="space-y-3">
+          <div className="panel panel-soft p-3 rounded-lg space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted">Budget usage</span>
+              <span className="font-semibold">{safePercent.toFixed(1)}%</span>
+            </div>
+            <progress className="budget-progress" max={100} value={safePercent} />
+            <div className="grid sm:grid-cols-2 gap-2 text-sm">
+              <p>Spent today: <span className="text-[color:var(--text)]">{String(budget.spentToday ?? '—')}</span></p>
+              <p>Spent month: <span className="text-[color:var(--text)]">{String(budget.spentMonth ?? '—')}</span></p>
+              <p>Remaining: <span className="text-[color:var(--text)]">{String(budget.remaining ?? '—')}</span></p>
+              <p>Status: <span className="text-[color:var(--text)]">{String(budget.status ?? '—')}</span></p>
+            </div>
+          </div>
+          <div className="panel panel-soft rounded-lg overflow-hidden">
+            <div className="grid grid-cols-[1.4fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-muted border-b border-[color:var(--border)]">
+              <span>Endpoint</span>
+              <span className="text-right">P50</span>
+              <span className="text-right">P95</span>
+            </div>
+            {latency.length === 0 ? <p className="px-3 py-3 text-sm text-muted">No latency stats yet.</p> : null}
+            {latency.map((entry, i) => {
+              const row = entry as Record<string, unknown>
+              return (
+                <div key={`latency-${i}`} className="grid grid-cols-[1.4fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-sm border-b last:border-b-0 border-[color:var(--border)]/50">
+                  <span className="truncate" title={String(row.endpoint ?? row.path ?? 'endpoint')}>{String(row.endpoint ?? row.path ?? 'endpoint')}</span>
+                  <span className="text-right text-muted">{String(row.p50_ms ?? row.p50 ?? '—')}</span>
+                  <span className="text-right text-muted">{String(row.p95_ms ?? row.p95 ?? '—')}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )
+    }
+
+    if (opsPanel === 'history') {
+      const tasks = Array.isArray(data.tasks) ? data.tasks as Array<Record<string, unknown>> : []
+      return (
+        <div className="space-y-3">
+          <div className="text-xs text-muted">Showing {tasks.length} recent tasks</div>
+          {tasks.length === 0 ? <p className="text-sm text-muted">No task history available.</p> : null}
+          {tasks.map((task, i) => (
+            <div key={`hist-${i}`} className="panel panel-soft p-3 rounded-lg text-sm space-y-1">
+              <div className="flex items-start justify-between gap-3">
+                <p className="font-medium truncate">{String(task.query ?? 'No query')}</p>
+                <span className="text-[10px] uppercase tracking-[0.14em] px-2 py-1 rounded border border-[color:var(--border)] text-muted shrink-0">{String(task.status ?? 'unknown')}</span>
+              </div>
+              <p className="text-xs text-muted">{String(task.created_at ?? '')}</p>
+            </div>
+          ))}
+        </div>
+      )
+    }
+
+    if (opsPanel === 'mcp') {
+      const checks = Array.isArray(data.checks) ? data.checks : []
+      const servers = Array.isArray(data.servers) ? data.servers : []
+      const healthyCount = typeof data.healthyCount === 'number' ? data.healthyCount : 0
+      const total = typeof data.total === 'number' ? data.total : 0
+      return (
+        <div className="space-y-3">
+          <div className="panel panel-soft p-3 rounded-lg space-y-2">
+            <p className="text-xs uppercase tracking-[0.14em] text-muted">Add MCP server</p>
+            <div className="grid sm:grid-cols-2 gap-2">
+              <input value={mcpForm.name} onChange={(e) => setMcpForm(prev => ({ ...prev, name: e.target.value }))} placeholder="server name" className="dr-agent-model-select h-9" />
+              <select aria-label="MCP transport" title="MCP transport" value={mcpForm.transport} onChange={(e) => setMcpForm(prev => ({ ...prev, transport: e.target.value }))} className="dr-agent-model-select h-9">
+                <option value="http_json">http_json</option>
+                <option value="sse">sse</option>
+                <option value="stdio">stdio</option>
+              </select>
+            </div>
+            {mcpForm.transport === 'stdio' ? (
+              <div className="grid sm:grid-cols-2 gap-2">
+                <input value={mcpForm.command} onChange={(e) => setMcpForm(prev => ({ ...prev, command: e.target.value }))} placeholder="command (e.g. npx)" className="dr-agent-model-select h-9" />
+                <input value={mcpForm.args} onChange={(e) => setMcpForm(prev => ({ ...prev, args: e.target.value }))} placeholder="args comma-separated" className="dr-agent-model-select h-9" />
+              </div>
+            ) : (
+              <input value={mcpForm.url} onChange={(e) => setMcpForm(prev => ({ ...prev, url: e.target.value }))} placeholder="server URL" className="dr-agent-model-select h-9 w-full" />
+            )}
+            <button type="button" onClick={() => void createMcpServer()} disabled={opsBusy === 'mcp:add'} className="dr-btn-accent px-3 py-1.5 rounded text-xs disabled:opacity-50">{opsBusy === 'mcp:add' ? 'Adding…' : 'Add MCP Server'}</button>
+          </div>
+          <div className="grid sm:grid-cols-3 gap-3">
+            <div className="panel panel-soft p-3 rounded-lg">
+              <p className="text-xs uppercase tracking-[0.14em] text-muted">Healthy</p>
+              <p className="text-lg font-semibold mt-1">{healthyCount}</p>
+            </div>
+            <div className="panel panel-soft p-3 rounded-lg">
+              <p className="text-xs uppercase tracking-[0.14em] text-muted">Total checks</p>
+              <p className="text-lg font-semibold mt-1">{total || checks.length}</p>
+            </div>
+            <div className="panel panel-soft p-3 rounded-lg">
+              <p className="text-xs uppercase tracking-[0.14em] text-muted">Servers</p>
+              <p className="text-lg font-semibold mt-1">{servers.length}</p>
+            </div>
+          </div>
+          <div className="panel panel-soft rounded-lg overflow-hidden">
+            <div className="grid grid-cols-[1.2fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-muted border-b border-[color:var(--border)]">
+              <span>Name</span>
+              <span>Status</span>
+              <span>Transport</span>
+            </div>
+            {servers.length === 0 ? <p className="px-3 py-3 text-sm text-muted">No MCP servers configured.</p> : null}
+            {servers.map((sv, i) => {
+              const row = sv as Record<string, unknown>
+              const status = String(row.status ?? 'unknown')
+              const name = String(row.name ?? `server-${i + 1}`)
+              return (
+                <div key={`mcp-${i}`} className="grid grid-cols-[1.2fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-sm border-b last:border-b-0 border-[color:var(--border)]/50">
+                  <div className="min-w-0 flex items-center gap-2">
+                    <span className="truncate" title={name}>{name}</span>
+                    <button type="button" onClick={() => void removeMcpServer(name)} disabled={opsBusy === `mcp:del:${name}`} className="dr-btn-ghost px-2 py-0.5 rounded text-[10px] disabled:opacity-50">Delete</button>
+                  </div>
+                  <span className={status === 'healthy' ? 'text-[color:var(--success)]' : 'text-muted'}>{status}</span>
+                  <span className="text-muted">{String(row.transport ?? '—')}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div className="panel panel-soft p-3 rounded-lg text-xs font-mono overflow-x-auto">
+        {JSON.stringify(data, null, 2)}
+      </div>
+    )
+  }, [
+    addSkill,
+    createMcpServer,
+    mcpForm,
+    opsBusy,
+    opsModalState,
+    opsPanel,
+    removeMcpServer,
+    removeSkill,
+    skillForm,
+    toggleDefaultTool,
+  ])
+
   return (
     <div className="dr-agent-container h-full min-h-0">
       <div className="flex-1 min-h-0 flex flex-col">
         {merged.length > 0 ? (
-          <div className="dr-agent-stream-box flex-1 min-h-0 flex flex-col overflow-hidden font-mono text-sm">
-            <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 relative">
+          <div className="dr-agent-stream-box font-mono text-sm">
+            <div className="p-4 sm:p-6 relative">
               <div className="space-y-2">
                 {turnItems.map((item, i) => {
                   if (item.kind === 'divider') return <EventLine key={`divider-${i}`} event={item.event} />
@@ -197,6 +635,7 @@ export default function AgentExecutor() {
                   )
                 })}
               </div>
+              <div ref={streamEndRef} aria-hidden="true" />
             </div>
             <AgentActivityStrip reasoningEffortLabel={reasoningEffortLabel} liveActivitySummary={liveActivitySummary} isRunning={isRunning} streamEvents={events} latestRunCost={latestRunCost} className="shrink-0 dr-agent-stream-meta" />
           </div>
@@ -205,10 +644,33 @@ export default function AgentExecutor() {
         )}
       </div>
 
-      <div className="shrink-0 space-y-3 sticky bottom-0 z-20 bg-[color:var(--bg)]/95 backdrop-blur-sm pt-2 border-t border-[color:var(--border)]">
+      <div className="shrink-0 space-y-3 sticky bottom-0 z-20 bg-[color:var(--bg)]/95 backdrop-blur-sm pt-3 pb-2 border-t border-[color:var(--border)]">
         <form onSubmit={(e) => e.preventDefault()} className="space-y-2">
           {error ? (
             <p className="text-sm text-[color:var(--danger)]" role="alert">{error}</p>
+          ) : null}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,.pdf,.doc,.docx,.txt,.md,.csv,.json,.yaml,.yml"
+            multiple
+            aria-label="Attach files and photos"
+            title="Attach files and photos"
+            className="hidden"
+            onChange={handleAttachFiles}
+          />
+          {attachments.length > 0 ? (
+            <div className="dr-agent-attachments">
+              {attachments.map(item => (
+                <span key={item.id} className={`dr-agent-attachment-chip ${item.status === 'error' ? 'is-error' : item.status === 'ready' ? 'is-ready' : ''}`}>
+                  <span className="truncate" title={item.filename}>{item.filename}</span>
+                  <span className="dr-agent-attachment-status">
+                    {item.status === 'uploading' ? 'uploading' : item.status === 'ready' ? 'ready' : 'error'}
+                  </span>
+                  <button type="button" onClick={() => removeAttachment(item.id)} className="dr-agent-attachment-remove" aria-label={`Remove ${item.filename}`}>×</button>
+                </span>
+              ))}
+            </div>
           ) : null}
           <div className="relative">
             <textarea data-testid="agent-message-input" ref={queryInputRef} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={handleKeyDown} placeholder="Ask the agent anything..." rows={3} disabled={isRunning} className="dr-agent-textarea relative z-10 w-full disabled:opacity-50" />
@@ -217,22 +679,39 @@ export default function AgentExecutor() {
                 <button type="button" ref={quickActionsButtonRef} onClick={() => setQuickActionsOpen(!quickActionsOpen)} className="dr-btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm"><IconPlus /> Actions</button>
                 {quickActionsOpen && <QuickActionsMenu isRunning={isRunning} hasMessages={merged.length > 0} hasLastMessage={!!lastUserMessage} reasoningEffortLabel={reasoningEffortLabel} threadExportEmpty={false} onNewConversation={() => { newConversation(); setQuickActionsOpen(false) }} onStop={() => { void stop(); setQuickActionsOpen(false) }} onClear={() => { reset(); setQuickActionsOpen(false) }} onOpenOps={(p) => { openOpsPanel(p); setQuickActionsOpen(false) }} onOpenModels={() => { setModelsModalOpen(true); loadModelsForModal(); setQuickActionsOpen(false) }} onOpenHelp={() => { setHelpModalOpen(true); setQuickActionsOpen(false) }} onOpenReasoningPicker={() => { setSuggestDismissed(true); setReasoningArgModal({ from: -1, to: -1 }); setQuickActionsOpen(false) }} onCopyThread={() => { setQuickActionsOpen(false) }} onDownloadThread={() => { handleDownloadThread(); setQuickActionsOpen(false) }} onFeedback={() => { tryOpenFeedbackPanel(); setQuickActionsOpen(false) }} onEditResend={() => { setEditLastOpen(!editLastOpen); setQuickActionsOpen(false) }} />}
               </div>
-              <button type="button" aria-label="Toggle context panel" title="Toggle context panel" onClick={() => { if (contextPanelRef.current) contextPanelRef.current.open = !contextPanelRef.current.open }} className="dr-btn-ghost p-1.5 rounded-lg"><IconPaperclip /></button>
+              <button type="button" aria-label="Attach files and photos" title="Attach files and photos" onClick={handlePickFiles} className="dr-btn-ghost p-1.5 rounded-lg"><IconPaperclip /></button>
               <div className="flex-1" />
               <button type="button" onClick={() => setReasoningArgModal({ from: -1, to: -1 })} className="dr-agent-hint dr-btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-muted font-mono"><IconClock /> {reasoningEffortLabel}</button>
-              {isRunning ? <button type="button" aria-label="Stop" onClick={() => void stop()} className="dr-btn-ghost text-[color:var(--danger)]"><IconStop /> Stop</button> : <button type="submit" data-testid="agent-send-button" aria-label="Send" onClick={() => { run(query, context || undefined, conversationId, reasoningEffortForRequest); setQuery('') }} className="dr-btn-accent dr-btn-accent-lg px-3 py-1.5 rounded-lg text-sm"><IconSend /></button>}
+              {isRunning ? <button type="button" aria-label="Stop" onClick={() => void stop()} className="dr-btn-ghost text-[color:var(--danger)]"><IconStop /> Stop</button> : <button type="submit" data-testid="agent-send-button" aria-label="Send" onClick={() => {
+                const readyNames = attachments.filter(a => a.status === 'ready').map(a => a.filename)
+                const attachmentContext = readyNames.length > 0
+                  ? `Attached files in document store: ${readyNames.join(', ')}`
+                  : undefined
+                run(query, attachmentContext, conversationId, reasoningEffortForRequest)
+                setQuery('')
+              }} className="dr-btn-accent dr-btn-accent-lg px-3 py-1.5 rounded-lg text-sm"><IconSend /></button>}
             </div>
           </div>
-          <details ref={contextPanelRef} className="group rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-soft)]/40 px-3 py-2">
-            <summary className="text-xs text-muted cursor-pointer">Optional context</summary>
-            <textarea value={context} onChange={e => setContext(e.target.value)} rows={2} className="mt-2 w-full bg-[color:var(--bg-elev)] rounded-lg px-3 py-2 text-sm border border-[color:var(--border)] focus:outline-none resize-none" />
-          </details>
         </form>
       </div>
 
       {helpModalOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-lg w-full"><h3>Help</h3><button onClick={() => setHelpModalOpen(false)}>Close</button></div></div>}
       {modelsModalOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-lg w-full"><h3>Models</h3><pre className="text-xs">{JSON.stringify(modelsModalState, null, 2)}</pre><button onClick={() => setModelsModalOpen(false)}>Close</button></div></div>}
-      {opsModalOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-3xl w-full"><h3>Ops: {opsPanel}</h3><button onClick={() => setOpsModalOpen(false)}>Close</button></div></div>}
+      {opsModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-y-auto space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="section-title dr-title-16">Ops: {opsPanel}</h3>
+              <div className="flex items-center gap-2">
+                <button className="dr-btn-ghost px-3 py-1.5 rounded-lg text-sm" onClick={refreshOpsPanel}>Refresh</button>
+                <button className="dr-btn-ghost px-3 py-1.5 rounded-lg text-sm" onClick={() => setOpsModalOpen(false)}>Close</button>
+              </div>
+            </div>
+            {opsNotice ? <p className="text-xs text-muted">{opsNotice}</p> : null}
+            {opsPanelContent}
+          </div>
+        </div>
+      )}
       {reasoningArgModal && <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-lg w-full"><h3>Reasoning</h3><div className="grid grid-cols-2 gap-2">{REASONING_SUB_KEYS.map(opt => <button key={opt} onClick={() => commitReasoningArg(opt, reasoningArgModal)} className="p-2 border rounded">{opt}</button>)}</div><button onClick={() => setReasoningArgModal(null)}>Cancel</button></div></div>}
     </div>
   )

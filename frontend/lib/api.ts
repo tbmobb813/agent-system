@@ -86,6 +86,38 @@ export async function getAnalyticsSkills() {
   return res.json()
 }
 
+export async function upsertAnalyticsSkill(data: {
+  task_type: string
+  skill_name: string
+  success_rate?: number
+  total_uses?: number
+  proficiency_level?: string
+  required_tools?: string[]
+}) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/skills`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to upsert skill (${res.status})` }))
+    throw new Error(String(err.detail ?? `Failed to upsert skill (${res.status})`))
+  }
+  return res.json()
+}
+
+export async function deleteAnalyticsSkill(taskType: string) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/skills/${encodeURIComponent(taskType)}`, {
+    method: 'DELETE',
+    headers: headers(),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to delete skill (${res.status})` }))
+    throw new Error(String(err.detail ?? `Failed to delete skill (${res.status})`))
+  }
+  return res.json()
+}
+
 export async function getHistory(limit = 20, offset = 0, q?: string) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   if (q && q.trim()) params.set('q', q.trim())

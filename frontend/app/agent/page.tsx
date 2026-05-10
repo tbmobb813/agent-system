@@ -12,8 +12,8 @@ export default function AgentPage() {
         </p>
       </header>
 
-      <div className="panel p-5 md:p-6">
-        <div className="min-h-[520px]">
+      <div className="panel p-6 md:p-8 lg:p-10">
+        <div className="min-h-[68vh]">
           <AgentExecutor />
         </div>
       </div>
