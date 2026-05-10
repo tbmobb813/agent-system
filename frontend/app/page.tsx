@@ -61,7 +61,6 @@ type GreetContext = { displayName: string | null; timezone: string }
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats>({ agentReady: false, budget: null, recentTasks: null, modelBreakdown: null })
   const [loading, setLoading] = useState(true)
-  const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [greetContext, setGreetContext] = useState<GreetContext>({ displayName: null, timezone: 'UTC' })
   const [, setMinutePulse] = useState(0)
 
@@ -104,7 +103,6 @@ export default function DashboardPage() {
     }
 
     setLoading(false)
-    setLastRefresh(new Date())
   }, [])
 
   // Initial load + 30-second auto-refresh

@@ -80,6 +80,30 @@ export async function getAnalyticsAlerts(days = 30) {
   return res.json()
 }
 
+export async function getAnalyticsDecisions(days = 30) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/decisions?days=${days}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch analytics decisions (${res.status})`)
+  return res.json()
+}
+
+export async function getAnalyticsCostEfficiency() {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/cost-efficiency`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch cost efficiency (${res.status})`)
+  return res.json()
+}
+
+export async function getAnalyticsErrors(days = 30) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/errors?days=${days}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch error analytics (${res.status})`)
+  return res.json()
+}
+
+export async function getAnalyticsAbTests(limit = 10) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/ab-tests?limit=${limit}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch A/B tests (${res.status})`)
+  return res.json()
+}
+
 export async function getAnalyticsSkills() {
   const res = await fetchWithTimeout(`${API_URL}/analytics/skills`, { headers: headers() })
   if (!res.ok) throw new Error(`Failed to fetch analytics skills (${res.status})`)

@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import ThemeSwitcher from '@/components/ThemeSwitcher'
@@ -27,7 +28,7 @@ export default function SiteNav() {
   return (
     <header className="dr-shell-header" aria-label="Primary">
       <Link href="/" className="dr-shell-brand-link" aria-label="AI Agent dashboard home">
-        <img src="/glyph.svg" width="32" height="32" alt="" aria-hidden="true" />
+        <Image src="/glyph.svg" width={32} height={32} alt="" aria-hidden="true" priority />
         <span className="brand-title dr-shell-brand-title">AI AGENT</span>
       </Link>
 

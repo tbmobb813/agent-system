@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Image from 'next/image'
 import { Orbitron, Space_Grotesk } from 'next/font/google'
 import SiteNav from '@/components/SiteNav'
 import './globals.css'
@@ -42,7 +43,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <footer className="dr-shell-footer">
             <span>localhost:3000 · backend connected at :8000</span>
             <span className="dr-shell-health">
-              <img src="/logo-mark.svg" width="16" height="16" alt="" aria-hidden="true" className="dr-shell-logo-mark" />
+              <Image
+                src="/logo-mark.svg"
+                width={16}
+                height={16}
+                alt=""
+                aria-hidden="true"
+                className="dr-shell-logo-mark"
+              />
               <span className="dr-shell-health-dot" />
               all systems online
             </span>
