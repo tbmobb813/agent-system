@@ -283,19 +283,6 @@ function TaskDetailPanel({ taskId, onClose, onFeedbackSaved }: { taskId: string;
               </div>
             </>
           ) : (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={onClose}
-                className="btn-ghost px-2 py-1 rounded text-xs text-muted"
-              >
-                Collapse
-              </button>
-            </div>
-          )}
-          {!detail.task.result && (
-            <p className="text-muted text-xs italic mt-1">No result stored for this task.</p>
-          ) : (
             <div className="space-y-2">
               <p className="text-muted text-xs italic">No result stored for this task.</p>
               <div className="flex justify-end">
@@ -309,11 +296,23 @@ function TaskDetailPanel({ taskId, onClose, onFeedbackSaved }: { taskId: string;
               </div>
             </div>
           )}
+        </>
+      )}
+    </div>
+  )
+}
+
+const PAGE_SIZE = 15
+
+export default function TaskHistory() {
+  const { data, loading, error, refresh } = useHistory()
+  const [offset, setOffset] = useState(0)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [activeSearch, setActiveSearch] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Debounce search input — fire after 350ms of no typing
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
@@ -326,7 +325,7 @@ function TaskDetailPanel({ taskId, onClose, onFeedbackSaved }: { taskId: string;
 
   useEffect(() => {
     refresh(PAGE_SIZE, offset, activeSearch || undefined)
-  }, [offset, activeSearch]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [offset, activeSearch])
 
   async function handleDelete(id: string) {
     if (!window.confirm('Delete this task and its stored result from history?')) return
@@ -360,110 +359,109 @@ function TaskDetailPanel({ taskId, onClose, onFeedbackSaved }: { taskId: string;
           onChange={e => setSearch(e.target.value)}
           placeholder="Filter by query…"
           className="dr-history-filter-input"
+          aria-label="Filter tasks by query"
         />
         <button
           type="button"
           onClick={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)}
           className="dr-dashboard-link"
+          aria-label="Refresh task history"
         >
           Refresh
         </button>
       </div>
 
+      {loading && <p className="dr-history-summary">Loading...</p>}
+      {error && <p className="dr-history-summary text-error">Error: {error.message}</p>}
+
       {!loading && data && (
-        <p className="dr-history-summary">
-          {activeSearch
-            ? `${data.total} result${data.total !== 1 ? 's' : ''} for "${activeSearch}"`
-            : `${data.total} runs`}
-          {data.total > PAGE_SIZE && ` · showing ${offset + 1}–${Math.min(offset + PAGE_SIZE, data.total)}`}
-        </p>
-      )}
+        <>
+          <p className="dr-history-summary">
+            {activeSearch
+              ? `${data.total} result${data.total !== 1 ? 's' : ''} for "${activeSearch}"`
+              : `${data.total} runs`}
+            {data.total > PAGE_SIZE && ` · showing ${offset + 1}–${Math.min(offset + PAGE_SIZE, data.total)}`}
+          </p>
 
-      <div>
-        <div className="dr-history-head-row">
-          <span>Status</span>
-          <span>Query</span>
-          <span>Model</span>
-          <span className="dr-align-right">Time</span>
-          <span className="dr-align-right">Cost</span>
-        </div>
-
-        {loading && <p className="text-muted text-sm py-4">Loading…</p>}
-        {error && (
-          <div className="flex items-center gap-3 py-4">
-            <p className="text-[color:var(--danger)] text-sm">Error: {error}</p>
-            <button type="button" onClick={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)} className="btn-ghost px-3 py-1.5 text-xs rounded-lg">Retry</button>
-          </div>
-        )}
-
-        {!loading && data && data.tasks.length === 0 && (
-          <div className="dr-history-empty">
-            {activeSearch ? `No runs match "${activeSearch}".` : 'No runs yet.'}
-          </div>
-        )}
-
-        {(data?.tasks as Task[] ?? []).map((task) => (
-          <div key={task.id}>
-            <div
-              role="button"
-              tabIndex={0}
-              aria-label={expanded === task.id ? `Collapse task: ${task.query}` : `Expand task: ${task.query}`}
-              className="dr-history-data-row"
-              onClick={() => toggleExpand(task.id)}
-              onKeyDown={e => rowKeyToggle(e, task.id)}
-            >
-              <span className="dr-inline-status">
-                <StatusBadge status={task.status} />
-                {task.feedback_signal && <FeedbackHint signal={task.feedback_signal} />}
-              </span>
-              <span className="dr-row-query" title={task.query}>{task.query}</span>
-              <code className="dr-code dr-code-start" title={task.model_used ?? ''}>{(task.model_used ?? 'unknown').split('/').pop()}</code>
-              <span className="dr-row-time">{formatDate(task.created_at)}</span>
-              <span className="dr-row-cost">{formatCost(task.cost)}</span>
-              <button
-                type="button"
-                onClick={e => { e.stopPropagation(); handleDelete(task.id) }}
-                onKeyDown={e => e.stopPropagation()}
-                disabled={deleting === task.id}
-                className="text-xs text-muted hover:text-[color:var(--danger)] transition-colors disabled:opacity-50"
-                aria-label="Delete task"
-                title="Delete task"
-              >
-                {deleting === task.id ? '…' : '✕'}
-              </button>
+          <div>
+            <div className="dr-history-head-row">
+              <span>Status</span>
+              <span>Query</span>
+              <span>Model</span>
+              <span className="dr-align-right">Time</span>
+              <span className="dr-align-right">Cost</span>
             </div>
 
-            {expanded === task.id && (
-              <TaskDetailPanel
-                taskId={task.id}
-                onClose={() => setExpanded(null)}
-                onFeedbackSaved={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)}
-              />
+            {data.tasks.length === 0 && (
+              <div className="dr-history-empty">
+                {activeSearch ? `No runs match "${activeSearch}".` : 'No runs yet.'}
+              </div>
             )}
-          </div>
-        ))}
-      </div>
 
-      {data && data.total > PAGE_SIZE && (
-        <div className="flex items-center justify-between pt-2">
-          <button
-            onClick={() => { setOffset(o => Math.max(0, o - PAGE_SIZE)); setExpanded(null) }}
-            disabled={offset === 0}
-            className="btn-ghost px-3 py-1.5 rounded-lg text-sm disabled:opacity-40"
-          >
-            ← Newer
-          </button>
-          <span className="text-xs text-muted">
-            Page {Math.floor(offset / PAGE_SIZE) + 1} of {Math.ceil(data.total / PAGE_SIZE)}
-          </span>
-          <button
-            onClick={() => { setOffset(o => o + PAGE_SIZE); setExpanded(null) }}
-            disabled={offset + PAGE_SIZE >= data.total}
-            className="btn-ghost px-3 py-1.5 rounded-lg text-sm disabled:opacity-40"
-          >
-            Older →
-          </button>
-        </div>
+            {(data.tasks as Task[] ?? []).map((task) => (
+              <div key={task.id}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-label={expanded === task.id ? `Collapse task: ${task.query}` : `Expand task: ${task.query}`}
+                  className="dr-history-data-row"
+                  onClick={() => toggleExpand(task.id)}
+                  onKeyDown={e => rowKeyToggle(e, task.id)}
+                >
+                  <span className="dr-inline-status">
+                    <StatusBadge status={task.status} />
+                    {task.feedback_signal && <FeedbackHint signal={task.feedback_signal} />}
+                  </span>
+                  <span className="dr-row-query" title={task.query}>{task.query}</span>
+                  <code className="dr-code dr-code-start" title={task.model_used ?? ''}>{(task.model_used ?? 'unknown').split('/').pop()}</code>
+                  <span className="dr-row-time">{formatDate(task.created_at)}</span>
+                  <span className="dr-row-cost">{formatCost(task.cost)}</span>
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); handleDelete(task.id) }}
+                    onKeyDown={e => e.stopPropagation()}
+                    disabled={deleting === task.id}
+                    className="text-xs text-muted hover:text-[color:var(--danger)] transition-colors disabled:opacity-50"
+                    aria-label="Delete task"
+                    title="Delete task"
+                  >
+                    {deleting === task.id ? '…' : '✕'}
+                  </button>
+                </div>
+
+                {expanded === task.id && (
+                  <TaskDetailPanel
+                    taskId={task.id}
+                    onClose={() => setExpanded(null)}
+                    onFeedbackSaved={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {data.total > PAGE_SIZE && (
+            <div className="flex items-center justify-between pt-2">
+              <button
+                onClick={() => { setOffset(o => Math.max(0, o - PAGE_SIZE)); setExpanded(null) }}
+                disabled={offset === 0}
+                className="btn-ghost px-3 py-1.5 rounded-lg text-sm disabled:opacity-40"
+              >
+                ← Newer
+              </button>
+              <span className="text-xs text-muted">
+                Page {Math.floor(offset / PAGE_SIZE) + 1} of {Math.ceil(data.total / PAGE_SIZE)}
+              </span>
+              <button
+                onClick={() => { setOffset(o => o + PAGE_SIZE); setExpanded(null) }}
+                disabled={offset + PAGE_SIZE >= data.total}
+                className="btn-ghost px-3 py-1.5 rounded-lg text-sm disabled:opacity-40"
+              >
+                Older →
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
