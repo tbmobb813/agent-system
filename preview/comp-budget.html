@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>comp-budget</title>
 <link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="./styles.css">
 <style>
   html, body { margin: 0; padding: 0; }
   body.atmosphere { padding: 18px 22px; min-height: 160px; box-sizing: border-box; }
@@ -13,15 +14,15 @@
 </style>
 </head>
 <body class="atmosphere">
-<div class="panel" style="padding: 16px 18px;">
-  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-    <span style="font-family: var(--font-body); font-size: 13px; color: var(--muted);">Monthly budget</span>
+<div class="panel" class="pr-padding-16-18">
+  <div class="pr-flex-between-items">
+    <span class="pr-font-body-13-muted">Monthly budget</span>
     <span style="font-family: var(--font-body); font-size: 13px; font-weight: 600; color: var(--success);">14.1%</span>
   </div>
   <progress class="budget-progress" max="100" value="14.1"></progress>
-  <div style="display: flex; justify-content: space-between; font-family: var(--font-body); font-size: 11px; color: var(--muted); margin-top: 8px;">
-    <span>spent today: <span style="color: var(--text);">$0.47</span></span>
-    <span>remaining: <span style="color: var(--text);">$25.77</span></span>
+  <div class="pr-flex-between-text">
+    <span>spent today: <span class="pr-text-text">$0.47</span></span>
+    <span>remaining: <span class="pr-text-text">$25.77</span></span>
   </div>
 </div>
 </body></html>

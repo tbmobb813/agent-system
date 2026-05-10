@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>comp-statpills</title>
 <link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="./styles.css">
 <style>
   html, body { margin: 0; padding: 0; }
   body.atmosphere { padding: 18px 22px; min-height: 160px; box-sizing: border-box; }
@@ -13,26 +14,26 @@
 </style>
 </head>
 <body class="atmosphere">
-<div class="col" style="gap: 10px;">
-  <div style="display: flex; gap: 14px; align-items: center;">
-    <span style="display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-body); font-size: 13px;">
-      <span style="width: 10px; height: 10px; border-radius: 999px; background: var(--success);"></span>
-      <span style="color: var(--text); font-weight: 500;">Agent Online</span>
-      <span style="color: var(--muted); font-size: 11px;">· 142 total tasks</span>
+<div class="col" class="pr-gap-10">
+  <div class="pr-flex-row-gap-14-center">
+    <span class="pr-font-body-13-inline">
+      <span class="pr-dot-success"></span>
+      <span class="pr-text-text-bold">Agent Online</span>
+      <span class="pr-text-muted-11">· 142 total tasks</span>
     </span>
   </div>
-  <div style="display: flex; gap: 14px; align-items: center;">
-    <span style="display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-body); font-size: 13px;">
-      <span style="width: 10px; height: 10px; border-radius: 999px; background: var(--danger);"></span>
-      <span style="color: var(--text); font-weight: 500;">Agent Offline</span>
-      <span style="color: var(--muted); font-size: 11px;">· check OPENROUTER_API_KEY</span>
+  <div class="pr-flex-row-gap-14-center">
+    <span class="pr-font-body-13-inline">
+      <span class="pr-dot-danger"></span>
+      <span class="pr-text-text-bold">Agent Offline</span>
+      <span class="pr-text-muted-11">· check OPENROUTER_API_KEY</span>
     </span>
   </div>
-  <div style="display: flex; gap: 14px; align-items: center;">
-    <span style="display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-body); font-size: 13px;">
-      <span style="width: 10px; height: 10px; border-radius: 999px; background: var(--warn);"></span>
-      <span style="color: var(--text); font-weight: 500;">Budget 87%</span>
-      <span style="color: var(--muted); font-size: 11px;">· $3.92 remaining</span>
+  <div class="pr-flex-row-gap-14-center">
+    <span class="pr-font-body-13-inline">
+      <span class="pr-dot-warn"></span>
+      <span class="pr-text-text-bold">Budget 87%</span>
+      <span class="pr-text-muted-11">· $3.92 remaining</span>
     </span>
   </div>
 </div>

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>color-status</title>
 <link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="./styles.css">
 <style>
   html, body { margin: 0; padding: 0; }
   body.atmosphere { padding: 18px 22px; min-height: 160px; box-sizing: border-box; }
@@ -13,35 +14,35 @@
 </style>
 </head>
 <body class="atmosphere">
-<div class="row" style="gap: 14px;">
-  <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 130px;">
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <span style="width: 10px; height: 10px; border-radius: 999px; background: #2fd67d; box-shadow: 0 0 12px #2fd67d99;"></span>
-        <span style="font-family: var(--font-body); font-size: 13px; color: #2fd67d; font-weight: 600;">completed</span>
+<div class="row" class="pr-gap-14">
+  <div class="pr-flex-col-gap-6-start-wide">
+      <div class="pr-flex-row-gap-8-center">
+        <span class="pr-dot-success-glow"></span>
+        <span class="pr-font-body-13-success">completed</span>
       </div>
-      <code style="font-family: var(--font-mono); font-size: 10px; color: var(--text);">--success</code>
-      <code style="font-family: var(--font-mono); font-size: 10px; color: var(--muted);">#2fd67d</code>
-    </div><div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 130px;">
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <span style="width: 10px; height: 10px; border-radius: 999px; background: #ffba49; box-shadow: 0 0 12px #ffba4999;"></span>
-        <span style="font-family: var(--font-body); font-size: 13px; color: #ffba49; font-weight: 600;">stopped</span>
+      <code class="pr-font-mono-10-text">--success</code>
+      <code class="pr-font-mono-10-muted">#2fd67d</code>
+    </div><div class="pr-flex-col-gap-6-start-wide">
+      <div class="pr-flex-row-gap-8-center">
+        <span class="pr-dot-warn-glow"></span>
+        <span class="pr-font-body-13-warn">stopped</span>
       </div>
-      <code style="font-family: var(--font-mono); font-size: 10px; color: var(--text);">--warn</code>
-      <code style="font-family: var(--font-mono); font-size: 10px; color: var(--muted);">#ffba49</code>
-    </div><div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 130px;">
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <span style="width: 10px; height: 10px; border-radius: 999px; background: #ff6a76; box-shadow: 0 0 12px #ff6a7699;"></span>
-        <span style="font-family: var(--font-body); font-size: 13px; color: #ff6a76; font-weight: 600;">failed</span>
+      <code class="pr-font-mono-10-text">--warn</code>
+      <code class="pr-font-mono-10-muted">#ffba49</code>
+    </div><div class="pr-flex-col-gap-6-start-wide">
+      <div class="pr-flex-row-gap-8-center">
+        <span class="pr-dot-danger-glow"></span>
+        <span class="pr-font-body-13-danger">failed</span>
       </div>
-      <code style="font-family: var(--font-mono); font-size: 10px; color: var(--text);">--danger</code>
-      <code style="font-family: var(--font-mono); font-size: 10px; color: var(--muted);">#ff6a76</code>
-    </div><div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 130px;">
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <span style="width: 10px; height: 10px; border-radius: 999px; background: #59a7ff; box-shadow: 0 0 12px #59a7ff99;"></span>
-        <span style="font-family: var(--font-body); font-size: 13px; color: #59a7ff; font-weight: 600;">running</span>
+      <code class="pr-font-mono-10-text">--danger</code>
+      <code class="pr-font-mono-10-muted">#ff6a76</code>
+    </div><div class="pr-flex-col-gap-6-start-wide">
+      <div class="pr-flex-row-gap-8-center">
+        <span class="pr-dot-accent-glow"></span>
+        <span class="pr-font-body-13-accent">running</span>
       </div>
-      <code style="font-family: var(--font-mono); font-size: 10px; color: var(--text);">--accent-2</code>
-      <code style="font-family: var(--font-mono); font-size: 10px; color: var(--muted);">#59a7ff</code>
+      <code class="pr-font-mono-10-text">--accent-2</code>
+      <code class="pr-font-mono-10-muted">#59a7ff</code>
     </div>
 </div>
 </body></html>

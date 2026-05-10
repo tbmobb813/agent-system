@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>comp-buttons</title>
 <link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="./styles.css">
 <style>
   html, body { margin: 0; padding: 0; }
   body.atmosphere { padding: 18px 22px; min-height: 160px; box-sizing: border-box; }
@@ -16,8 +17,8 @@
 <div class="row" style="gap: 14px; flex-wrap: wrap;">
   <button class="btn-accent">Launch Agent</button>
   <button class="btn-ghost">Refresh</button>
-  <a href="#" style="font-family: var(--font-body); font-size: 13px; color: var(--accent-2); text-decoration: none;">View all →</a>
-  <button style="background: transparent; border: 1px solid var(--accent-2); color: var(--accent-2); padding: 6px 12px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer;">Copied!</button>
-  <button disabled style="background: var(--surface-soft); border: 1px solid var(--border); color: var(--muted); padding: 8px 14px; border-radius: 8px; font: inherit; font-size: 12px; cursor: not-allowed; opacity: 0.7;">Ingesting…</button>
+  <a href="#" class="pr-link">View all →</a>
+  <button class="pr-btn-custom">Copied!</button>
+  <button disabled class="pr-btn-disabled">Ingesting…</button>
 </div>
 </body></html>

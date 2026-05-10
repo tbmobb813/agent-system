@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>comp-input</title>
 <link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="./styles.css">
 <style>
   html, body { margin: 0; padding: 0; }
   body.atmosphere { padding: 18px 22px; min-height: 160px; box-sizing: border-box; }
@@ -13,13 +14,13 @@
 </style>
 </head>
 <body class="atmosphere">
-<div class="col" style="gap: 10px;">
-  <input type="text" placeholder="Filter tables…" style="background: var(--bg-elev); color: var(--text); font: inherit; font-family: var(--font-body); font-size: 13px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; outline: none; width: 280px;" />
-  <div style="display: flex; gap: 10px; align-items: center;">
-    <select style="height: 36px; background: var(--bg-elev); color: var(--text); font: inherit; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; padding: 0 10px;">
+<div class="col" class="pr-gap-10">
+  <input type="text" placeholder="Filter tables…" class="pr-input-select" />
+  <div class="pr-flex-gap-10-center">
+    <select class="pr-btn-input">
       <option>Neon Command</option><option>Starforge</option><option>Retro Grid</option><option>Clean Tech</option>
     </select>
-    <select style="height: 36px; background: var(--bg-elev); color: var(--text); font: inherit; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; padding: 0 10px;">
+    <select class="pr-btn-input">
       <option>Comfortable</option><option>Compact</option>
     </select>
   </div>

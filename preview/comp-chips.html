@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>comp-chips</title>
 <link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="./styles.css">
 <style>
   html, body { margin: 0; padding: 0; }
   body.atmosphere { padding: 18px 22px; min-height: 160px; box-sizing: border-box; }
@@ -14,14 +15,14 @@
 </head>
 <body class="atmosphere">
 <div class="col" style="gap: 12px;">
-  <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-    <span style="font-family: var(--font-body); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); background: var(--surface-soft); padding: 4px 8px; border-radius: 6px;">CORE</span><span style="font-family: var(--font-body); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); background: var(--surface-soft); padding: 4px 8px; border-radius: 6px;">LOGS</span><span style="font-family: var(--font-body); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); background: var(--surface-soft); padding: 4px 8px; border-radius: 6px;">COST</span><span style="font-family: var(--font-body); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); background: var(--surface-soft); padding: 4px 8px; border-radius: 6px;">DATA</span><span style="font-family: var(--font-body); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); background: var(--surface-soft); padding: 4px 8px; border-radius: 6px;">DOCS</span><span style="font-family: var(--font-body); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); background: var(--surface-soft); padding: 4px 8px; border-radius: 6px;">CONF</span><span style="font-family: var(--font-body); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); background: var(--surface-soft); padding: 4px 8px; border-radius: 6px;">CMD</span>
+  <div class="pr-flex-gap-8-wrap">
+    <span class="pr-demo-label-full">CORE</span><span class="pr-demo-label-full">LOGS</span><span class="pr-demo-label-full">COST</span><span class="pr-demo-label-full">DATA</span><span class="pr-demo-label-full">DOCS</span><span class="pr-demo-label-full">CONF</span><span class="pr-demo-label-full">CMD</span>
   </div>
-  <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-    <span style="font-family: var(--font-mono); font-size: 11px; color: var(--accent-2); background: var(--surface-soft); border: 1px solid var(--border); padding: 2px 8px; border-radius: 6px;">PDF</span>
-    <span style="font-family: var(--font-mono); font-size: 11px; color: var(--accent-2); background: var(--surface-soft); border: 1px solid var(--border); padding: 2px 8px; border-radius: 6px;">DOCX</span>
-    <span style="font-family: var(--font-mono); font-size: 11px; color: var(--accent-2); background: var(--surface-soft); border: 1px solid var(--border); padding: 2px 8px; border-radius: 6px;">MD</span>
-    <span style="border-radius: 6px; border: 1px solid rgba(43,227,198,.5); background: var(--surface-soft); color: var(--text); font-family: var(--font-body); font-size: 11px; padding: 4px 10px;">Profile: Streamer</span>
+  <div class="pr-flex-gap-8-wrap">
+    <span class="pr-font-mono-11-accent-badge">PDF</span>
+    <span class="pr-font-mono-11-accent-badge">DOCX</span>
+    <span class="pr-font-mono-11-accent-badge">MD</span>
+    <span class="pr-chip-accent">Profile: Streamer</span>
   </div>
 </div>
 </body></html>

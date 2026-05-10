@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>spacing-shadows</title>
 <link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="./styles.css">
 <style>
   html, body { margin: 0; padding: 0; }
   body.atmosphere { padding: 18px 22px; min-height: 160px; box-sizing: border-box; }
@@ -14,19 +15,19 @@
 </head>
 <body class="atmosphere">
 <div class="row" style="gap: 18px; align-items: stretch;">
-  <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 10px;">
+  <div class="pr-flex-flex-1-col-center">
     <div style="width: 100%; height: 64px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02), 0 12px 40px rgba(0,0,0,0.24); backdrop-filter: blur(12px);"></div>
-    <code style="font-family: var(--font-mono); font-size: 10px; color: var(--text);">--shadow-panel</code>
+    <code class="pr-font-mono-10-text">--shadow-panel</code>
     <code style="font-family: var(--font-mono); font-size: 10px; color: var(--muted); text-align: center;">inset highlight + outer drop</code>
   </div>
-  <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 10px;">
+  <div class="pr-flex-flex-1-col-center">
     <div style="width: 100%; height: 64px; background: var(--surface); border: 1px solid var(--accent); border-radius: 12px; box-shadow: 0 10px 24px rgba(43,227,198,0.20);"></div>
-    <code style="font-family: var(--font-mono); font-size: 10px; color: var(--text);">--shadow-glow</code>
+    <code class="pr-font-mono-10-text">--shadow-glow</code>
     <code style="font-family: var(--font-mono); font-size: 10px; color: var(--muted); text-align: center;">hover state</code>
   </div>
-  <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 10px;">
+  <div class="pr-flex-flex-1-col-center">
     <div style="width: 100%; height: 64px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 12px; box-shadow: 0 0 14px rgba(43,227,198,0.5);"></div>
-    <code style="font-family: var(--font-mono); font-size: 10px; color: var(--text);">--shadow-glow-strong</code>
+    <code class="pr-font-mono-10-text">--shadow-glow-strong</code>
     <code style="font-family: var(--font-mono); font-size: 10px; color: var(--muted); text-align: center;">progress fill</code>
   </div>
 </div>
