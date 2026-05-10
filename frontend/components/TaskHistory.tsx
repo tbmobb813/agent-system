@@ -325,7 +325,7 @@ export default function TaskHistory() {
 
   useEffect(() => {
     refresh(PAGE_SIZE, offset, activeSearch || undefined)
-  }, [offset, activeSearch])
+  }, [offset, activeSearch, refresh])
 
   async function handleDelete(id: string) {
     if (!window.confirm('Delete this task and its stored result from history?')) return
@@ -372,7 +372,7 @@ export default function TaskHistory() {
       </div>
 
       {loading && <p className="dr-history-summary">Loading...</p>}
-      {error && <p className="dr-history-summary text-error">Error: {error.message}</p>}
+      {error && <p className="dr-history-summary text-error">Error: {error}</p>}
 
       {!loading && data && (
         <>
