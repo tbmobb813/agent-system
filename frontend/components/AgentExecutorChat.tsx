@@ -120,7 +120,7 @@ export function EventLine({ event }: { event: StreamEvent }) {
     case 'user_message':
       return (
         <div className="flex justify-end">
-          <div className="max-w-[min(92%,42rem)] bg-[color:var(--accent-2)]/15 border border-[color:var(--accent-2)]/35 rounded-2xl rounded-br-md px-3 py-2 text-sm text-[color:var(--text)]">
+          <div className="max-w-[min(98%,72rem)] bg-[color:var(--accent-2)]/15 border border-[color:var(--accent-2)]/35 rounded-2xl rounded-br-md px-3 py-2 text-sm text-[color:var(--text)]">
             <MarkdownContent content={event.content ?? ''} />
           </div>
         </div>
@@ -139,7 +139,7 @@ export function EventLine({ event }: { event: StreamEvent }) {
     case 'reasoning_delta':
       return (
         <div className="flex justify-start">
-          <div className="max-w-[min(92%,42rem)] border-l-2 border-[color:var(--accent-2)]/45 bg-[color:var(--accent-2)]/10 rounded-r-lg rounded-bl-md px-3 py-2 text-xs text-[color:var(--text)] whitespace-pre-wrap break-words">
+          <div className="max-w-[min(98%,72rem)] border-l-2 border-[color:var(--accent-2)]/45 bg-[color:var(--accent-2)]/10 rounded-r-lg rounded-bl-md px-3 py-2 text-xs text-[color:var(--text)] whitespace-pre-wrap break-words">
             <span className="text-[10px] uppercase tracking-wide text-muted block mb-1">Model reasoning</span>
             {event.content ?? ''}
           </div>
@@ -154,7 +154,7 @@ export function EventLine({ event }: { event: StreamEvent }) {
     case 'text_delta':
       return (
         <div className="flex justify-start">
-          <div className="max-w-[min(92%,42rem)] bg-[color:var(--surface-soft)] border border-[color:var(--border)] rounded-2xl rounded-bl-md px-3 py-2 text-[color:var(--text)] text-sm">
+          <div className="max-w-[min(98%,72rem)] bg-[color:var(--surface-soft)] border border-[color:var(--border)] rounded-2xl rounded-bl-md px-3 py-2 text-[color:var(--text)] text-sm">
             <MarkdownContent content={event.content ?? ''} />
           </div>
         </div>

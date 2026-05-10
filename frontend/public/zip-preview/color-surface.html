@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en" data-theme="neon-command" data-density="comfortable" data-motion="cinematic">
+<head>
+<meta charset="utf-8">
+<title>color-surface</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  html, body { margin: 0; padding: 0; }
+  body.atmosphere { padding: 18px 22px; min-height: 160px; box-sizing: border-box; }
+  .row { display: flex; align-items: center; gap: 14px; }
+  .col { display: flex; flex-direction: column; gap: 6px; }
+  .grid { display: grid; gap: 10px; }
+</style>
+</head>
+<body class="atmosphere">
+<div class="col" style="gap: 8px;">
+  <div style="font-family: var(--font-body); font-size: 11px; color: var(--muted); letter-spacing: 0.18em; text-transform: uppercase;">Surface stack — translucent</div>
+  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+    <div style="background: var(--bg); border: 1px solid var(--border); border-radius: 10px; height: 70px; display: flex; align-items: flex-end; padding: 8px;"><code style="font-family: var(--font-mono); font-size: 10px; color: var(--muted);">--bg</code></div>
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 10px; height: 70px; display: flex; align-items: flex-end; padding: 8px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);"><code style="font-family: var(--font-mono); font-size: 10px; color: var(--muted);">--surface · 72%</code></div>
+    <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 10px; height: 70px; display: flex; align-items: flex-end; padding: 8px;"><code style="font-family: var(--font-mono); font-size: 10px; color: var(--muted);">--surface-soft · 64%</code></div>
+  </div>
+</div>
+</body></html>

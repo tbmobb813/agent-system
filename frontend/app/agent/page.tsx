@@ -1,13 +1,21 @@
 import AgentExecutor from '@/components/AgentExecutor'
-import PageHeader from '@/components/PageHeader'
 
-/** Reserve space for sticky nav + page chrome; transcript uses the rest of the viewport. */
 export default function AgentPage() {
   return (
-    <div className="flex flex-col h-[calc(100dvh-7rem)] max-h-[calc(100dvh-7rem)] min-h-[420px] -my-2 md:-my-4">
-      <PageHeader className="!mb-2 md:!mb-3 shrink-0" eyebrow="Live session" title="Agent" />
-      <div className="flex-1 min-h-0">
-        <AgentExecutor />
+    <div className="dr-history-stack">
+      <header>
+        <p className="eyebrow">Agent</p>
+        <h1 className="section-title dr-dashboard-hero-title">Run a task</h1>
+        <p className="dr-history-summary">
+          Output streams over SSE — you&apos;ll see status updates, tool calls, and the
+          model&apos;s text token-by-token. Cost lands at the end.
+        </p>
+      </header>
+
+      <div className="panel p-5 md:p-6">
+        <div className="min-h-[520px]">
+          <AgentExecutor />
+        </div>
       </div>
     </div>
   )

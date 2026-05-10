@@ -348,82 +348,68 @@ export default function TaskHistory() {
 
   return (
     <div className="space-y-4">
-      {/* Search bar */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm select-none">⌕</span>
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search queries and results…"
-            className="w-full bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:border-[color:var(--accent)] placeholder:text-muted"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-[color:var(--text)] text-xs"
-            >
-              ✕
-            </button>
-          )}
-        </div>
+      <div className="dr-history-controls">
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Filter by query…"
+          className="dr-history-filter-input"
+        />
         <button
+          type="button"
           onClick={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)}
-          className="text-sm text-[color:var(--accent-2)] hover:opacity-90 transition-opacity shrink-0"
+          className="dr-dashboard-link"
         >
           Refresh
         </button>
       </div>
 
-      {/* Status line */}
       {!loading && data && (
-        <p className="text-sm text-muted">
+        <p className="dr-history-summary">
           {activeSearch
             ? `${data.total} result${data.total !== 1 ? 's' : ''} for "${activeSearch}"`
-            : `${data.total} total task${data.total !== 1 ? 's' : ''}`}
-          {data.total > PAGE_SIZE && ` — showing ${offset + 1}–${Math.min(offset + PAGE_SIZE, data.total)}`}
+            : `${data.total} runs`}
+          {data.total > PAGE_SIZE && ` · showing ${offset + 1}–${Math.min(offset + PAGE_SIZE, data.total)}`}
         </p>
       )}
 
-      {loading && <p className="text-muted text-sm">Loading…</p>}
-      {error && <p className="text-[color:var(--danger)] text-sm">Error: {error}</p>}
+      <div>
+        <div className="dr-history-head-row">
+          <span>Status</span>
+          <span>Query</span>
+          <span>Model</span>
+          <span className="dr-align-right">Time</span>
+          <span className="dr-align-right">Cost</span>
+        </div>
 
-      {!loading && data && data.tasks.length === 0 && (
-        <p className="text-muted text-sm">
-          {activeSearch ? `No tasks match "${activeSearch}".` : 'No tasks yet. Run your first agent query!'}
-        </p>
-      )}
+        {loading && <p className="text-muted text-sm py-4">Loading…</p>}
+        {error && <p className="text-[color:var(--danger)] text-sm py-4">Error: {error}</p>}
 
-      {(data?.tasks as Task[] ?? []).map((task) => (
-        <div key={task.id} className="panel p-4">
-          <div
-            role="button"
-            tabIndex={0}
-            aria-expanded={expanded === task.id}
-            aria-label={expanded === task.id ? `Collapse task: ${task.query}` : `Expand task: ${task.query}`}
-            className="flex items-start justify-between gap-4 cursor-pointer select-none rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]"
-            onClick={() => toggleExpand(task.id)}
-            onKeyDown={e => rowKeyToggle(e, task.id)}
-          >
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium">{task.query}</p>
-              <div className="flex flex-wrap gap-3 mt-1 text-xs text-muted">
-                <span>{formatDate(task.created_at)}</span>
-                {task.model_used && (
-                  <span className="font-mono truncate max-w-[180px]" title={task.model_used}>
-                    {task.model_used.split('/').pop()}
-                  </span>
-                )}
-                <span>{formatCost(task.cost)}</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {task.feedback_signal && (
-                <FeedbackHint signal={task.feedback_signal} />
-              )}
-              <StatusBadge status={task.status} />
-              <span className="text-muted text-xs" aria-hidden>{expanded === task.id ? '▲' : '▼'}</span>
+        {!loading && data && data.tasks.length === 0 && (
+          <div className="dr-history-empty">
+            {activeSearch ? `No runs match "${activeSearch}".` : 'No runs yet.'}
+          </div>
+        )}
+
+        {(data?.tasks as Task[] ?? []).map((task) => (
+          <div key={task.id}>
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label={expanded === task.id ? `Collapse task: ${task.query}` : `Expand task: ${task.query}`}
+              className="dr-history-data-row"
+              onClick={() => toggleExpand(task.id)}
+              onKeyDown={e => rowKeyToggle(e, task.id)}
+            >
+              <span className="dr-inline-status">
+                <StatusBadge status={task.status} />
+                {task.feedback_signal && <FeedbackHint signal={task.feedback_signal} />}
+              </span>
+              <span className="dr-row-query" title={task.query}>{task.query}</span>
+              <code className="dr-code dr-code-start" title={task.model_used ?? ''}>{(task.model_used ?? 'unknown').split('/').pop()}</code>
+              <span className="dr-row-time">{formatDate(task.created_at)}</span>
+              <span className="dr-row-cost">{formatCost(task.cost)}</span>
               <button
                 type="button"
                 onClick={e => { e.stopPropagation(); handleDelete(task.id) }}
@@ -431,21 +417,22 @@ export default function TaskHistory() {
                 disabled={deleting === task.id}
                 className="text-xs text-muted hover:text-[color:var(--danger)] transition-colors disabled:opacity-50"
                 aria-label="Delete task"
+                title="Delete task"
               >
                 {deleting === task.id ? '…' : '✕'}
               </button>
             </div>
-          </div>
 
-          {expanded === task.id && (
-            <TaskDetailPanel
-              taskId={task.id}
-              onClose={() => setExpanded(null)}
-              onFeedbackSaved={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)}
-            />
-          )}
-        </div>
-      ))}
+            {expanded === task.id && (
+              <TaskDetailPanel
+                taskId={task.id}
+                onClose={() => setExpanded(null)}
+                onFeedbackSaved={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)}
+              />
+            )}
+          </div>
+        ))}
+      </div>
 
       {data && data.total > PAGE_SIZE && (
         <div className="flex items-center justify-between pt-2">

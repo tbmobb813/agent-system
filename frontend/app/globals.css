@@ -191,6 +191,18 @@ body {
 	font-size: var(--fs-base);
 	line-height: var(--lh-body);
 	color: var(--text);
+	background-color: var(--bg);
+	transition: background-color var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out);
+}
+
+:root[data-theme='neon-command'],
+:root[data-theme='starforge'],
+:root[data-theme='retro-grid'] {
+	color-scheme: dark;
+}
+
+:root[data-theme='clean-tech'] {
+	color-scheme: light;
 }
 
 h1,
@@ -276,6 +288,13 @@ body {
 	background-attachment: fixed;
 }
 
+:root[data-theme='clean-tech'] body,
+body[data-theme='clean-tech'] {
+	background: radial-gradient(circle at 12% 8%, rgba(var(--glow), 0.10), transparent 26%),
+		radial-gradient(circle at 84% 0%, color-mix(in oklab, var(--accent-2), transparent 86%), transparent 34%),
+		linear-gradient(180deg, #fbfdff 0%, var(--bg) 100%);
+}
+
 body::before {
 	content: '';
 	pointer-events: none;
@@ -288,6 +307,13 @@ body::before {
 	mask-image: radial-gradient(circle at center, black, transparent 76%);
 	opacity: 0.18;
 	z-index: -1;
+}
+
+:root[data-theme='clean-tech'] body::before,
+body[data-theme='clean-tech']::before {
+	background-image: linear-gradient(rgba(19, 33, 58, 0.05) 1px, transparent 1px),
+		linear-gradient(90deg, rgba(19, 33, 58, 0.05) 1px, transparent 1px);
+	opacity: 0.10;
 }
 
 .app-shell {

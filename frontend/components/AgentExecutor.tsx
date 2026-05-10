@@ -150,10 +150,10 @@ export default function AgentExecutor() {
   }, [merged])
 
   return (
-    <div className="flex flex-col h-full gap-2 min-h-0">
+    <div className="dr-agent-container h-full min-h-0">
       <div className="flex-1 min-h-0 flex flex-col">
         {merged.length > 0 ? (
-          <div className="flex-1 min-h-0 flex flex-col rounded-xl border border-[color:var(--border)] bg-[color:var(--bg-elev)] overflow-hidden font-mono text-sm">
+          <div className="dr-agent-stream-box flex-1 min-h-0 flex flex-col overflow-hidden font-mono text-sm">
             <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 relative">
               <div className="space-y-2">
                 {turnItems.map((item, i) => {
@@ -167,7 +167,7 @@ export default function AgentExecutor() {
                       {item.user && <EventLine event={item.user} />}
                       {showThinkingLive && phase.length > 0 && (
                         <div className="flex justify-start">
-                          <details className="max-w-[min(92%,42rem)] w-full rounded-2xl rounded-bl-md border border-[color:var(--border)] bg-[color:var(--surface-soft)] px-3 py-2 text-sm" open={phaseDetailsOpen}>
+                          <details className="max-w-[min(98%,72rem)] w-full rounded-2xl rounded-bl-md border border-[color:var(--border)] bg-[color:var(--surface-soft)] px-3 py-2 text-sm" open={phaseDetailsOpen}>
                             <summary className="text-muted text-sm cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-start gap-2">
                               <span className="shrink-0 opacity-70">▸</span><span className="truncate min-w-0">{phaseSummaryPreview(phase)}</span>
                             </summary>
@@ -198,7 +198,7 @@ export default function AgentExecutor() {
                 })}
               </div>
             </div>
-            <AgentActivityStrip reasoningEffortLabel={reasoningEffortLabel} liveActivitySummary={liveActivitySummary} isRunning={isRunning} streamEvents={events} latestRunCost={latestRunCost} className="shrink-0" />
+            <AgentActivityStrip reasoningEffortLabel={reasoningEffortLabel} liveActivitySummary={liveActivitySummary} isRunning={isRunning} streamEvents={events} latestRunCost={latestRunCost} className="shrink-0 dr-agent-stream-meta" />
           </div>
         ) : (
           <div className="flex-1 min-h-0 flex items-center justify-center text-muted text-sm text-center px-6">Start chatting to see responses here.</div>
@@ -210,17 +210,17 @@ export default function AgentExecutor() {
           {error ? (
             <p className="text-sm text-[color:var(--danger)]" role="alert">{error}</p>
           ) : null}
-          <div className="relative rounded-xl border border-[color:var(--border)] bg-[color:var(--bg-elev)] focus-within:border-[color:var(--accent)] transition-colors">
-            <textarea data-testid="agent-message-input" ref={queryInputRef} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={handleKeyDown} placeholder="Ask anything…" rows={3} disabled={isRunning} className="relative z-10 w-full bg-transparent rounded-t-xl px-4 pt-3 pb-2 text-sm focus:outline-none resize-none disabled:opacity-50" />
-            <div className="flex items-center gap-1 px-2 pb-2 pt-1 border-t border-[color:var(--border)]/50">
+          <div className="relative">
+            <textarea data-testid="agent-message-input" ref={queryInputRef} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={handleKeyDown} placeholder="Ask the agent anything..." rows={3} disabled={isRunning} className="dr-agent-textarea relative z-10 w-full disabled:opacity-50" />
+            <div className="dr-agent-controls-row border-t border-[color:var(--border)]/50">
               <div className="relative" ref={quickActionsRef}>
-                <button type="button" ref={quickActionsButtonRef} onClick={() => setQuickActionsOpen(!quickActionsOpen)} className="btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm"><IconPlus /> Actions</button>
+                <button type="button" ref={quickActionsButtonRef} onClick={() => setQuickActionsOpen(!quickActionsOpen)} className="dr-btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm"><IconPlus /> Actions</button>
                 {quickActionsOpen && <QuickActionsMenu isRunning={isRunning} hasMessages={merged.length > 0} hasLastMessage={!!lastUserMessage} reasoningEffortLabel={reasoningEffortLabel} threadExportEmpty={false} onNewConversation={() => { newConversation(); setQuickActionsOpen(false) }} onStop={() => { void stop(); setQuickActionsOpen(false) }} onClear={() => { reset(); setQuickActionsOpen(false) }} onOpenOps={(p) => { openOpsPanel(p); setQuickActionsOpen(false) }} onOpenModels={() => { setModelsModalOpen(true); loadModelsForModal(); setQuickActionsOpen(false) }} onOpenHelp={() => { setHelpModalOpen(true); setQuickActionsOpen(false) }} onOpenReasoningPicker={() => { setSuggestDismissed(true); setReasoningArgModal({ from: -1, to: -1 }); setQuickActionsOpen(false) }} onCopyThread={() => { setQuickActionsOpen(false) }} onDownloadThread={() => { handleDownloadThread(); setQuickActionsOpen(false) }} onFeedback={() => { tryOpenFeedbackPanel(); setQuickActionsOpen(false) }} onEditResend={() => { setEditLastOpen(!editLastOpen); setQuickActionsOpen(false) }} />}
               </div>
-              <button type="button" aria-label="Toggle context panel" title="Toggle context panel" onClick={() => { if (contextPanelRef.current) contextPanelRef.current.open = !contextPanelRef.current.open }} className="btn-ghost p-1.5 rounded-lg"><IconPaperclip /></button>
+              <button type="button" aria-label="Toggle context panel" title="Toggle context panel" onClick={() => { if (contextPanelRef.current) contextPanelRef.current.open = !contextPanelRef.current.open }} className="dr-btn-ghost p-1.5 rounded-lg"><IconPaperclip /></button>
               <div className="flex-1" />
-              <button type="button" onClick={() => setReasoningArgModal({ from: -1, to: -1 })} className="btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-muted font-mono"><IconClock /> {reasoningEffortLabel}</button>
-              {isRunning ? <button type="button" aria-label="Stop" onClick={() => void stop()} className="btn-ghost text-[color:var(--danger)]"><IconStop /> Stop</button> : <button type="submit" data-testid="agent-send-button" aria-label="Send" onClick={() => { run(query, context || undefined, conversationId, reasoningEffortForRequest); setQuery('') }} className="btn-accent px-3 py-1.5 rounded-lg text-sm"><IconSend /></button>}
+              <button type="button" onClick={() => setReasoningArgModal({ from: -1, to: -1 })} className="dr-agent-hint dr-btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-muted font-mono"><IconClock /> {reasoningEffortLabel}</button>
+              {isRunning ? <button type="button" aria-label="Stop" onClick={() => void stop()} className="dr-btn-ghost text-[color:var(--danger)]"><IconStop /> Stop</button> : <button type="submit" data-testid="agent-send-button" aria-label="Send" onClick={() => { run(query, context || undefined, conversationId, reasoningEffortForRequest); setQuery('') }} className="dr-btn-accent dr-btn-accent-lg px-3 py-1.5 rounded-lg text-sm"><IconSend /></button>}
             </div>
           </div>
           <details ref={contextPanelRef} className="group rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-soft)]/40 px-3 py-2">
