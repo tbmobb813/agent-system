@@ -22,7 +22,7 @@ function decodeBasicAuth(headerValue: string): { user: string; pass: string } | 
   }
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const basicUser = (process.env.FRONTEND_BASIC_AUTH_USER || '').trim()
   const basicPass = (process.env.FRONTEND_BASIC_AUTH_PASSWORD || '').trim()
   const requireProxyAuth = (process.env.FRONTEND_REQUIRE_PROXY_AUTH || '').toLowerCase() === 'true'
@@ -40,7 +40,7 @@ export function middleware(request: NextRequest) {
 
   const apiKey = process.env.BACKEND_API_KEY || process.env.API_KEY
   if (!apiKey) {
-    console.warn('[middleware] BACKEND_API_KEY is not set — forwarding request without Authorization header')
+    console.warn('[proxy] BACKEND_API_KEY is not set — forwarding request without Authorization header')
     return NextResponse.next()
   }
 
