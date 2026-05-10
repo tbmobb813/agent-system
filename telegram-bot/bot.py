@@ -32,7 +32,9 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 # If BACKEND_API_URL is set, use it strictly. Otherwise, try sane defaults for
 # both local runs and docker-network runs.
 _backend_env = (os.getenv("BACKEND_API_URL") or "").strip()
-BACKEND_URLS = [_backend_env] if _backend_env else ["http://localhost:8000", "http://backend:8000"]
+BACKEND_URLS = (
+    [_backend_env] if _backend_env else ["http://localhost:8000", "http://backend:8000"]
+)
 # Prefer a dedicated bot key, but fall back to the backend master key for local setups.
 API_KEY = os.getenv("TELEGRAM_BOT_API_KEY") or os.getenv("BACKEND_API_KEY", "")
 
@@ -108,7 +110,12 @@ async def _call_backend(method: str, path: str, **kwargs) -> dict | None:
                 continue
 
     if last_error:
-        logger.error("Backend request failed for %s across %s: %s", path, BACKEND_URLS, last_error)
+        logger.error(
+            "Backend request failed for %s across %s: %s",
+            path,
+            BACKEND_URLS,
+            last_error,
+        )
     else:
         logger.error("Backend request failed for %s across %s", path, BACKEND_URLS)
     return None

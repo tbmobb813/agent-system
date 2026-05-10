@@ -362,8 +362,8 @@ class ModelRouter:
         # Tool run: classify by complexity, then ensure the chosen tier is tool-safe.
         query_type = self._classify(query)
         tier_map = {
-            "conversational": "agent",   # simple chit-chat still needs tools → agent floor
-            "simple": "agent",           # same
+            "conversational": "agent",  # simple chit-chat still needs tools → agent floor
+            "simple": "agent",  # same
             "balanced": "balanced",
             "coding": "coding",
             "research": "research",

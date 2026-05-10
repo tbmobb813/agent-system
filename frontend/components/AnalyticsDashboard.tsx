@@ -38,12 +38,12 @@ type ErrorPattern = { error_type: string; recovery_strategy: string | null; mode
 type AbTestResult = { task: string; approach_a: Record<string, string>; approach_b: Record<string, string>; result_a: { cost?: number; time_ms?: number; success?: boolean }; result_b: { cost?: number; time_ms?: number; success?: boolean }; winner: string | null; win_reason: string | null; created_at: string | null }
 type SkillRow = { task_type: string; skill_name: string; success_rate: number; proficiency_level: string; total_uses: number; required_tools: string[] }
 
-function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function StatCard({ label, value, hint, hintDanger }: { label: string; value: string; hint?: string; hintDanger?: boolean }) {
   return (
     <div className="panel p-4">
       <p className="text-xs text-muted mb-1">{label}</p>
       <p className="text-2xl font-semibold">{value}</p>
-      {hint ? <p className="text-xs text-muted mt-2">{hint}</p> : null}
+      {hint ? <p className={`text-xs mt-2 ${hintDanger ? 'text-[color:var(--danger)]' : 'text-muted'}`}>{hint}</p> : null}
     </div>
   )
 }
@@ -55,6 +55,7 @@ function shortModel(model: string) {
 export default function AnalyticsDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
 
   const [overview, setOverview] = useState<Overview | null>(null)
   const [daily, setDaily] = useState<DailyPoint[]>([])
@@ -94,6 +95,7 @@ export default function AnalyticsDashboard() {
       setErrorPatterns((err.patterns ?? []) as ErrorPattern[])
       setAbTests((ab.tests ?? []) as AbTestResult[])
       setSkills((Array.isArray(sk) ? sk : []) as SkillRow[])
+      setLastRefreshed(new Date())
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load analytics data')
     } finally {
@@ -113,7 +115,12 @@ export default function AnalyticsDashboard() {
   }, [daily])
 
   if (loading) return <p className="text-muted">Loading analytics...</p>
-  if (error) return <p className="text-[color:var(--danger)]">Error: {error}</p>
+  if (error) return (
+    <div className="flex items-center gap-3">
+      <p className="text-[color:var(--danger)]">Error: {error}</p>
+      <button onClick={load} className="btn-ghost px-3 py-1.5 text-sm rounded-lg">Retry</button>
+    </div>
+  )
   if (!overview) return <p className="text-muted">No analytics data yet.</p>
 
   const riskColor =
@@ -133,20 +140,33 @@ export default function AnalyticsDashboard() {
       {/* Cost & Performance */}
       <div className="flex items-center justify-between">
         <h2 className="section-title text-xl font-semibold">Cost & Performance</h2>
-        <button onClick={load} className="btn-ghost px-3 py-1.5 text-sm rounded-lg">Refresh</button>
+        <div className="flex items-center gap-3">
+          {lastRefreshed && (
+            <span className="text-xs text-muted hidden sm:block">
+              Updated {lastRefreshed.toLocaleTimeString()}
+            </span>
+          )}
+          <button onClick={load} className="btn-ghost px-3 py-1.5 text-sm rounded-lg">Refresh</button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Spent This Month" value={formatCost(overview.spent_month)} />
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+        <StatCard label="Spent Today" value={formatCost(overview.spent_today)} />
+        <StatCard label="Spent This Month" value={formatCost(overview.spent_month)} hint={`${overview.percent_used.toFixed(1)}% of budget`} />
         <StatCard label="Remaining Budget" value={formatCost(overview.remaining)} />
         <StatCard label="Daily Average" value={formatCost(overview.daily_average)} hint={`${overview.days_elapsed}/${overview.days_in_month} days`} />
-        <StatCard label="Projected Month End" value={formatCost(overview.projected_total)} />
+        <StatCard
+          label="Projected Month End"
+          value={formatCost(overview.projected_total)}
+          hint={overview.is_overspend_risk ? '⚠ Overspend risk' : undefined}
+          hintDanger={overview.is_overspend_risk}
+        />
       </div>
 
       <div className="panel p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold">7-Day Cost Trend</h3>
-          <span className="text-xs text-muted">{formatCost(overview.spent_today)} today</span>
+          <span className="text-xs text-muted">{formatCost(overview.spent_today)} today · auto-refreshes every 5 min</span>
         </div>
         {!daily.length ? <p className="text-sm text-muted">No daily trend data yet.</p> : (
           <div className="space-y-2">

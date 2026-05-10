@@ -175,7 +175,12 @@ function TaskDetailPanel({ taskId, onClose, onFeedbackSaved }: { taskId: string;
   return (
     <div className="mt-3 border-t border-[color:var(--border)] pt-3 space-y-3">
       {loading && <p className="text-muted text-xs">Loading…</p>}
-      {loadError && <p className="text-[color:var(--danger)] text-xs">{loadError}</p>}
+      {loadError && (
+        <div className="flex items-center gap-3">
+          <p className="text-[color:var(--danger)] text-xs">{loadError}</p>
+          <button type="button" onClick={() => { setLoadError(null); setLoading(true); getTaskDetail(taskId).then(p => { setDetail(p); if (p.feedback) { setFeedbackSignal(p.feedback.signal); setFeedbackNotes(p.feedback.notes ?? '') } }).catch(e => setLoadError(e instanceof Error ? e.message : String(e))).finally(() => setLoading(false)) }} className="btn-ghost px-2 py-1 rounded text-xs">Retry</button>
+        </div>
+      )}
       {detail && (
         <>
           <div className="panel panel-soft rounded-lg p-3 space-y-3">
@@ -289,21 +294,21 @@ function TaskDetailPanel({ taskId, onClose, onFeedbackSaved }: { taskId: string;
             </div>
           )}
           {!detail.task.result && (
-            <p className="text-muted text-xs italic">No result stored for this task.</p>
+            <p className="text-muted text-xs italic mt-1">No result stored for this task.</p>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-muted text-xs italic">No result stored for this task.</p>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="btn-ghost px-2 py-1 rounded text-xs text-muted"
+                >
+                  Collapse
+                </button>
+              </div>
+            </div>
           )}
-        </>
-      )}
-    </div>
-  )
-}
-
-const PAGE_SIZE = 20
-
-export default function TaskHistory() {
-  const { data, loading, error, refresh } = useHistory()
-  const [deleting, setDeleting] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState<string | null>(null)
-  const [offset, setOffset] = useState(0)
   const [search, setSearch] = useState('')
   const [activeSearch, setActiveSearch] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -384,7 +389,12 @@ export default function TaskHistory() {
         </div>
 
         {loading && <p className="text-muted text-sm py-4">Loading…</p>}
-        {error && <p className="text-[color:var(--danger)] text-sm py-4">Error: {error}</p>}
+        {error && (
+          <div className="flex items-center gap-3 py-4">
+            <p className="text-[color:var(--danger)] text-sm">Error: {error}</p>
+            <button type="button" onClick={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)} className="btn-ghost px-3 py-1.5 text-xs rounded-lg">Retry</button>
+          </div>
+        )}
 
         {!loading && data && data.tasks.length === 0 && (
           <div className="dr-history-empty">
