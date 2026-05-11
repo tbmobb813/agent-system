@@ -840,11 +840,36 @@
 
 /* ─── Chat (Claude-style) layout ───────────────────────────── */
 
+/* Agent page: lock the shell to the viewport and let chat fill it */
+[data-page="agent"] .dr-shell-layout {
+  height: 100dvh;
+  overflow: hidden;
+  padding-bottom: 0;
+  gap: 0;
+}
+
+[data-page="agent"] .dr-shell-header {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+
+[data-page="agent"] .app-main {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+[data-page="agent"] .dr-shell-footer {
+  display: none;
+}
+
 .dr-chat-layout {
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - 164px);
-  min-height: 420px;
+  height: 100%;
+  min-height: 0;
 }
 
 .dr-chat-scroll-area {
@@ -876,8 +901,7 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  min-height: 320px;
-  padding: 32px 20px;
+  padding: 0 20px 140px; /* bottom offset pulls content up toward visual center of full viewport */
 }
 
 .dr-chat-empty-inner {

@@ -63,6 +63,11 @@ function ChatEmptyState({ onPrompt }: { onPrompt: (p: string) => void }) {
 }
 
 export default function AgentExecutor() {
+  useEffect(() => {
+    document.documentElement.setAttribute('data-page', 'agent')
+    return () => document.documentElement.removeAttribute('data-page')
+  }, [])
+
   const {
     query, setQuery, editLastOpen, setEditLastOpen, showThinkingLive,
     reasoningPhaseOpenByTurn, reasoningEffortForRequest, setReasoningEffortForRequest,
