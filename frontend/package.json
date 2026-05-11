@@ -2,6 +2,7 @@
   "name": "agent-frontend",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.0.9",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -36,5 +37,12 @@
     "postcss": "^8",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "core-js",
+      "sharp",
+      "unrs-resolver"
+    ]
   }
 }
