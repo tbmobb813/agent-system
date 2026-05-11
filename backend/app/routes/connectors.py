@@ -8,7 +8,7 @@ GET responses never return raw tokens — only masked status.
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException

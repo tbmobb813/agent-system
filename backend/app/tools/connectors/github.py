@@ -146,7 +146,7 @@ async def github_action(
                         "number": i["number"],
                         "title": i["title"],
                         "state": i["state"],
-                        "labels": [l["name"] for l in i.get("labels", [])],
+                        "labels": [label["name"] for label in i.get("labels", [])],
                         "author": i["user"]["login"],
                         "comments": i.get("comments", 0),
                         "created_at": i.get("created_at", ""),
@@ -182,7 +182,7 @@ async def github_action(
                 "title": d["title"],
                 "state": d["state"],
                 "author": d["user"]["login"],
-                "labels": [l["name"] for l in d.get("labels", [])],
+                "labels": [label["name"] for label in d.get("labels", [])],
                 "body": (d.get("body") or "")[:1500],
                 "comments_count": d.get("comments", 0),
                 "comments": comments,
@@ -198,7 +198,7 @@ async def github_action(
             if body:
                 payload["body"] = body
             if labels:
-                payload["labels"] = [l.strip() for l in labels.split(",") if l.strip()]
+                payload["labels"] = [label.strip() for label in labels.split(",") if label.strip()]
             r = await gh.post(f"{_GITHUB_API}/repos/{repo}/issues", json=payload)
             if r.status_code not in (200, 201):
                 return _err(f"GitHub API error {r.status_code}: {r.text[:300]}")
