@@ -413,6 +413,65 @@ export async function testConnector(id: string): Promise<{ ok: boolean; detail: 
   return res.json()
 }
 
+// ── Projects ──────────────────────────────────────────────────────────────────
+
+export interface Project {
+  id: string
+  name: string
+  description: string | null
+  color: string
+  task_count: number
+  created_at: string
+  updated_at: string
+}
+
+export async function listProjects(): Promise<{ projects: Project[] }> {
+  const res = await fetchWithTimeout(`${API_URL}/projects`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch projects (${res.status})`)
+  return res.json()
+}
+
+export async function createProject(data: { name: string; description?: string; color?: string }): Promise<Project> {
+  const res = await fetchWithTimeout(`${API_URL}/projects`, {
+    method: 'POST', headers: headers(), body: JSON.stringify(data),
+  })
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(String((e as Record<string,unknown>).detail ?? `Failed (${res.status})`)) }
+  return res.json()
+}
+
+export async function updateProject(id: string, data: { name?: string; description?: string; color?: string }): Promise<Project> {
+  const res = await fetchWithTimeout(`${API_URL}/projects/${id}`, {
+    method: 'PATCH', headers: headers(), body: JSON.stringify(data),
+  })
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(String((e as Record<string,unknown>).detail ?? `Failed (${res.status})`)) }
+  return res.json()
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  const res = await fetchWithTimeout(`${API_URL}/projects/${id}`, { method: 'DELETE', headers: headers() })
+  if (!res.ok) throw new Error(`Failed to delete project (${res.status})`)
+}
+
+export async function getProjectTasks(id: string, limit = 50, offset = 0) {
+  const res = await fetchWithTimeout(`${API_URL}/projects/${id}/tasks?limit=${limit}&offset=${offset}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch project tasks (${res.status})`)
+  return res.json()
+}
+
+export async function assignTaskToProject(projectId: string, taskId: string): Promise<void> {
+  const res = await fetchWithTimeout(`${API_URL}/projects/${projectId}/tasks/${taskId}`, {
+    method: 'POST', headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Failed to assign task (${res.status})`)
+}
+
+export async function removeTaskFromProject(projectId: string, taskId: string): Promise<void> {
+  const res = await fetchWithTimeout(`${API_URL}/projects/${projectId}/tasks/${taskId}`, {
+    method: 'DELETE', headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Failed to remove task (${res.status})`)
+}
+
 export async function runAgent(query: string, context?: string, tools?: string[]) {
   const res = await fetch(`${API_URL}/agent/run`, {
     method: 'POST',
