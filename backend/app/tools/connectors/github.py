@@ -71,7 +71,6 @@ async def github_action(
     headers = _headers(token)
 
     async with httpx.AsyncClient(timeout=_TIMEOUT, headers=headers) as gh:
-
         # ── search_repos ───────────────────────────────────────────────────
         if action == "search_repos":
             if not query:
@@ -198,7 +197,9 @@ async def github_action(
             if body:
                 payload["body"] = body
             if labels:
-                payload["labels"] = [label.strip() for label in labels.split(",") if label.strip()]
+                payload["labels"] = [
+                    label.strip() for label in labels.split(",") if label.strip()
+                ]
             r = await gh.post(f"{_GITHUB_API}/repos/{repo}/issues", json=payload)
             if r.status_code not in (200, 201):
                 return _err(f"GitHub API error {r.status_code}: {r.text[:300]}")
