@@ -38,6 +38,31 @@ import {
   type SuggestRow,
 } from './AgentExecutorSuggestions'
 
+const STARTER_PROMPTS = [
+  'Summarize my recent task history',
+  'Search the web for the latest AI news',
+  'What tools do you have available?',
+  'Help me write a Python script',
+]
+
+function ChatEmptyState({ onPrompt }: { onPrompt: (p: string) => void }) {
+  return (
+    <div className="dr-chat-empty">
+      <div className="dr-chat-empty-inner">
+        <div className="dr-chat-empty-glyph">✦</div>
+        <h2 className="dr-chat-empty-title">What can I help with?</h2>
+        <div className="dr-chat-starter-grid">
+          {STARTER_PROMPTS.map(p => (
+            <button key={p} type="button" onClick={() => onPrompt(p)} className="dr-chat-starter-chip">
+              {p}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AgentExecutor() {
   const {
     query, setQuery, editLastOpen, setEditLastOpen, showThinkingLive,
@@ -588,115 +613,195 @@ export default function AgentExecutor() {
   ])
 
   return (
-    <div className="dr-agent-container h-full min-h-0">
-      <div className="flex-1 min-h-0 flex flex-col">
-        {merged.length > 0 ? (
-          <div className="dr-agent-stream-box font-mono text-sm">
-            <div className="p-4 sm:p-6 relative">
-              <div className="space-y-2">
-                {turnItems.map((item, i) => {
-                  if (item.kind === 'divider') return <EventLine key={`divider-${i}`} event={item.event} />
-                  const chatEvents = visibleChatEvents(item.events)
-                  const { phase, rest } = splitLeadingPhaseEvents(chatEvents)
-                  const turnHasDone = item.events.some(ev => ev.type === 'done')
-                  const phaseDetailsOpen = (showThinkingLive && !turnHasDone) || reasoningPhaseOpenByTurn[item.id] === true
-                  return (
-                    <div key={`turn-${item.id}`} className="space-y-2">
-                      {item.user && <EventLine event={item.user} />}
-                      {showThinkingLive && phase.length > 0 && (
-                        <div className="flex justify-start">
-                          <details className="max-w-[min(98%,72rem)] w-full rounded-2xl rounded-bl-md border border-[color:var(--border)] bg-[color:var(--surface-soft)] px-3 py-2 text-sm" open={phaseDetailsOpen}>
-                            <summary className="text-muted text-sm cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-start gap-2">
-                              <span className="shrink-0 opacity-70">▸</span><span className="truncate min-w-0">{phaseSummaryPreview(phase)}</span>
-                            </summary>
-                            <div className="mt-2 max-h-48 space-y-1 overflow-y-auto border-t border-[color:var(--border)]/50 pt-2">
-                              {phase.map((ev, idx) => <EventLine key={`turn-${item.id}-phase-${idx}`} event={ev} />)}
-                            </div>
-                          </details>
-                        </div>
-                      )}
-                      {(showThinkingLive && phase.length > 0 ? rest : chatEvents).filter(ev => ev.type !== 'done').map((ev, idx) => <EventLine key={`turn-${item.id}-event-${idx}`} event={ev} />)}
-                      {turnHasDone && (
-                        <TurnDoneFooter
-                          turnId={item.id}
-                          events={item.events}
-                          isRunning={isRunning}
-                          dismissFeedbackNudge={dismissFeedbackNudge}
-                          registerFeedbackRef={(el) => {
-                            feedbackDetailsRef.current = el
-                          }}
-                          showThreadDownload={true}
-                          threadExportEmpty={false}
-                          onDownloadThread={handleDownloadThread}
-                          omitDoneCost={false}
-                        />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-              <div ref={streamEndRef} aria-hidden="true" />
-            </div>
-            <AgentActivityStrip reasoningEffortLabel={reasoningEffortLabel} liveActivitySummary={liveActivitySummary} isRunning={isRunning} streamEvents={events} latestRunCost={latestRunCost} className="shrink-0 dr-agent-stream-meta" />
-          </div>
+    <div className="dr-chat-layout">
+
+      {/* ── Messages ─────────────────────────────── */}
+      <div className="dr-chat-scroll-area">
+        {merged.length === 0 ? (
+          <ChatEmptyState onPrompt={(p) => {
+            setQuery(p)
+            queueMicrotask(() => queryInputRef.current?.focus())
+          }} />
         ) : (
-          <div className="flex-1 min-h-0 flex items-center justify-center text-muted text-sm text-center px-6">Start chatting to see responses here.</div>
+          <div className="dr-chat-thread">
+            {turnItems.map((item, i) => {
+              if (item.kind === 'divider') return <EventLine key={`divider-${i}`} event={item.event} />
+              const chatEvents = visibleChatEvents(item.events)
+              const { phase, rest } = splitLeadingPhaseEvents(chatEvents)
+              const turnHasDone = item.events.some(ev => ev.type === 'done')
+              const phaseDetailsOpen = (showThinkingLive && !turnHasDone) || reasoningPhaseOpenByTurn[item.id] === true
+              return (
+                <div key={`turn-${item.id}`} className="space-y-3">
+                  {item.user && <EventLine event={item.user} />}
+                  {showThinkingLive && phase.length > 0 && (
+                    <div className="flex justify-start">
+                      <details className="max-w-[min(90%,42rem)] w-full rounded-2xl rounded-bl-md border border-[color:var(--border)] bg-[color:var(--surface-soft)] px-3 py-2 text-sm" open={phaseDetailsOpen}>
+                        <summary className="text-muted text-sm cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-start gap-2">
+                          <span className="shrink-0 opacity-70">▸</span><span className="truncate min-w-0">{phaseSummaryPreview(phase)}</span>
+                        </summary>
+                        <div className="mt-2 max-h-48 space-y-1 overflow-y-auto border-t border-[color:var(--border)]/50 pt-2">
+                          {phase.map((ev, idx) => <EventLine key={`turn-${item.id}-phase-${idx}`} event={ev} />)}
+                        </div>
+                      </details>
+                    </div>
+                  )}
+                  {(showThinkingLive && phase.length > 0 ? rest : chatEvents).filter(ev => ev.type !== 'done').map((ev, idx) => <EventLine key={`turn-${item.id}-event-${idx}`} event={ev} />)}
+                  {turnHasDone && (
+                    <TurnDoneFooter
+                      turnId={item.id}
+                      events={item.events}
+                      isRunning={isRunning}
+                      dismissFeedbackNudge={dismissFeedbackNudge}
+                      registerFeedbackRef={(el) => { feedbackDetailsRef.current = el }}
+                      showThreadDownload={true}
+                      threadExportEmpty={false}
+                      onDownloadThread={handleDownloadThread}
+                      omitDoneCost={false}
+                    />
+                  )}
+                </div>
+              )
+            })}
+            <div ref={streamEndRef} aria-hidden="true" />
+          </div>
         )}
       </div>
 
-      <div className="shrink-0 space-y-3 sticky bottom-0 z-20 bg-[color:var(--bg)]/95 backdrop-blur-sm pt-3 pb-2 border-t border-[color:var(--border)]">
-        <form onSubmit={(e) => e.preventDefault()} className="space-y-2">
-          {error ? (
-            <p className="text-sm text-[color:var(--danger)]" role="alert">{error}</p>
-          ) : null}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,.pdf,.doc,.docx,.txt,.md,.csv,.json,.yaml,.yml"
-            multiple
-            aria-label="Attach files and photos"
-            title="Attach files and photos"
-            className="hidden"
-            onChange={handleAttachFiles}
-          />
-          {attachments.length > 0 ? (
-            <div className="dr-agent-attachments">
-              {attachments.map(item => (
-                <span key={item.id} className={`dr-agent-attachment-chip ${item.status === 'error' ? 'is-error' : item.status === 'ready' ? 'is-ready' : ''}`}>
-                  <span className="truncate" title={item.filename}>{item.filename}</span>
-                  <span className="dr-agent-attachment-status">
-                    {item.status === 'uploading' ? 'uploading' : item.status === 'ready' ? 'ready' : 'error'}
+      {/* ── Running indicator ────────────────────── */}
+      <AgentActivityStrip
+        reasoningEffortLabel={reasoningEffortLabel}
+        liveActivitySummary={liveActivitySummary}
+        isRunning={isRunning}
+        streamEvents={events}
+        latestRunCost={latestRunCost}
+        className="dr-chat-activity-strip"
+      />
+
+      {/* ── Input zone ───────────────────────────── */}
+      <div className="dr-chat-input-zone">
+        <div className="dr-chat-input-inner">
+          <form onSubmit={(e) => e.preventDefault()}>
+            {error ? <p className="text-sm text-[color:var(--danger)] mb-2 px-1" role="alert">{error}</p> : null}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.pdf,.doc,.docx,.txt,.md,.csv,.json,.yaml,.yml"
+              multiple
+              aria-label="Attach files and photos"
+              title="Attach files and photos"
+              className="hidden"
+              onChange={handleAttachFiles}
+            />
+            {attachments.length > 0 ? (
+              <div className="dr-agent-attachments mb-2">
+                {attachments.map(item => (
+                  <span key={item.id} className={`dr-agent-attachment-chip ${item.status === 'error' ? 'is-error' : item.status === 'ready' ? 'is-ready' : ''}`}>
+                    <span className="truncate" title={item.filename}>{item.filename}</span>
+                    <span className="dr-agent-attachment-status">
+                      {item.status === 'uploading' ? 'uploading' : item.status === 'ready' ? 'ready' : 'error'}
+                    </span>
+                    <button type="button" onClick={() => removeAttachment(item.id)} className="dr-agent-attachment-remove" aria-label={`Remove ${item.filename}`}>×</button>
                   </span>
-                  <button type="button" onClick={() => removeAttachment(item.id)} className="dr-agent-attachment-remove" aria-label={`Remove ${item.filename}`}>×</button>
-                </span>
-              ))}
-            </div>
-          ) : null}
-          <div className="relative">
-            <textarea data-testid="agent-message-input" ref={queryInputRef} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={handleKeyDown} placeholder="Ask the agent anything..." rows={3} disabled={isRunning} className="dr-agent-textarea relative z-10 w-full disabled:opacity-50" />
-            <div className="dr-agent-controls-row border-t border-[color:var(--border)]/50">
-              <div className="relative" ref={quickActionsRef}>
-                <button type="button" ref={quickActionsButtonRef} onClick={() => setQuickActionsOpen(!quickActionsOpen)} className="dr-btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm"><IconPlus /> Actions</button>
-                {quickActionsOpen && <QuickActionsMenu isRunning={isRunning} hasMessages={merged.length > 0} hasLastMessage={!!lastUserMessage} reasoningEffortLabel={reasoningEffortLabel} threadExportEmpty={false} onNewConversation={() => { newConversation(); setQuickActionsOpen(false) }} onStop={() => { void stop(); setQuickActionsOpen(false) }} onClear={() => { reset(); setQuickActionsOpen(false) }} onOpenOps={(p) => { openOpsPanel(p); setQuickActionsOpen(false) }} onOpenModels={() => { setModelsModalOpen(true); loadModelsForModal(); setQuickActionsOpen(false) }} onOpenHelp={() => { setHelpModalOpen(true); setQuickActionsOpen(false) }} onOpenReasoningPicker={() => { setSuggestDismissed(true); setReasoningArgModal({ from: -1, to: -1 }); setQuickActionsOpen(false) }} onCopyThread={() => { setQuickActionsOpen(false) }} onDownloadThread={() => { handleDownloadThread(); setQuickActionsOpen(false) }} onFeedback={() => { tryOpenFeedbackPanel(); setQuickActionsOpen(false) }} onEditResend={() => { setEditLastOpen(!editLastOpen); setQuickActionsOpen(false) }} />}
+                ))}
               </div>
-              <button type="button" aria-label="Attach files and photos" title="Attach files and photos" onClick={handlePickFiles} className="dr-btn-ghost p-1.5 rounded-lg"><IconPaperclip /></button>
-              <div className="flex-1" />
-              <button type="button" onClick={() => setReasoningArgModal({ from: -1, to: -1 })} className="dr-agent-hint dr-btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-muted font-mono"><IconClock /> {reasoningEffortLabel}</button>
-              {isRunning ? <button type="button" aria-label="Stop" onClick={() => void stop()} className="dr-btn-ghost text-[color:var(--danger)]"><IconStop /> Stop</button> : <button type="submit" data-testid="agent-send-button" aria-label="Send" onClick={() => {
-                const readyNames = attachments.filter(a => a.status === 'ready').map(a => a.filename)
-                const attachmentContext = readyNames.length > 0
-                  ? `Attached files in document store: ${readyNames.join(', ')}`
-                  : undefined
-                run(query, attachmentContext, conversationId, reasoningEffortForRequest)
-                setQuery('')
-              }} className="dr-btn-accent dr-btn-accent-lg px-3 py-1.5 rounded-lg text-sm"><IconSend /></button>}
+            ) : null}
+            <div className="dr-chat-input-card">
+              <textarea
+                data-testid="agent-message-input"
+                ref={queryInputRef}
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                  e.target.style.height = 'auto'
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask the agent anything…"
+                rows={1}
+                disabled={isRunning}
+                className="dr-chat-input-textarea disabled:opacity-50"
+              />
+              <div className="dr-chat-input-toolbar">
+                <div className="relative" ref={quickActionsRef}>
+                  <button type="button" ref={quickActionsButtonRef} onClick={() => setQuickActionsOpen(!quickActionsOpen)} className="dr-btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm">
+                    <IconPlus /> Actions
+                  </button>
+                  {quickActionsOpen && (
+                    <QuickActionsMenu
+                      isRunning={isRunning}
+                      hasMessages={merged.length > 0}
+                      hasLastMessage={!!lastUserMessage}
+                      reasoningEffortLabel={reasoningEffortLabel}
+                      threadExportEmpty={false}
+                      onNewConversation={() => { newConversation(); setQuickActionsOpen(false) }}
+                      onStop={() => { void stop(); setQuickActionsOpen(false) }}
+                      onClear={() => { reset(); setQuickActionsOpen(false) }}
+                      onOpenOps={(p) => { openOpsPanel(p); setQuickActionsOpen(false) }}
+                      onOpenModels={() => { setModelsModalOpen(true); loadModelsForModal(); setQuickActionsOpen(false) }}
+                      onOpenHelp={() => { setHelpModalOpen(true); setQuickActionsOpen(false) }}
+                      onOpenReasoningPicker={() => { setSuggestDismissed(true); setReasoningArgModal({ from: -1, to: -1 }); setQuickActionsOpen(false) }}
+                      onCopyThread={() => { setQuickActionsOpen(false) }}
+                      onDownloadThread={() => { handleDownloadThread(); setQuickActionsOpen(false) }}
+                      onFeedback={() => { tryOpenFeedbackPanel(); setQuickActionsOpen(false) }}
+                      onEditResend={() => { setEditLastOpen(!editLastOpen); setQuickActionsOpen(false) }}
+                    />
+                  )}
+                </div>
+                <button type="button" aria-label="Attach files and photos" title="Attach files and photos" onClick={handlePickFiles} className="dr-btn-ghost p-1.5 rounded-lg">
+                  <IconPaperclip />
+                </button>
+                <div className="flex-1" />
+                <button type="button" onClick={() => setReasoningArgModal({ from: -1, to: -1 })} className="dr-agent-hint dr-btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-muted font-mono">
+                  <IconClock /> {reasoningEffortLabel}
+                </button>
+                {isRunning ? (
+                  <button type="button" aria-label="Stop" onClick={() => void stop()} className="dr-btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-[color:var(--danger)]">
+                    <IconStop /> Stop
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    data-testid="agent-send-button"
+                    aria-label="Send"
+                    onClick={() => {
+                      const readyNames = attachments.filter(a => a.status === 'ready').map(a => a.filename)
+                      const attachmentContext = readyNames.length > 0
+                        ? `Attached files in document store: ${readyNames.join(', ')}`
+                        : undefined
+                      run(query, attachmentContext, conversationId, reasoningEffortForRequest)
+                      setQuery('')
+                      if (queryInputRef.current) queryInputRef.current.style.height = 'auto'
+                    }}
+                    className="dr-btn-accent dr-btn-accent-lg px-3 py-1.5 rounded-lg text-sm"
+                  >
+                    <IconSend />
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        </form>
+          </form>
+          <p className="dr-chat-disclaimer">Agent can make mistakes. Verify important information.</p>
+        </div>
       </div>
 
-      {helpModalOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-lg w-full"><h3>Help</h3><button onClick={() => setHelpModalOpen(false)}>Close</button></div></div>}
-      {modelsModalOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-lg w-full"><h3>Models</h3><pre className="text-xs">{JSON.stringify(modelsModalState, null, 2)}</pre><button onClick={() => setModelsModalOpen(false)}>Close</button></div></div>}
+      {/* ── Modals ───────────────────────────────── */}
+      {helpModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-lg w-full">
+            <h3>Help</h3>
+            <button onClick={() => setHelpModalOpen(false)}>Close</button>
+          </div>
+        </div>
+      )}
+      {modelsModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-lg w-full">
+            <h3>Models</h3>
+            <pre className="text-xs">{JSON.stringify(modelsModalState, null, 2)}</pre>
+            <button onClick={() => setModelsModalOpen(false)}>Close</button>
+          </div>
+        </div>
+      )}
       {opsModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-y-auto space-y-4">
@@ -712,7 +817,19 @@ export default function AgentExecutor() {
           </div>
         </div>
       )}
-      {reasoningArgModal && <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-lg w-full"><h3>Reasoning</h3><div className="grid grid-cols-2 gap-2">{REASONING_SUB_KEYS.map(opt => <button key={opt} onClick={() => commitReasoningArg(opt, reasoningArgModal)} className="p-2 border rounded">{opt}</button>)}</div><button onClick={() => setReasoningArgModal(null)}>Cancel</button></div></div>}
+      {reasoningArgModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-lg w-full">
+            <h3>Reasoning</h3>
+            <div className="grid grid-cols-2 gap-2">
+              {REASONING_SUB_KEYS.map(opt => (
+                <button key={opt} onClick={() => commitReasoningArg(opt, reasoningArgModal)} className="p-2 border rounded">{opt}</button>
+              ))}
+            </div>
+            <button onClick={() => setReasoningArgModal(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

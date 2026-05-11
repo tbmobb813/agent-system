@@ -119,8 +119,8 @@ export function EventLine({ event }: { event: StreamEvent }) {
   switch (event.type) {
     case 'user_message':
       return (
-        <div className="flex justify-end">
-          <div className="max-w-[min(98%,72rem)] bg-[color:var(--accent-2)]/15 border border-[color:var(--accent-2)]/35 rounded-2xl rounded-br-md px-3 py-2 text-sm text-[color:var(--text)]">
+        <div className="dr-msg-user">
+          <div className="dr-msg-user-bubble">
             <MarkdownContent content={event.content ?? ''} />
           </div>
         </div>
@@ -135,7 +135,7 @@ export function EventLine({ event }: { event: StreamEvent }) {
         </div>
       )
     case 'status':
-      return <p className="text-muted text-sm">▷ {event.content ?? event.message}</p>
+      return <p className="dr-msg-status">▷ {event.content ?? event.message}</p>
     case 'reasoning_delta':
       return (
         <div className="flex justify-start">
@@ -153,8 +153,8 @@ export function EventLine({ event }: { event: StreamEvent }) {
       return <ToolResultEvent event={event} />
     case 'text_delta':
       return (
-        <div className="flex justify-start">
-          <div className="max-w-[min(98%,72rem)] bg-[color:var(--surface-soft)] border border-[color:var(--border)] rounded-2xl rounded-bl-md px-3 py-2 text-[color:var(--text)] text-sm">
+        <div className="dr-msg-ai">
+          <div className="dr-msg-ai-bubble">
             <MarkdownContent content={event.content ?? ''} />
           </div>
         </div>
