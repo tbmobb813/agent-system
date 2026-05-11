@@ -134,9 +134,6 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Approve required build-script dependencies for CI
-        run: pnpm config set only-built-dependencies core-js,sharp,unrs-resolver
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --config.ignore-scripts=false
 
