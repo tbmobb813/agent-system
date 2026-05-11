@@ -134,6 +134,9 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
+      - name: Approve pnpm build scripts
+        run: pnpm approve-builds core-js sharp unrs-resolver
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --config.ignore-scripts=false
 

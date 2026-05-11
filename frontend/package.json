@@ -37,12 +37,5 @@
     "postcss": "^8",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "core-js",
-      "sharp",
-      "unrs-resolver"
-    ]
   }
 }
