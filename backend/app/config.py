@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # If true, non-master API keys require a working database even when ENVIRONMENT is not production.
     REQUIRE_DATABASE_API_KEY: bool = Field(default=False)
 
+    # Connectors
+    GITHUB_TOKEN: str = Field(
+        default=""
+    )  # Personal Access Token — https://github.com/settings/tokens
+
     # Tools
     SEARXNG_URL: str = Field(
         default="http://localhost:8888"
