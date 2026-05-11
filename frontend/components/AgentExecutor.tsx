@@ -10,6 +10,9 @@ import {
   updateSettings,
   uploadDocument,
   upsertAnalyticsSkill,
+  saveConnector,
+  testConnector,
+  type ConnectorStatus,
 } from '@/lib/api'
 import {
   EventLine,
@@ -57,6 +60,57 @@ function ChatEmptyState({ onPrompt }: { onPrompt: (p: string) => void }) {
             </button>
           ))}
         </div>
+      </div>
+    </div>
+  )
+}
+
+function ConnectorOpsRow({
+  connector,
+  onToggle,
+  onTest,
+}: {
+  connector: ConnectorStatus
+  onToggle: (enabled: boolean) => Promise<void>
+  onTest: () => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const act = async (fn: () => Promise<void>) => { setBusy(true); try { await fn() } finally { setBusy(false) } }
+
+  return (
+    <div className="panel panel-soft p-3 rounded-lg flex items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium">{connector.name}</p>
+        <p className="text-xs text-muted mt-0.5">
+          {connector.configured
+            ? connector.token_preview
+            : 'Not configured — add a token in Connectors settings'}
+        </p>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        {connector.configured && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => act(() => onTest())}
+            className="dr-btn-ghost px-2 py-1 rounded text-xs disabled:opacity-50"
+          >
+            Test
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={busy || !connector.configured}
+          onClick={() => act(() => onToggle(!connector.enabled))}
+          title={connector.enabled ? 'Disable' : 'Enable'}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-colors disabled:opacity-40 ${
+            connector.enabled
+              ? 'bg-[color:var(--accent)] border-[color:var(--accent)]'
+              : 'bg-[color:var(--surface-soft)] border-[color:var(--border)]'
+          }`}
+        >
+          <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${connector.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+        </button>
       </div>
     </div>
   )
@@ -511,6 +565,41 @@ export default function AgentExecutor() {
       )
     }
 
+    if (opsPanel === 'connectors') {
+      const connectors = Array.isArray(data.connectors) ? data.connectors as ConnectorStatus[] : []
+      return (
+        <div className="space-y-3">
+          {connectors.length === 0 && <p className="text-sm text-muted">No connectors available.</p>}
+          {connectors.map((c) => (
+            <ConnectorOpsRow
+              key={c.id}
+              connector={c}
+              onToggle={async (enabled) => {
+                try {
+                  await saveConnector(c.id, { enabled })
+                  openOpsPanel('connectors')
+                } catch (e) {
+                  setOpsNotice(e instanceof Error ? e.message : 'Toggle failed')
+                }
+              }}
+              onTest={async () => {
+                setOpsNotice('Testing…')
+                try {
+                  const r = await testConnector(c.id)
+                  setOpsNotice(r.ok ? `✓ ${r.detail}` : `✗ ${r.detail}`)
+                } catch (e) {
+                  setOpsNotice(e instanceof Error ? e.message : 'Test failed')
+                }
+              }}
+            />
+          ))}
+          <a href="/connectors" className="block text-xs text-[color:var(--accent-2)] hover:underline pt-1">
+            Manage tokens &amp; add connectors →
+          </a>
+        </div>
+      )
+    }
+
     if (opsPanel === 'history') {
       const tasks = Array.isArray(data.tasks) ? data.tasks as Array<Record<string, unknown>> : []
       return (
@@ -610,8 +699,10 @@ export default function AgentExecutor() {
     opsBusy,
     opsModalState,
     opsPanel,
+    openOpsPanel,
     removeMcpServer,
     removeSkill,
+    setOpsNotice,
     skillForm,
     toggleDefaultTool,
   ])
