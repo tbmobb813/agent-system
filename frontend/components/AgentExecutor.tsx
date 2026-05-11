@@ -142,6 +142,8 @@ export default function AgentExecutor() {
   }
 
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
+  const [editText, setEditText] = useState('')
+  const editInputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const streamEndRef = useRef<HTMLDivElement>(null)
   const [opsBusy, setOpsBusy] = useState<string | null>(null)
@@ -280,6 +282,16 @@ export default function AgentExecutor() {
   useEffect(() => {
     streamEndRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' })
   }, [merged])
+
+  useEffect(() => {
+    if (editLastOpen && lastUserMessage) {
+      setEditText(lastUserMessage)
+      queueMicrotask(() => {
+        const el = editInputRef.current
+        if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length) }
+      })
+    }
+  }, [editLastOpen, lastUserMessage])
 
   const refreshOpsPanel = useCallback(() => {
     openOpsPanel(opsPanel)
@@ -792,6 +804,54 @@ export default function AgentExecutor() {
                 ))}
               </div>
             ) : null}
+            {editLastOpen && (
+              <div className="dr-chat-input-card mb-2">
+                <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+                  <span className="text-[10px] uppercase tracking-widest text-muted">Editing last message</span>
+                  <button type="button" onClick={() => setEditLastOpen(false)} className="ml-auto text-xs text-muted hover:text-[color:var(--text)]">✕ Cancel</button>
+                </div>
+                <textarea
+                  ref={editInputRef}
+                  value={editText}
+                  onChange={(e) => {
+                    setEditText(e.target.value)
+                    e.target.style.height = 'auto'
+                    e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      const text = editText.trim()
+                      if (!text || isRunning) return
+                      run(text, undefined, conversationId, reasoningEffortForRequest)
+                      setEditLastOpen(false)
+                      setEditText('')
+                    }
+                    if (e.key === 'Escape') setEditLastOpen(false)
+                  }}
+                  rows={2}
+                  className="dr-chat-input-textarea"
+                  placeholder="Edit your message…"
+                />
+                <div className="dr-chat-input-toolbar">
+                  <div className="flex-1" />
+                  <button
+                    type="button"
+                    disabled={isRunning || !editText.trim()}
+                    onClick={() => {
+                      const text = editText.trim()
+                      if (!text || isRunning) return
+                      run(text, undefined, conversationId, reasoningEffortForRequest)
+                      setEditLastOpen(false)
+                      setEditText('')
+                    }}
+                    className="dr-btn-accent px-3 py-1.5 rounded-lg text-sm disabled:opacity-50"
+                  >
+                    Resend
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="dr-chat-input-card">
               <textarea
                 data-testid="agent-message-input"
