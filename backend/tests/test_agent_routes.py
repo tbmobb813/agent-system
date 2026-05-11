@@ -106,7 +106,7 @@ async def test_run_agent_returns_completed_response():
 
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             response = await client.post(
                 "/agent/run",
                 headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -135,7 +135,7 @@ async def test_run_agent_returns_402_when_estimate_exceeds_remaining_budget():
 
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             response = await client.post(
                 "/agent/run",
                 headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -161,7 +161,7 @@ async def test_stream_agent_emits_budget_error_when_over_budget():
 
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             response = await client.post(
                 "/agent/stream",
                 headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -189,7 +189,7 @@ async def test_stream_agent_cleans_cost_tracker_call_info_on_completion():
 
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             response = await client.post(
                 "/agent/stream",
                 headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -224,7 +224,7 @@ async def test_stream_agent_times_out_cleanly(monkeypatch):
 
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             response = await client.post(
                 "/agent/stream",
                 headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -245,7 +245,7 @@ async def test_stop_agent_returns_stopped_for_known_task():
     task_id = "11111111-1111-1111-1111-111111111111"
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             response = await client.post(
                 f"/agent/stop?task_id={task_id}",
                 headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -266,7 +266,7 @@ async def test_stop_agent_returns_404_for_unknown_task():
     task_id = "22222222-2222-2222-2222-222222222222"
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             response = await client.post(
                 f"/agent/stop?task_id={task_id}",
                 headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -284,7 +284,7 @@ async def test_stop_agent_rejects_invalid_task_id_format():
 
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             response = await client.post(
                 "/agent/stop?task_id=not-a-uuid",
                 headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -301,7 +301,7 @@ async def test_stop_agent_rejects_non_uuid_36_char_value():
 
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             response = await client.post(
                 "/agent/stop?task_id=123456789012345678901234567890123456",
                 headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -320,7 +320,7 @@ async def test_run_agent_returns_503_when_orchestrator_missing():
 
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             response = await client.post(
                 "/agent/run",
                 headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -342,7 +342,7 @@ async def test_run_agent_returns_503_when_cost_tracker_missing():
 
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             response = await client.post(
                 "/agent/run",
                 headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -367,7 +367,7 @@ async def test_list_tools_returns_available_tools():
 
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             response = await client.get(
                 "/agent/tools",
                 headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -383,7 +383,7 @@ async def test_list_tools_returns_available_tools():
 
 async def test_list_models_returns_routing_info():
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/agent/models",
             headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -403,7 +403,7 @@ async def test_enqueue_agent_task_queues_payload():
 
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             response = await client.post(
                 "/agent/enqueue",
                 headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -427,7 +427,7 @@ async def test_enqueue_agent_task_rejects_when_budget_exceeded():
 
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             response = await client.post(
                 "/agent/enqueue",
                 headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -449,7 +449,7 @@ async def test_replay_dead_letter_task_queues_retry():
 
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             response = await client.post(
                 f"/agent/dead-letter/{failed_id}/replay",
                 headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -470,7 +470,7 @@ async def test_list_dead_letter_tasks_handles_db_unavailable(monkeypatch):
     monkeypatch.setattr(agent_routes._db, "db_pool", None)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/agent/dead-letter",
             headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -502,7 +502,7 @@ async def test_list_dead_letter_tasks_returns_rows(monkeypatch):
     monkeypatch.setattr(agent_routes, "fetch", _fake_fetch)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/agent/dead-letter?include_payload=true",
             headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -546,7 +546,7 @@ async def test_run_agent_returns_422_for_invalid_reasoning_effort():
 
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             response = await client.post(
                 "/agent/run",
                 headers={"Authorization": "Bearer sk-agent-local-dev"},

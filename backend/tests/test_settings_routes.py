@@ -10,7 +10,7 @@ async def test_get_settings_returns_defaults_when_store_empty(monkeypatch):
     monkeypatch.setattr("app.routes.settings._load", lambda: {})
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/settings", headers={"Authorization": "Bearer sk-agent-local-dev"}
         )
@@ -41,7 +41,7 @@ async def test_get_settings_returns_saved_values(monkeypatch):
     )
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/settings", headers={"Authorization": "Bearer sk-agent-local-dev"}
         )
@@ -76,7 +76,7 @@ async def test_update_settings_persists_and_returns_updated(monkeypatch):
     }
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.post(
             "/settings",
             headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -99,7 +99,7 @@ async def test_get_persona_preview_uses_defaults_when_settings_missing(monkeypat
     )
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/settings/persona/preview",
             headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -123,7 +123,7 @@ async def test_get_persona_preview_uses_saved_settings(monkeypatch):
     monkeypatch.setattr("app.routes.settings.build_persona_prompt", lambda data: "")
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/settings/persona/preview",
             headers={"Authorization": "Bearer sk-agent-local-dev"},

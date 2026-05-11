@@ -12,7 +12,7 @@ async def test_list_conversations_returns_items(monkeypatch):
     )
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/conversations", headers={"Authorization": "Bearer sk-agent-local-dev"}
         )
@@ -35,7 +35,7 @@ async def test_get_conversation_returns_messages(monkeypatch):
     )
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/conversations/conv-1",
             headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -57,7 +57,7 @@ async def test_delete_conversation_maps_success_and_error(monkeypatch):
     )
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         ok_response = await client.delete(
             "/conversations/conv-1",
             headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -75,7 +75,7 @@ async def test_delete_conversation_maps_success_and_error(monkeypatch):
     )
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         err_response = await client.delete(
             "/conversations/conv-2",
             headers={"Authorization": "Bearer sk-agent-local-dev"},
