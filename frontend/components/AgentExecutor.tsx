@@ -26,7 +26,6 @@ import {
   IconStop,
 } from './Icons'
 import {
-  AgentActivityStrip,
   QuickActionsMenu,
 } from './AgentExecutorUI'
 import { useAgentExecutorState } from './useAgentExecutorState'
@@ -667,15 +666,7 @@ export default function AgentExecutor() {
         )}
       </div>
 
-      {/* ── Running indicator ────────────────────── */}
-      <AgentActivityStrip
-        reasoningEffortLabel={reasoningEffortLabel}
-        liveActivitySummary={liveActivitySummary}
-        isRunning={isRunning}
-        streamEvents={events}
-        latestRunCost={latestRunCost}
-        className="dr-chat-activity-strip"
-      />
+
 
       {/* ── Input zone ───────────────────────────── */}
       <div className="dr-chat-input-zone">
