@@ -26,7 +26,7 @@ node_modules/
 out/
 *.tsbuildinfo
 npm-debug.log*
-yarn-error.log*
+pnpm-debug.log*
 
 # Docker
 *.log

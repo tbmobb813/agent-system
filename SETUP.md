@@ -64,8 +64,8 @@ cd ~/agent-system/backend
 ### 2.2 Create Python virtual environment
 
 ```bash
-python3.11 -m venv venv
-source venv/bin/activate
+python3.11 -m venv .venv
+source .venv/bin/activate
 pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 ```
@@ -174,7 +174,7 @@ Save (Ctrl+X, Y, Enter).
 
 ```bash
 cd ~/agent-system/backend
-source venv/bin/activate
+source .venv/bin/activate
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -222,7 +222,8 @@ sudo apt install -y nodejs
 
 # Verify
 node --version  # Should be v20+
-npm --version   # Should be v10+
+corepack enable && corepack prepare pnpm@latest --activate
+pnpm --version  # Should be v8+
 ```
 
 ### 7.2 Clone frontend
@@ -236,7 +237,7 @@ cd ~/agent-system
 
 ```bash
 cd frontend
-npm install
+pnpm install
 ```
 
 ### 7.4 Create .env.local
@@ -252,7 +253,7 @@ EOF
 ### 7.5 Test frontend locally
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 Visit http://localhost:3000 in browser. You should see the dashboard.
@@ -361,15 +362,16 @@ EOF
 
 ```bash
 cat > frontend/Dockerfile << 'EOF'
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci
+RUN corepack enable && corepack prepare pnpm@latest --activate
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY . .
-RUN npm run build
+RUN pnpm run build
 
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 COPY --from=builder /app/.next ./.next
@@ -378,7 +380,7 @@ COPY --from=builder /app/public ./public
 COPY package.json .
 
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["node", ".next/standalone/server.js"]
 EOF
 ```
 

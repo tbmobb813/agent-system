@@ -8,7 +8,7 @@ This guide reflects the current architecture (Supabase/Postgres, optional Redis,
 - [ ] Repo cloned/pulled on VPS
 - [ ] `.env` created from `.env.example` with real values
 - [ ] `.gitignore` includes `.env` (never commit secrets)
-- [ ] `backend/requirements.txt` and `frontend/package-lock.json` are up to date
+- [ ] `backend/requirements.txt` and `frontend/pnpm-lock.yaml` are up to date
 - [ ] `docker-compose.prod.yml` is used for production
 
 ### Security
@@ -450,8 +450,8 @@ DELETE FROM tasks WHERE created_at < NOW() - INTERVAL '90 days';
 
 ```bash
 # Build optimized production build
-npm run build
-npm prune --production
+pnpm run build
+pnpm install --prod
 ```
 
 ## Security Hardening

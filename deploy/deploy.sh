@@ -68,14 +68,14 @@ git pull origin main
 
 echo "==> Backend — install/update dependencies"
 cd "$REPO_DIR/backend"
-./venv/bin/pip install -r requirements.txt -q
+./.venv/bin/pip install -r requirements.txt -q
 
 echo "==> Frontend — install dependencies"
 cd "$REPO_DIR/frontend"
-npm ci --prefer-offline
+pnpm install --frozen-lockfile
 
 echo "==> Frontend — build"
-npm run build
+pnpm run build
 
 echo "==> Copy static assets to standalone output"
 # next/standalone doesn't copy public/ or .next/static/ automatically

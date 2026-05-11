@@ -44,14 +44,14 @@ echo ""
 
 echo "==> [4/7] Python virtualenv + dependencies"
 cd "$REPO_DIR/backend"
-python3.12 -m venv venv
-./venv/bin/pip install --upgrade pip -q
-./venv/bin/pip install -r requirements.txt -q
+python3.12 -m venv .venv
+./.venv/bin/pip install --upgrade pip -q
+./.venv/bin/pip install -r requirements.txt -q
 
 echo "==> [5/7] Node dependencies + frontend build"
 cd "$REPO_DIR/frontend"
-npm ci --prefer-offline
-npm run build
+pnpm install --frozen-lockfile
+pnpm run build
 
 echo "==> [6/7] Nginx config"
 sudo cp "$REPO_DIR/deploy/nginx.conf" /etc/nginx/sites-available/agent
