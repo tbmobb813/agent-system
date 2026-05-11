@@ -33,7 +33,9 @@ async def test_slack_webhook_accepts_event_with_explicit_insecure_flag(monkeypat
     )
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+        async with AsyncClient(
+            transport=transport, base_url="http://localhost"
+        ) as client:
             response = await client.post(
                 "/integrations/slack/webhook",
                 json={"event": {"text": "hello from slack", "user": "U123"}},
@@ -57,7 +59,9 @@ async def test_discord_webhook_accepts_event_with_secret_header(monkeypatch):
     )
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+        async with AsyncClient(
+            transport=transport, base_url="http://localhost"
+        ) as client:
             response = await client.post(
                 "/integrations/discord/webhook",
                 headers={"X-Bot-Secret": "test-secret"},
@@ -84,7 +88,9 @@ async def test_discord_webhook_rejects_event_without_secret_header(monkeypatch):
     )
     try:
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+        async with AsyncClient(
+            transport=transport, base_url="http://localhost"
+        ) as client:
             response = await client.post(
                 "/integrations/discord/webhook",
                 json={

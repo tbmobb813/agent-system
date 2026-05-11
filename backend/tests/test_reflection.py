@@ -97,7 +97,7 @@ async def test_reflection_promotes_learned_rules_to_memory():
         patch("app.agent.reflection._openrouter_client", return_value=client),
         patch.object(ref_mod._db, "db_pool", mock_pool),
         patch.object(ref_mod._db, "execute", mock_execute),
-        patch("app.agent.reflection.memory_manager", mock_memory),
+        patch("app.agent.memory.memory_manager", mock_memory),
     ):
         await post_task_reflection("t2", "query", "result", user_id="u1")
 
@@ -109,7 +109,7 @@ async def test_reflection_promotes_learned_rules_to_memory():
 
 @pytest.mark.asyncio
 async def test_reflection_clamps_self_rating():
-    reflection_text = "```json\n" '{"self_rating": 99, "learned_rules": []}\n' "```"
+    reflection_text = '```json\n{"self_rating": 99, "learned_rules": []}\n```'
     comp = _make_completion(reflection_text)
     client = MagicMock()
     client.chat.completions.create = AsyncMock(return_value=comp)
@@ -197,7 +197,7 @@ async def test_reflection_skips_short_rules():
         patch("app.agent.reflection._openrouter_client", return_value=client),
         patch.object(ref_mod._db, "db_pool", mock_pool),
         patch.object(ref_mod._db, "execute", mock_execute),
-        patch("app.agent.reflection.memory_manager", mock_memory),
+        patch("app.agent.memory.memory_manager", mock_memory),
     ):
         await post_task_reflection("t6", "q", "r")
 

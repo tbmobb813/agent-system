@@ -12,6 +12,12 @@ from app.main import app
 from app.routes.connectors import _mask
 
 AUTH = {"Authorization": "Bearer sk-agent-local-dev"}
+_MASTER_KEY = "sk-agent-local-dev"
+
+
+@pytest.fixture(autouse=True)
+def patch_api_key(monkeypatch):
+    monkeypatch.setattr("app.config.settings.BACKEND_API_KEY", _MASTER_KEY)
 
 
 # ── _mask helper ──────────────────────────────────────────────────────────────
@@ -222,7 +228,7 @@ async def test_test_connector_not_found(monkeypatch):
 @pytest.mark.asyncio
 async def test_test_connector_no_token_returns_not_ok(monkeypatch):
     monkeypatch.setattr(conn_routes, "_load_connectors", lambda: {})
-    monkeypatch.setattr(conn_routes, "settings", MagicMock(GITHUB_TOKEN=""))
+    monkeypatch.setattr("app.config.settings.GITHUB_TOKEN", "")
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://localhost") as client:
