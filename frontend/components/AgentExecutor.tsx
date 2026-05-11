@@ -593,7 +593,7 @@ export default function AgentExecutor() {
               }}
             />
           ))}
-          <a href="/connectors" className="block text-xs text-[color:var(--accent-2)] hover:underline pt-1">
+          <a href="/settings?tab=connectors" className="block text-xs text-[color:var(--accent-2)] hover:underline pt-1">
             Manage tokens &amp; add connectors →
           </a>
         </div>

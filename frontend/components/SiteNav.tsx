@@ -12,8 +12,6 @@ const navLinks = [
   { href: '/analytics', label: 'Analytics' },
   { href: '/costs', label: 'Costs' },
   { href: '/documents', label: 'Documents' },
-  { href: '/design-system', label: 'Design System' },
-  { href: '/connectors', label: 'Connectors' },
   { href: '/settings', label: 'Settings' },
   { href: '/commands', label: 'Commands' },
 ] as const
