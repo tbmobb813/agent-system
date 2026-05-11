@@ -10,6 +10,9 @@ import {
   getMcpServers,
   getSettings,
   getTools,
+  listConnectors,
+  saveConnector,
+  type ConnectorStatus,
 } from '@/lib/api'
 import { OpsPanel } from './AgentExecutorUI'
 
@@ -26,6 +29,7 @@ const INITIAL_OPS_MODAL_STATE: OpsModalState = {
   mcp: 'loading',
   stats: 'loading',
   history: 'loading',
+  connectors: 'loading',
 }
 
 function errMessage(e: unknown): string {
@@ -220,6 +224,12 @@ export function useAgentExecutorState() {
           }))
         })
         .catch((e: unknown) => setOpsModalState((prev) => ({ ...prev, history: { err: errMessage(e) } })))
+    } else if (panel === 'connectors') {
+      listConnectors()
+        .then((data: ConnectorStatus[]) => {
+          setOpsModalState((prev) => ({ ...prev, connectors: { ok: { connectors: data } } }))
+        })
+        .catch((e: unknown) => setOpsModalState((prev) => ({ ...prev, connectors: { err: errMessage(e) } })))
     } else if (panel === 'mcp') {
       Promise.all([getAgentToolsHealth(), getMcpServers()])
         .then(([h, sv]) => {

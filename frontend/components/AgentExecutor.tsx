@@ -10,6 +10,9 @@ import {
   updateSettings,
   uploadDocument,
   upsertAnalyticsSkill,
+  saveConnector,
+  testConnector,
+  type ConnectorStatus,
 } from '@/lib/api'
 import {
   EventLine,
@@ -62,6 +65,57 @@ function ChatEmptyState({ onPrompt }: { onPrompt: (p: string) => void }) {
   )
 }
 
+function ConnectorOpsRow({
+  connector,
+  onToggle,
+  onTest,
+}: {
+  connector: ConnectorStatus
+  onToggle: (enabled: boolean) => Promise<void>
+  onTest: () => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const act = async (fn: () => Promise<void>) => { setBusy(true); try { await fn() } finally { setBusy(false) } }
+
+  return (
+    <div className="panel panel-soft p-3 rounded-lg flex items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium">{connector.name}</p>
+        <p className="text-xs text-muted mt-0.5">
+          {connector.configured
+            ? connector.token_preview
+            : 'Not configured — add a token in Connectors settings'}
+        </p>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        {connector.configured && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => act(() => onTest())}
+            className="dr-btn-ghost px-2 py-1 rounded text-xs disabled:opacity-50"
+          >
+            Test
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={busy || !connector.configured}
+          onClick={() => act(() => onToggle(!connector.enabled))}
+          title={connector.enabled ? 'Disable' : 'Enable'}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-colors disabled:opacity-40 ${
+            connector.enabled
+              ? 'bg-[color:var(--accent)] border-[color:var(--accent)]'
+              : 'bg-[color:var(--surface-soft)] border-[color:var(--border)]'
+          }`}
+        >
+          <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${connector.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function AgentExecutor() {
   useEffect(() => {
     document.documentElement.setAttribute('data-page', 'agent')
@@ -88,6 +142,8 @@ export default function AgentExecutor() {
   }
 
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
+  const [editText, setEditText] = useState('')
+  const editInputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const streamEndRef = useRef<HTMLDivElement>(null)
   const [opsBusy, setOpsBusy] = useState<string | null>(null)
@@ -226,6 +282,16 @@ export default function AgentExecutor() {
   useEffect(() => {
     streamEndRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' })
   }, [merged])
+
+  useEffect(() => {
+    if (editLastOpen && lastUserMessage) {
+      setEditText(lastUserMessage)
+      queueMicrotask(() => {
+        const el = editInputRef.current
+        if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length) }
+      })
+    }
+  }, [editLastOpen, lastUserMessage])
 
   const refreshOpsPanel = useCallback(() => {
     openOpsPanel(opsPanel)
@@ -511,6 +577,41 @@ export default function AgentExecutor() {
       )
     }
 
+    if (opsPanel === 'connectors') {
+      const connectors = Array.isArray(data.connectors) ? data.connectors as ConnectorStatus[] : []
+      return (
+        <div className="space-y-3">
+          {connectors.length === 0 && <p className="text-sm text-muted">No connectors available.</p>}
+          {connectors.map((c) => (
+            <ConnectorOpsRow
+              key={c.id}
+              connector={c}
+              onToggle={async (enabled) => {
+                try {
+                  await saveConnector(c.id, { enabled })
+                  openOpsPanel('connectors')
+                } catch (e) {
+                  setOpsNotice(e instanceof Error ? e.message : 'Toggle failed')
+                }
+              }}
+              onTest={async () => {
+                setOpsNotice('Testing…')
+                try {
+                  const r = await testConnector(c.id)
+                  setOpsNotice(r.ok ? `✓ ${r.detail}` : `✗ ${r.detail}`)
+                } catch (e) {
+                  setOpsNotice(e instanceof Error ? e.message : 'Test failed')
+                }
+              }}
+            />
+          ))}
+          <a href="/settings?tab=connectors" className="block text-xs text-[color:var(--accent-2)] hover:underline pt-1">
+            Manage tokens &amp; add connectors →
+          </a>
+        </div>
+      )
+    }
+
     if (opsPanel === 'history') {
       const tasks = Array.isArray(data.tasks) ? data.tasks as Array<Record<string, unknown>> : []
       return (
@@ -610,8 +711,10 @@ export default function AgentExecutor() {
     opsBusy,
     opsModalState,
     opsPanel,
+    openOpsPanel,
     removeMcpServer,
     removeSkill,
+    setOpsNotice,
     skillForm,
     toggleDefaultTool,
   ])
@@ -701,6 +804,54 @@ export default function AgentExecutor() {
                 ))}
               </div>
             ) : null}
+            {editLastOpen && (
+              <div className="dr-chat-input-card mb-2">
+                <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+                  <span className="text-[10px] uppercase tracking-widest text-muted">Editing last message</span>
+                  <button type="button" onClick={() => setEditLastOpen(false)} className="ml-auto text-xs text-muted hover:text-[color:var(--text)]">✕ Cancel</button>
+                </div>
+                <textarea
+                  ref={editInputRef}
+                  value={editText}
+                  onChange={(e) => {
+                    setEditText(e.target.value)
+                    e.target.style.height = 'auto'
+                    e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      const text = editText.trim()
+                      if (!text || isRunning) return
+                      run(text, undefined, conversationId, reasoningEffortForRequest)
+                      setEditLastOpen(false)
+                      setEditText('')
+                    }
+                    if (e.key === 'Escape') setEditLastOpen(false)
+                  }}
+                  rows={2}
+                  className="dr-chat-input-textarea"
+                  placeholder="Edit your message…"
+                />
+                <div className="dr-chat-input-toolbar">
+                  <div className="flex-1" />
+                  <button
+                    type="button"
+                    disabled={isRunning || !editText.trim()}
+                    onClick={() => {
+                      const text = editText.trim()
+                      if (!text || isRunning) return
+                      run(text, undefined, conversationId, reasoningEffortForRequest)
+                      setEditLastOpen(false)
+                      setEditText('')
+                    }}
+                    className="dr-btn-accent px-3 py-1.5 rounded-lg text-sm disabled:opacity-50"
+                  >
+                    Resend
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="dr-chat-input-card">
               <textarea
                 data-testid="agent-message-input"
@@ -737,7 +888,6 @@ export default function AgentExecutor() {
                       onOpenHelp={() => { setHelpModalOpen(true); setQuickActionsOpen(false) }}
                       onOpenReasoningPicker={() => { setSuggestDismissed(true); setReasoningArgModal({ from: -1, to: -1 }); setQuickActionsOpen(false) }}
                       onCopyThread={() => { setQuickActionsOpen(false) }}
-                      onDownloadThread={() => { handleDownloadThread(); setQuickActionsOpen(false) }}
                       onFeedback={() => { tryOpenFeedbackPanel(); setQuickActionsOpen(false) }}
                       onEditResend={() => { setEditLastOpen(!editLastOpen); setQuickActionsOpen(false) }}
                     />

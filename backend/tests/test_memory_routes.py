@@ -14,7 +14,7 @@ async def test_memory_range_returns_results(monkeypatch):
     transport = ASGITransport(app=app)
     start = "2026-01-01T00:00:00"
     end = "2026-01-31T00:00:00"
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/memory/range",
             params={"start": start, "end": end},
@@ -29,7 +29,7 @@ async def test_memory_range_returns_results(monkeypatch):
 
 async def test_memory_range_rejects_bad_iso():
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/memory/range",
             params={"start": "not-a-date", "end": "2026-01-02T00:00:00"},
@@ -45,7 +45,7 @@ async def test_list_memories_returns_recent(monkeypatch):
     monkeypatch.setattr("app.routes.memory.memory_manager.get_recent", fake_recent)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/memory", headers={"Authorization": "Bearer sk-agent-local-dev"}
         )
@@ -63,7 +63,7 @@ async def test_search_memories_returns_results(monkeypatch):
     monkeypatch.setattr("app.routes.memory.memory_manager.search", fake_search)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/memory/search",
             params={"q": "result", "limit": 2},
@@ -83,7 +83,7 @@ async def test_save_memory_returns_error_when_save_fails(monkeypatch):
     monkeypatch.setattr("app.routes.memory.memory_manager.save", fake_save)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.post(
             "/memory",
             params={"content": "x", "category": "fact"},
@@ -101,7 +101,7 @@ async def test_delete_memory_returns_deleted_or_error(monkeypatch):
     monkeypatch.setattr("app.routes.memory.memory_manager.delete", fake_delete)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.delete(
             "/memory/m-1", headers={"Authorization": "Bearer sk-agent-local-dev"}
         )

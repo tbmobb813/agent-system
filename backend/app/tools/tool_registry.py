@@ -117,6 +117,17 @@ class ToolRegistry:
             required_args=["query"],
         )
 
+        # GitHub connector
+        self.register(
+            name="github",
+            func=self._github,
+            description=(
+                "Interact with GitHub: search repos, read issues and PRs, view files, "
+                "list commits, create issues, and comment. Requires GITHUB_TOKEN."
+            ),
+            required_args=["action"],
+        )
+
     @staticmethod
     def _json_schema_to_openai_params(schema: Any) -> dict:
         if not isinstance(schema, dict) or not schema:
@@ -364,6 +375,15 @@ class ToolRegistry:
                 "detail": (
                     "openai_embeddings" if doc_ok else "fulltext_only_without_openai"
                 ),
+            }
+        )
+
+        gh_ok = bool(settings.GITHUB_TOKEN)
+        rows.append(
+            {
+                "tool": "github",
+                "ok": gh_ok,
+                "detail": "token_configured" if gh_ok else "GITHUB_TOKEN unset",
             }
         )
 
@@ -616,6 +636,90 @@ class ToolRegistry:
                             },
                         },
                         "required": ["query"],
+                    },
+                },
+            },
+            "github": {
+                "type": "function",
+                "function": {
+                    "name": "github",
+                    "description": (
+                        "Interact with GitHub. Search repos, read issues and PRs, view file contents, "
+                        "list commits, create issues, and add comments. Requires GITHUB_TOKEN."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "enum": [
+                                    "search_repos",
+                                    "get_repo",
+                                    "list_issues",
+                                    "get_issue",
+                                    "create_issue",
+                                    "comment_issue",
+                                    "list_prs",
+                                    "get_pr",
+                                    "get_file",
+                                    "list_commits",
+                                    "get_user",
+                                ],
+                                "description": "Action to perform",
+                            },
+                            "repo": {
+                                "type": "string",
+                                "description": "Repository in owner/repo format (e.g. 'octocat/Hello-World')",
+                            },
+                            "query": {
+                                "type": "string",
+                                "description": "Search query (for search_repos)",
+                            },
+                            "issue_number": {
+                                "type": "integer",
+                                "description": "Issue number (for get_issue, comment_issue)",
+                            },
+                            "pr_number": {
+                                "type": "integer",
+                                "description": "Pull request number (for get_pr)",
+                            },
+                            "title": {
+                                "type": "string",
+                                "description": "Issue title (for create_issue)",
+                            },
+                            "body": {
+                                "type": "string",
+                                "description": "Issue body or comment text",
+                            },
+                            "state": {
+                                "type": "string",
+                                "enum": ["open", "closed", "all"],
+                                "description": "Filter issues/PRs by state (default: open)",
+                                "default": "open",
+                            },
+                            "labels": {
+                                "type": "string",
+                                "description": "Comma-separated label names (for list_issues or create_issue)",
+                            },
+                            "path": {
+                                "type": "string",
+                                "description": "File or directory path in the repo (for get_file)",
+                            },
+                            "branch": {
+                                "type": "string",
+                                "description": "Branch name (for get_file, list_commits)",
+                            },
+                            "username": {
+                                "type": "string",
+                                "description": "GitHub username (for get_user; omit for the authenticated user)",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Max results to return (default 20)",
+                                "default": 20,
+                            },
+                        },
+                        "required": ["action"],
                     },
                 },
             },
@@ -1034,3 +1138,48 @@ class ToolRegistry:
                 f"[{r['filename']} — chunk {r['chunk_index']}]\n{r['content']}"
             )
         return "\n\n---\n\n".join(lines)
+
+    async def _github(
+        self,
+        action: str,
+        repo: str = "",
+        query: str = "",
+        issue_number: int = 0,
+        pr_number: int = 0,
+        title: str = "",
+        body: str = "",
+        state: str = "open",
+        labels: str = "",
+        path: str = "",
+        branch: str = "",
+        username: str = "",
+        limit: int = 20,
+    ) -> Any:
+        """GitHub connector — delegates to the connector module."""
+        from app.tools.connectors.github import github_action
+        from app.utils.settings_store import load_settings_dict
+
+        cfg = load_settings_dict().get("connectors", {}).get("github", {})
+        if cfg.get("enabled") is False and not settings.GITHUB_TOKEN:
+            return {
+                "error": "GitHub connector is disabled. Enable it in Connectors settings."
+            }
+        # Stored token takes priority over env var so the UI can override without a restart.
+        token = cfg.get("token") or settings.GITHUB_TOKEN
+
+        return await github_action(
+            action,
+            token,
+            repo=repo,
+            query=query,
+            issue_number=issue_number,
+            pr_number=pr_number,
+            title=title,
+            body=body,
+            state=state,
+            labels=labels,
+            path=path,
+            branch=branch,
+            username=username,
+            limit=limit,
+        )

@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, useCallback, type KeyboardEvent } from 'react'
 import dynamic from 'next/dynamic'
 import { useHistory } from '@/lib/hooks'
-import { deleteTask, getTaskDetail, submitTaskFeedback } from '@/lib/api'
+import { deleteTask, getTaskDetail, submitTaskFeedback, listProjects, assignTaskToProject, removeTaskFromProject, type Project } from '@/lib/api'
 import { formatCost, formatDate } from '@/lib/utils'
 import { exportElementToPdf } from '@/lib/pdf'
 
@@ -59,6 +59,75 @@ function FeedbackHint({ signal }: { signal: string }) {
     >
       {up ? 'Helpful' : 'Needs work'}
     </span>
+  )
+}
+
+function ProjectPicker({
+  taskId,
+  projects,
+  currentProjectId,
+  onAssigned,
+  onClose,
+}: {
+  taskId: string
+  projects: Project[]
+  currentProjectId: string | null
+  onAssigned: (projectId: string | null) => void
+  onClose: () => void
+}) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  const handlePick = async (projectId: string) => {
+    setBusy(projectId)
+    try {
+      if (currentProjectId === projectId) {
+        await removeTaskFromProject(projectId, taskId)
+        onAssigned(null)
+      } else {
+        await assignTaskToProject(projectId, taskId)
+        onAssigned(projectId)
+      }
+      onClose()
+    } catch { /* silently fail */ }
+    finally { setBusy(null) }
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="absolute right-6 top-full mt-1 z-50 w-52 rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] shadow-2xl overflow-hidden"
+      onClick={e => e.stopPropagation()}
+    >
+      <div className="px-3 py-2 text-[10px] uppercase tracking-widest text-muted border-b border-[color:var(--border)]/60">
+        Add to project
+      </div>
+      {projects.length === 0 && (
+        <p className="px-3 py-2 text-xs text-muted">No projects yet.</p>
+      )}
+      {projects.map(p => (
+        <button
+          key={p.id}
+          type="button"
+          disabled={busy === p.id}
+          onClick={() => void handlePick(p.id)}
+          className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-[color:var(--surface-soft)] transition-colors disabled:opacity-50 ${currentProjectId === p.id ? 'text-[color:var(--accent)]' : 'text-[color:var(--text)]'}`}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: p.color, flexShrink: 0, display: 'inline-block' }} />
+          <span className="flex-1 truncate">{p.name}</span>
+          {currentProjectId === p.id && <span className="text-xs text-muted shrink-0">✓</span>}
+          {busy === p.id && <span className="text-xs text-muted shrink-0">…</span>}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -312,6 +381,16 @@ export default function TaskHistory() {
   const [search, setSearch] = useState('')
   const [activeSearch, setActiveSearch] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [projects, setProjects] = useState<Project[]>([])
+  const [pickerOpen, setPickerOpen] = useState<string | null>(null)
+  // track which project each task belongs to (populated lazily from picker interactions)
+  const [taskProjects, setTaskProjects] = useState<Record<string, string | null>>({})
+
+  const loadProjects = useCallback(async () => {
+    try { const d = await listProjects(); setProjects(d.projects) } catch { /* silently fail */ }
+  }, [])
+
+  useEffect(() => { void loadProjects() }, [loadProjects])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -416,17 +495,36 @@ export default function TaskHistory() {
                   <code className="dr-code dr-code-start" title={task.model_used ?? ''}>{(task.model_used ?? 'unknown').split('/').pop()}</code>
                   <span className="dr-row-time">{formatDate(task.created_at)}</span>
                   <span className="dr-row-cost">{formatCost(task.cost)}</span>
-                  <button
-                    type="button"
-                    onClick={e => { e.stopPropagation(); handleDelete(task.id) }}
-                    onKeyDown={e => e.stopPropagation()}
-                    disabled={deleting === task.id}
-                    className="text-xs text-muted hover:text-[color:var(--danger)] transition-colors disabled:opacity-50"
-                    aria-label="Delete task"
-                    title="Delete task"
-                  >
-                    {deleting === task.id ? '…' : '✕'}
-                  </button>
+                  <div className="relative flex items-center gap-1.5" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={() => { setPickerOpen(p => p === task.id ? null : task.id) }}
+                      className="text-xs text-muted hover:text-[color:var(--accent)] transition-colors"
+                      aria-label="Add to project"
+                      title="Add to project"
+                    >
+                      📁
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(task.id)}
+                      disabled={deleting === task.id}
+                      className="text-xs text-muted hover:text-[color:var(--danger)] transition-colors disabled:opacity-50"
+                      aria-label="Delete task"
+                      title="Delete task"
+                    >
+                      {deleting === task.id ? '…' : '✕'}
+                    </button>
+                    {pickerOpen === task.id && (
+                      <ProjectPicker
+                        taskId={task.id}
+                        projects={projects}
+                        currentProjectId={taskProjects[task.id] ?? null}
+                        onAssigned={pid => setTaskProjects(prev => ({ ...prev, [task.id]: pid }))}
+                        onClose={() => setPickerOpen(null)}
+                      />
+                    )}
+                  </div>
                 </div>
 
                 {expanded === task.id && (

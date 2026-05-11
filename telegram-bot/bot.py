@@ -6,11 +6,6 @@ import os
 import logging
 import httpx
 from dotenv import load_dotenv
-
-# Load from local .env first, then fall back to backend .env
-_dir = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(_dir, ".env"))
-load_dotenv(os.path.join(_dir, "..", "backend", ".env"))
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import (
@@ -20,6 +15,11 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
+
+# Load from local .env first, then fall back to backend .env
+_dir = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_dir, ".env"))
+load_dotenv(os.path.join(_dir, "..", "backend", ".env"))
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
