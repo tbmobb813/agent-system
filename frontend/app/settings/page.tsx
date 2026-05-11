@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import PageHeader from '@/components/PageHeader'
 import { getSettings, updateSettings, getPersonaPreview } from '@/lib/api'
 
 async function getAutostartEnabled(): Promise<boolean | null> {
@@ -116,14 +115,16 @@ export default function SettingsPage() {
   if (!settings) return null
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        eyebrow="Control deck"
-        title="Settings"
-        description="Tune budgets, routing preferences, and persona behavior for your agent."
-      />
+    <div className="dr-history-stack">
+      <header>
+        <p className="eyebrow">Conf</p>
+        <h1 className="section-title dr-dashboard-hero-title">Settings</h1>
+        <p className="dr-history-summary">
+          Tune budgets, routing preferences, and persona behavior for your agent.
+        </p>
+      </header>
 
-      <form onSubmit={handleSave} className="max-w-2xl space-y-5 panel p-6">
+      <form onSubmit={handleSave} className="space-y-5 panel p-6">
 
         <div>
           <label htmlFor="max-monthly-cost" className="block text-sm text-muted mb-1">Monthly Budget (USD)</label>

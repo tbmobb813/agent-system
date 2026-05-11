@@ -37,7 +37,7 @@ export function ContextMetricsCompact({ events }: { events: StreamEvent[] }) {
     <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted tabular-nums">
       <span className="uppercase tracking-wide text-muted shrink-0">Context</span>
       <div className="h-1.5 w-16 sm:w-24 shrink-0 rounded-full border border-[color:var(--border)] bg-[color:var(--bg)] overflow-hidden">
-        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${clamped}%` }} />
+        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${clamped}%` } as React.CSSProperties} />
       </div>
       <span className={pct >= 70 ? 'text-[color:var(--warn)]' : ''}>{pct.toFixed(0)}% — {label}</span>
       {ctx.context_tokens_used != null && <span className="text-muted/85">{ctx.context_tokens_used.toLocaleString()} / {ctx.context_tokens_max?.toLocaleString()} tok</span>}
@@ -143,7 +143,7 @@ export function QuickActionsMenu({
   ]
 
   return (
-    <div id="quick-actions-popover" className="absolute left-0 bottom-full z-50 mb-2 w-72 rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] shadow-2xl ring-1 ring-[color:var(--border)]/20 font-sans overflow-hidden">
+    <div id="quick-actions-popover" className="absolute left-0 bottom-full z-[200] mb-2 w-72 rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] shadow-2xl ring-1 ring-[color:var(--border)]/20 font-sans overflow-hidden">
       {groups.map((group, gi) => (
         <div key={group.label}>
           {gi > 0 && <div className="border-t border-[color:var(--border)]/60" />}

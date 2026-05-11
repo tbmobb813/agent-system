@@ -36,14 +36,14 @@ fi
 
 # ── Backend ───────────────────────────────────────────────────────────────────
 log "Starting backend..."
-if [ ! -d "$BACKEND/venv" ]; then
-    warn "venv not found — creating it now..."
-    python3 -m venv "$BACKEND/venv"
-    "$BACKEND/venv/bin/pip" install -q --upgrade pip
-    "$BACKEND/venv/bin/pip" install -q -r "$BACKEND/requirements.txt"
+if [ ! -d "$BACKEND/.venv" ]; then
+    warn ".venv not found — creating it now..."
+    python3 -m venv "$BACKEND/.venv"
+    "$BACKEND/.venv/bin/pip" install -q --upgrade pip
+    "$BACKEND/.venv/bin/pip" install -q -r "$BACKEND/requirements.txt"
 fi
 
-(cd "$BACKEND" && venv/bin/uvicorn app.main:app \
+(cd "$BACKEND" && .venv/bin/uvicorn app.main:app \
     --host 0.0.0.0 --port 8000 --reload) \
     > "$LOG_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
@@ -65,12 +65,21 @@ done
 
 # ── Frontend ──────────────────────────────────────────────────────────────────
 log "Starting frontend..."
-if [ ! -d "$FRONTEND/node_modules" ]; then
-    warn "node_modules not found — running npm install..."
-    (cd "$FRONTEND" && npm install --silent)
+if command -v pnpm >/dev/null 2>&1; then
+    PNPM_CMD=(pnpm)
+elif command -v corepack >/dev/null 2>&1; then
+    warn "pnpm not found — using corepack pnpm"
+    PNPM_CMD=(corepack pnpm)
+else
+    die "pnpm is required for frontend startup (install pnpm or enable corepack)"
 fi
 
-(cd "$FRONTEND" && PORT=3003 npm run dev) \
+if [ ! -d "$FRONTEND/node_modules" ]; then
+    warn "node_modules not found — running pnpm install..."
+    (cd "$FRONTEND" && "${PNPM_CMD[@]}" install --silent)
+fi
+
+(cd "$FRONTEND" && PORT=3003 "${PNPM_CMD[@]}" run dev) \
     > "$LOG_DIR/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 echo $FRONTEND_PID > "$LOG_DIR/frontend.pid"

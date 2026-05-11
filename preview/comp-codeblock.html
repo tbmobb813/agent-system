@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en" data-theme="neon-command" data-density="comfortable" data-motion="cinematic">
+<head>
+<meta charset="utf-8">
+<title>comp-codeblock</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="./styles.css">
+<style>
+  html, body { margin: 0; padding: 0; }
+  body.atmosphere { padding: 18px 22px; min-height: 160px; box-sizing: border-box; }
+  .row { display: flex; align-items: center; gap: 14px; }
+  .col { display: flex; flex-direction: column; gap: 6px; }
+  .grid { display: grid; gap: 10px; }
+</style>
+</head>
+<body class="atmosphere">
+<div class="pr-border-codeblock">
+  <div class="pr-flex-between-items-surface">
+    <span class="pr-font-mono-11-muted">bash</span>
+    <button class="pr-btn-transparent">Copy</button>
+  </div>
+  <pre style="margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 12px; color: #d4d4d4; line-height: 1.5;"><span class="pr-hex-code">curl</span> -X POST http://localhost:8000/agent/stream \
+  -H <span class="pr-hex-orange-code">"Content-Type: application/json"</span> \
+  -d <span class="pr-hex-orange-code">'{"query": "Explain quantum computing briefly"}'</span></pre>
+</div>
+</body></html>

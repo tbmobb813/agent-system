@@ -14,7 +14,7 @@ module.exports = {
     {
       name: 'agent-backend',
       cwd: path.join(ROOT, 'backend'),
-      script: 'venv/bin/uvicorn',
+      script: '.venv/bin/uvicorn',
       args: 'app.main:app --host 127.0.0.1 --port 8000 --workers 2',
       interpreter: 'none',
       env_file: path.join(ROOT, 'backend/.env'),

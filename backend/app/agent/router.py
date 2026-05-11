@@ -323,6 +323,18 @@ class ModelRouter:
             logger.debug("LLM routing classifier failed: %s", e)
         return self._classify(query)
 
+    # Models confirmed to support function calling via OpenRouter.
+    # Free/meta-llama models are unreliable for tool use and are excluded.
+    _TOOL_SAFE_TIERS: set[str] = {
+        "simple",
+        "balanced",
+        "coding",
+        "research",
+        "advanced",
+        "premium",
+        "agent",
+    }
+
     def select_for_run(
         self,
         query: str,
@@ -332,17 +344,47 @@ class ModelRouter:
         """
         Single entry point for all model selection.
         Orchestrator calls this once — no routing logic should live outside this class.
+
+        When tools are available, routing still follows query complexity — the agent
+        tier (Haiku) is only the *minimum floor* for tool-use runs, not a hard override.
+        Complex/research/premium queries get a more capable model even with tools.
         """
-        if has_tools:
-            # Tool/ReAct runs always use the agent tier (reliable function calling).
-            # Still respect budget floor — fall back to cheapest if nearly depleted.
-            if budget_remaining < 2.0:
-                logger.warning(
-                    f"Budget critical (${budget_remaining:.2f}) — forcing free model for tool run"
-                )
-                return self.MODELS["free"]["model"]
-            return self.MODELS["agent"]["model"]
-        return self.select_model(query, budget_remaining=budget_remaining)
+        # Budget floor always wins.
+        if budget_remaining < 2.0:
+            logger.warning(
+                f"Budget critical (${budget_remaining:.2f}) — forcing free model"
+            )
+            return self.MODELS["free"]["model"]
+
+        if not has_tools:
+            return self.select_model(query, budget_remaining=budget_remaining)
+
+        # Tool run: classify by complexity, then ensure the chosen tier is tool-safe.
+        query_type = self._classify(query)
+        tier_map = {
+            "conversational": "agent",  # simple chit-chat still needs tools → agent floor
+            "simple": "agent",  # same
+            "balanced": "balanced",
+            "coding": "coding",
+            "research": "research",
+            "complex": "advanced",
+            "premium": "premium",
+        }
+        tier = tier_map.get(query_type, "agent")
+
+        # Downgrade if budget is moderate but tier is expensive.
+        if budget_remaining < 8.0 and tier == "premium":
+            tier = "advanced"
+        if tier not in self._TOOL_SAFE_TIERS:
+            logger.warning("Tier '%s' is not tool-safe; falling back to agent", tier)
+            tier = "agent"
+
+        model = self.MODELS[tier]["model"]
+        logger.info(
+            f"Tool-run routing → {tier} ({model}) for query type: {query_type}, "
+            f"budget_remaining=${budget_remaining:.2f}"
+        )
+        return model
 
     def is_complex(self, query: str) -> bool:
         """Return True if the query warrants a planning pass before execution."""

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en" data-theme="neon-command" data-density="comfortable" data-motion="cinematic">
+<head>
+<meta charset="utf-8">
+<title>color-glow</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="./styles.css">
+<style>
+  html, body { margin: 0; padding: 0; }
+  body.atmosphere { padding: 18px 22px; min-height: 160px; box-sizing: border-box; }
+  .row { display: flex; align-items: center; gap: 14px; }
+  .col { display: flex; flex-direction: column; gap: 6px; }
+  .grid { display: grid; gap: 10px; }
+</style>
+</head>
+<body class="atmosphere">
+<div class="row" style="gap: 24px; align-items: center;">
+  <div class="pr-flex-col-gap-8-center">
+    <div style="width: 72px; height: 72px; border-radius: 50%; background: radial-gradient(circle, var(--accent), color-mix(in oklab, var(--accent), transparent 80%) 70%); box-shadow: 0 0 32px rgba(43,227,198,0.5);"></div>
+    <code class="pr-font-mono-10-muted">--glow: 43 227 198</code>
+  </div>
+  <div class="col" style="gap: 6px; flex: 1;">
+    <div style="font-family: var(--font-body); font-size: 13px; color: var(--text);">Glow is an RGB triplet, consumed via <code class="pr-font-mono-11-accent">rgba(var(--glow), 0.20)</code>.</div>
+    <div class="pr-font-body-12-muted-line">Hover lifts (translateY -1px) + accent border + 24 px glow shadow.<br>Active text shadows (brand mark, nav-link[aria-current]) use 0.28-0.32 opacity.</div>
+  </div>
+</div>
+</body></html>

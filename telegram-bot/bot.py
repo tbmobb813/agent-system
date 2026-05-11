@@ -25,9 +25,18 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+# Avoid logging full Telegram API URLs (they contain the bot token path segment).
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-BACKEND_URL = os.getenv("BACKEND_API_URL", "http://backend:8000")
-API_KEY = os.getenv("TELEGRAM_BOT_API_KEY", "")
+# If BACKEND_API_URL is set, use it strictly. Otherwise, try sane defaults for
+# both local runs and docker-network runs.
+_backend_env = (os.getenv("BACKEND_API_URL") or "").strip()
+BACKEND_URLS = (
+    [_backend_env] if _backend_env else ["http://localhost:8000", "http://backend:8000"]
+)
+# Prefer a dedicated bot key, but fall back to the backend master key for local setups.
+API_KEY = os.getenv("TELEGRAM_BOT_API_KEY") or os.getenv("BACKEND_API_KEY", "")
 
 
 def _parse_chat_id(raw_value: str) -> int:
@@ -54,7 +63,15 @@ def _is_authorized(update: Update) -> bool:
     if not _ALLOWED_CHAT_ID:
         logger.warning("TELEGRAM_CHAT_ID not set — rejecting all messages")
         return False
-    return update.effective_chat.id == _ALLOWED_CHAT_ID
+    chat_id = update.effective_chat.id
+    if chat_id != _ALLOWED_CHAT_ID:
+        logger.warning(
+            "Unauthorized chat_id %s (expected %s) — ignoring message",
+            chat_id,
+            _ALLOWED_CHAT_ID,
+        )
+        return False
+    return True
 
 
 # ============================================================================
@@ -71,19 +88,37 @@ def _truncate(text: str, limit: int = 4000) -> str:
 
 async def _call_backend(method: str, path: str, **kwargs) -> dict | None:
     """Make a request to the backend. Returns parsed JSON or None on error."""
-    try:
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            fn = getattr(client, method)
-            resp = await fn(f"{BACKEND_URL}{path}", headers=HEADERS, **kwargs)
-            if resp.status_code == 200:
-                return resp.json()
-            logger.error(
-                f"Backend {method.upper()} {path} → {resp.status_code}: {resp.text}"
-            )
-            return None
-    except Exception as e:
-        logger.error(f"Backend request failed: {e}")
-        return None
+    last_error: Exception | None = None
+    async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=3.0)) as client:
+        fn = getattr(client, method)
+        for base in BACKEND_URLS:
+            try:
+                resp = await fn(f"{base}{path}", headers=HEADERS, **kwargs)
+                if resp.status_code == 200:
+                    return resp.json()
+                logger.error(
+                    "Backend %s %s via %s → %s: %s",
+                    method.upper(),
+                    path,
+                    base,
+                    resp.status_code,
+                    resp.text,
+                )
+                return None
+            except Exception as e:
+                last_error = e
+                continue
+
+    if last_error:
+        logger.error(
+            "Backend request failed for %s across %s: %s",
+            path,
+            BACKEND_URLS,
+            last_error,
+        )
+    else:
+        logger.error("Backend request failed for %s across %s", path, BACKEND_URLS)
+    return None
 
 
 # ============================================================================
@@ -421,7 +456,7 @@ def main():
     if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN is not set")
     if not API_KEY:
-        raise ValueError("TELEGRAM_BOT_API_KEY is not set")
+        raise ValueError("TELEGRAM_BOT_API_KEY/BACKEND_API_KEY is not set")
 
     app = Application.builder().token(token).build()
 

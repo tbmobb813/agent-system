@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en" data-theme="neon-command" data-density="comfortable" data-motion="cinematic">
+<head>
+<meta charset="utf-8">
+<title>Agent_System — Dashboard UI Kit</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="../../assets/glyph.svg">
+<link rel="stylesheet" href="../../colors_and_type.css">
+<style>
+  html, body { margin: 0; padding: 0; min-height: 100vh; }
+  * { box-sizing: border-box; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body class="atmosphere">
+<div id="root"></div>
+
+<script src="data.js"></script>
+<script type="text/babel" src="Components.jsx"></script>
+<script type="text/babel" src="AppShell.jsx"></script>
+<script type="text/babel" src="Dashboard.jsx"></script>
+<script type="text/babel" src="AgentView.jsx"></script>
+<script type="text/babel" src="HistoryView.jsx"></script>
+
+<script type="text/babel">
+  const { useState, useEffect } = React;
+
+  function Placeholder({ title, eyebrow }) {
+    return (
+      <div>
+        <Eyebrow>{eyebrow}</Eyebrow>
+        <SectionTitle size="32px">{title}</SectionTitle>
+        <Panel style={{ marginTop: '20px', padding: '40px', textAlign: 'center' }}>
+          <p style={{ fontFamily: 'var(--font-body)', color: 'var(--muted)', margin: 0 }}>
+            This screen is intentionally empty in the kit — the real implementation
+            lives in the Next.js app.
+          </p>
+        </Panel>
+      </div>
+    );
+  }
+
+  function App() {
+    const [route, setRoute] = useState(window.location.hash.slice(1) || '/');
+    const [theme, setTheme] = useState('neon-command');
+
+    useEffect(() => {
+      document.documentElement.dataset.theme = theme;
+    }, [theme]);
+
+    useEffect(() => {
+      const onHash = () => setRoute(window.location.hash.slice(1) || '/');
+      window.addEventListener('hashchange', onHash);
+      return () => window.removeEventListener('hashchange', onHash);
+    }, []);
+
+    const navigate = (href) => {
+      window.location.hash = href;
+      setRoute(href);
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    };
+
+    let view;
+    switch (route) {
+      case '/':         view = <Dashboard onNavigate={navigate} />; break;
+      case '/agent':    view = <AgentView onNavigate={navigate} />; break;
+      case '/history':  view = <HistoryView onNavigate={navigate} />; break;
+      case '/costs':    view = <Placeholder eyebrow="Cost" title="Budget & Costs" />; break;
+      case '/analytics':view = <Placeholder eyebrow="Data" title="Analytics" />; break;
+      case '/documents':view = <Placeholder eyebrow="Docs" title="Documents" />; break;
+      case '/settings': view = <Placeholder eyebrow="Conf" title="Settings" />; break;
+      case '/commands': view = <Placeholder eyebrow="Cmd"  title="Commands" />; break;
+      default:          view = <Dashboard onNavigate={navigate} />;
+    }
+
+    return (
+      <AppShell route={route} onNavigate={navigate} theme={theme} onTheme={setTheme}>
+        {view}
+      </AppShell>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

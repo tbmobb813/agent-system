@@ -100,7 +100,7 @@ Migrations are in `supabase/migrations/`.
 
 **Option A — Supabase CLI (recommended if the project is linked)**
 
-The CLI is invoked via **`npx`** unless you installed `supabase` globally (`npm i -g supabase`).
+The CLI is invoked via **`npx`** unless you installed `supabase` globally (`pnpm add -g supabase`).
 
 ```bash
 # One-time: link your project (ref = Dashboard → Project Settings → General → Reference ID)
@@ -137,7 +137,7 @@ From repo root:
 
 ```bash
 cd backend
-source venv/bin/activate   # if you use a venv
+source .venv/bin/activate
 pip install -r requirements.txt
 BACKEND_API_KEY=sk-agent-local-dev OPENROUTER_BUDGET_MONTHLY=30 pytest --cov=app --cov-fail-under=55 -q
 ```
@@ -166,12 +166,12 @@ python3 agent_pillar_validator.py --check-code
 ```bash
 # Backend only (with hot reload)
 cd /home/nixstation-remote/agent-system/backend
-source venv/bin/activate
+source .venv/bin/activate
 uvicorn app.main:app --reload
 
 # Frontend only
 cd /home/nixstation-remote/agent-system/frontend
-npm run dev
+pnpm run dev
 
 # Telegram bot only
 cd /home/nixstation-remote/agent-system/telegram-bot
@@ -180,13 +180,13 @@ python3 bot.py
 
 # Install new backend dependency
 cd /home/nixstation-remote/agent-system/backend
-source venv/bin/activate
+source .venv/bin/activate
 pip install <package>
 pip freeze > requirements.txt
 
 # Install new frontend dependency
 cd /home/nixstation-remote/agent-system/frontend
-npm install <package>
+pnpm add <package>
 ```
 
 ---

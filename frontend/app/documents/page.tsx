@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import PageHeader from '@/components/PageHeader'
 import { getDocuments, uploadDocument, deleteDocument } from '@/lib/api'
 
 type Doc = {
@@ -73,12 +72,14 @@ export default function DocumentsPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <PageHeader
-        eyebrow="Knowledge base"
-        title="Documents"
-        description="Upload PDFs, DOCX, or text files. The agent searches them automatically when answering questions."
-      />
+    <div className="dr-history-stack">
+      <header>
+        <p className="eyebrow">Docs</p>
+        <h1 className="section-title dr-dashboard-hero-title">Documents</h1>
+        <p className="dr-history-summary">
+          Upload PDFs, DOCX, or text files. The agent searches them automatically when answering questions.
+        </p>
+      </header>
 
       {/* Upload area */}
       <div className="panel rounded-xl border-dashed p-6 text-center space-y-3">
@@ -105,7 +106,7 @@ export default function DocumentsPage() {
       </div>
 
       {/* Document list */}
-      <div className="space-y-2">
+      <div className="panel p-5 md:p-6 space-y-2">
         <div className="flex items-center justify-between text-xs text-muted px-1">
           <span>{total} document{total !== 1 ? 's' : ''}</span>
           <button onClick={load} className="hover:text-[color:var(--text)] transition-colors">Refresh</button>

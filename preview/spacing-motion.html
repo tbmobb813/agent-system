@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en" data-theme="neon-command" data-density="comfortable" data-motion="cinematic">
+<head>
+<meta charset="utf-8">
+<title>spacing-motion</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="./styles.css">
+<style>
+  html, body { margin: 0; padding: 0; }
+  body.atmosphere { padding: 18px 22px; min-height: 160px; box-sizing: border-box; }
+  .row { display: flex; align-items: center; gap: 14px; }
+  .col { display: flex; flex-direction: column; gap: 6px; }
+  .grid { display: grid; gap: 10px; }
+</style>
+</head>
+<body class="atmosphere">
+<div class="col pr-gap-10">
+  <div class="pr-grid-90-1fr-60-gap-12">
+    <code class="pr-font-mono-11-accent">--dur-quick</code>
+    <span class="pr-text-text">hover · color shift</span>
+    <code class="pr-font-mono-11-muted-right">150ms</code>
+
+    <code class="pr-font-mono-11-accent">--dur-base</code>
+    <span class="pr-text-text">general transitions</span>
+    <code class="pr-font-mono-11-muted-right">180ms</code>
+
+    <code class="pr-font-mono-11-accent">--dur-slow</code>
+    <span class="pr-text-text">fade-up mount</span>
+    <code class="pr-font-mono-11-muted-right">420ms</code>
+
+    <code class="pr-font-mono-11-accent">--ease-out</code>
+    <span class="pr-text-text-mono">cubic-bezier(.22, 1, .36, 1)</span>
+    <span></span>
+  </div>
+  <div class="pr-font-body-11">Fast, additive, no springs. <code class="pr-font-mono">data-motion="minimal"</code> collapses all to 1ms.</div>
+</div>
+</body></html>

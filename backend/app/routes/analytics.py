@@ -3,19 +3,31 @@ Analytics routes for cost, performance, and tool usage insights.
 """
 
 import json
+import logging
 from calendar import monthrange
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
 from app.config import settings
-from app.database import fetch, fetchval
+from app.database import fetch, fetchval, execute
 from app.utils.auth import verify_api_key
 from app.agent.skill_registry import get_agent_profile
 from app.agent.cost_learning import get_efficiency_scores
 from app.agent.ab_testing import run_ab_test
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
+logger = logging.getLogger(__name__)
+
+
+class SkillUpsertRequest(BaseModel):
+    task_type: str = Field(min_length=1, max_length=120)
+    skill_name: str = Field(min_length=1, max_length=160)
+    success_rate: float = Field(default=0.8, ge=0.0, le=1.0)
+    total_uses: int = Field(default=1, ge=0)
+    proficiency_level: str = Field(default="competent")
+    required_tools: list[str] = Field(default_factory=list)
 
 
 def _projected_month_total(spent_month: float) -> float:
@@ -261,6 +273,62 @@ async def get_budget_alerts(days: int = 30, api_key: str = Depends(verify_api_ke
 async def get_skills_profile(api_key: str = Depends(verify_api_key)):
     """Agent skill profile: competency levels and growth areas by task type."""
     return await get_agent_profile()
+
+
+@router.post("/skills")
+async def upsert_skill_profile(
+    body: SkillUpsertRequest,
+    api_key: str = Depends(verify_api_key),
+):
+    """Create/update a skill profile entry manually."""
+    try:
+        await execute(
+            """
+            INSERT INTO skills (task_type, skill_name, success_rate, total_uses, proficiency_level, required_tools, last_computed)
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb, NOW())
+            ON CONFLICT (task_type)
+            DO UPDATE SET
+                skill_name = EXCLUDED.skill_name,
+                success_rate = EXCLUDED.success_rate,
+                total_uses = EXCLUDED.total_uses,
+                proficiency_level = EXCLUDED.proficiency_level,
+                required_tools = EXCLUDED.required_tools,
+                last_computed = NOW()
+            """,
+            body.task_type.strip(),
+            body.skill_name.strip(),
+            float(body.success_rate),
+            int(body.total_uses),
+            body.proficiency_level.strip() or "competent",
+            json.dumps(body.required_tools),
+        )
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Database not connected")
+    except Exception:
+        logger.exception("Could not upsert skill profile")
+        raise HTTPException(status_code=500, detail="Could not upsert skill")
+
+    return {"status": "upserted", "task_type": body.task_type.strip()}
+
+
+@router.delete("/skills/{task_type}")
+async def delete_skill_profile(
+    task_type: str,
+    api_key: str = Depends(verify_api_key),
+):
+    """Delete a skill profile entry by task type."""
+    normalized = task_type.strip()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="task_type is required")
+    try:
+        await execute("DELETE FROM skills WHERE task_type = $1", normalized)
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Database not connected")
+    except Exception:
+        logger.exception("Could not delete skill profile")
+        raise HTTPException(status_code=500, detail="Could not delete skill")
+
+    return {"status": "deleted", "task_type": normalized}
 
 
 @router.get("/decisions")

@@ -17,7 +17,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev -- --port 3003',
+    command: 'pnpm exec next dev -p 3003',
     url: 'http://127.0.0.1:3003',
     // Reusing a stray `next dev` on :3003 (e.g. another clone or wrong cwd) serves HTML that
     // references chunks this build never emitted → 404 on `app-pages-internals.js` and no hydration.
