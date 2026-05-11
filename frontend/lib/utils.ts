@@ -1,6 +1,7 @@
-export function formatCost(usd: number): string {
-  if (usd < 0.0001) return '<$0.01'
-  return `$${usd.toFixed(4)}`
+export function formatCost(usd: number | null | undefined): string {
+  const value = Number.isFinite(usd) ? Number(usd) : 0
+  if (value < 0.0001) return '<$0.01'
+  return `$${value.toFixed(4)}`
 }
 
 export function formatDate(iso: string): string {

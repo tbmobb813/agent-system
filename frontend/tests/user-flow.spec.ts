@@ -105,7 +105,7 @@ test('full user flow: dashboard to agent execution', async ({ page }) => {
 
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Good (morning|afternoon|evening|night)/)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/(Good (morning|afternoon|evening|night)|Welcome back, operator\.)/)
   const runAgent = page.getByRole('link', { name: /Run Agent/ }).first()
   await expect(runAgent).toBeVisible()
   await page.evaluate(() => {

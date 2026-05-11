@@ -22,8 +22,8 @@ test('dashboard renders primary navigation and cards', async ({ page }) => {
 
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Good (morning|afternoon|evening|night)/)
-  await expect(page.getByText(/Telemetry, budget, and execution history/)).toBeVisible()
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/(Good (morning|afternoon|evening|night)|Welcome back, operator\.)/)
+  await expect(page.getByText(/Five-tier router, four agents, and a live budget\./)).toBeVisible()
 
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible()
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Agent', exact: true })).toBeVisible()
