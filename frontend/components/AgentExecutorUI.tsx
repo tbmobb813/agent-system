@@ -143,7 +143,7 @@ export function QuickActionsMenu({
   ]
 
   return (
-    <div id="quick-actions-popover" className="absolute left-0 bottom-full z-50 mb-2 w-72 rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] shadow-2xl ring-1 ring-[color:var(--border)]/20 font-sans overflow-hidden">
+    <div id="quick-actions-popover" className="absolute left-0 bottom-full z-[200] mb-2 w-72 rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] shadow-2xl ring-1 ring-[color:var(--border)]/20 font-sans overflow-hidden">
       {groups.map((group, gi) => (
         <div key={group.label}>
           {gi > 0 && <div className="border-t border-[color:var(--border)]/60" />}
