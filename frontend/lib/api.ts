@@ -365,6 +365,54 @@ export async function deleteDocument(documentId: string) {
   return res.json()
 }
 
+// ── Connectors ───────────────────────────────────────────────────────────────
+
+export interface ConnectorStatus {
+  id: string
+  name: string
+  description: string
+  token_label: string
+  token_help: string
+  actions: string[]
+  configured: boolean
+  enabled: boolean
+  token_preview: string
+}
+
+export async function listConnectors(): Promise<ConnectorStatus[]> {
+  const res = await fetchWithTimeout(`${API_URL}/connectors`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch connectors (${res.status})`)
+  return res.json()
+}
+
+export async function saveConnector(id: string, data: { token?: string; enabled: boolean }): Promise<ConnectorStatus> {
+  const res = await fetchWithTimeout(`${API_URL}/connectors/${id}`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to save connector (${res.status})` }))
+    throw new Error(String(err.detail ?? err))
+  }
+  return res.json()
+}
+
+export async function clearConnectorToken(id: string): Promise<ConnectorStatus> {
+  const res = await fetchWithTimeout(`${API_URL}/connectors/${id}/token`, {
+    method: 'DELETE',
+    headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Failed to clear token (${res.status})`)
+  return res.json()
+}
+
+export async function testConnector(id: string): Promise<{ ok: boolean; detail: string }> {
+  const res = await fetchWithTimeout(`${API_URL}/connectors/${id}/test`, { headers: headers() }, 12000)
+  if (!res.ok) throw new Error(`Test request failed (${res.status})`)
+  return res.json()
+}
+
 export async function runAgent(query: string, context?: string, tools?: string[]) {
   const res = await fetch(`${API_URL}/agent/run`, {
     method: 'POST',

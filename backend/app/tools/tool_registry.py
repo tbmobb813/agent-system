@@ -1157,10 +1157,19 @@ class ToolRegistry:
     ) -> Any:
         """GitHub connector — delegates to the connector module."""
         from app.tools.connectors.github import github_action
+        from app.utils.settings_store import load_settings_dict
+
+        cfg = load_settings_dict().get("connectors", {}).get("github", {})
+        if cfg.get("enabled") is False and not settings.GITHUB_TOKEN:
+            return {
+                "error": "GitHub connector is disabled. Enable it in Connectors settings."
+            }
+        # Stored token takes priority over env var so the UI can override without a restart.
+        token = cfg.get("token") or settings.GITHUB_TOKEN
 
         return await github_action(
             action,
-            settings.GITHUB_TOKEN,
+            token,
             repo=repo,
             query=query,
             issue_number=issue_number,
