@@ -828,7 +828,6 @@ export default function AgentExecutor() {
                       onOpenHelp={() => { setHelpModalOpen(true); setQuickActionsOpen(false) }}
                       onOpenReasoningPicker={() => { setSuggestDismissed(true); setReasoningArgModal({ from: -1, to: -1 }); setQuickActionsOpen(false) }}
                       onCopyThread={() => { setQuickActionsOpen(false) }}
-                      onDownloadThread={() => { handleDownloadThread(); setQuickActionsOpen(false) }}
                       onFeedback={() => { tryOpenFeedbackPanel(); setQuickActionsOpen(false) }}
                       onEditResend={() => { setEditLastOpen(!editLastOpen); setQuickActionsOpen(false) }}
                     />

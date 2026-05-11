@@ -3,7 +3,6 @@ import { StreamEvent } from '@/lib/hooks'
 import { formatCost } from '@/lib/utils'
 import {
   IconClipboard,
-  IconDownload,
   IconStar,
   IconPlus,
   IconEdit,
@@ -73,7 +72,6 @@ export type QuickActionsMenuProps = {
   onOpenHelp: () => void
   onOpenReasoningPicker: () => void
   onCopyThread: () => void
-  onDownloadThread: () => void
   onFeedback: () => void
   onEditResend: () => void
 }
@@ -101,7 +99,6 @@ export function QuickActionsMenu({
   onOpenHelp,
   onOpenReasoningPicker,
   onCopyThread,
-  onDownloadThread,
   onFeedback,
   onEditResend,
 }: QuickActionsMenuProps) {
@@ -121,9 +118,7 @@ export function QuickActionsMenu({
         { id: 'tools', icon: <IconTool />, label: 'Tools menu', action: () => onOpenOps('tools') },
         { id: 'skills', icon: <IconZap />, label: 'Skills analytics', action: () => onOpenOps('skills') },
         { id: 'mcp', icon: <IconServer />, label: 'MCP servers', action: () => onOpenOps('mcp') },
-        { id: 'connectors', icon: <IconPlug />, label: 'Connectors', action: () => onOpenOps('connectors') },
-        { id: 'history', icon: <IconHistory />, label: 'Task history', action: () => onOpenOps('history') },
-        { id: 'stats', icon: <IconStats />, label: 'Stats & costs', action: () => onOpenOps('stats') }
+        { id: 'connectors', icon: <IconPlug />, label: 'Connectors', action: () => onOpenOps('connectors') }
       ]
     },
     {
@@ -137,7 +132,6 @@ export function QuickActionsMenu({
       label: 'Export & Feedback',
       items: [
         { id: 'copy', icon: <IconClipboard />, label: 'Copy thread', disabled: threadExportEmpty, action: onCopyThread },
-        { id: 'download', icon: <IconDownload />, label: 'Download thread', disabled: threadExportEmpty, action: onDownloadThread },
         { id: 'feedback', icon: <IconStar />, label: 'Rate this reply', action: onFeedback },
         { id: 'help', icon: <IconHelp />, label: 'Help & shortcuts', action: onOpenHelp }
       ]
