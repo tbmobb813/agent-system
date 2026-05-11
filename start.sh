@@ -65,12 +65,21 @@ done
 
 # ── Frontend ──────────────────────────────────────────────────────────────────
 log "Starting frontend..."
-if [ ! -d "$FRONTEND/node_modules" ]; then
-    warn "node_modules not found — running pnpm install..."
-    (cd "$FRONTEND" && pnpm install --silent)
+if command -v pnpm >/dev/null 2>&1; then
+    PNPM_CMD=(pnpm)
+elif command -v corepack >/dev/null 2>&1; then
+    warn "pnpm not found — using corepack pnpm"
+    PNPM_CMD=(corepack pnpm)
+else
+    die "pnpm is required for frontend startup (install pnpm or enable corepack)"
 fi
 
-(cd "$FRONTEND" && PORT=3003 pnpm run dev) \
+if [ ! -d "$FRONTEND/node_modules" ]; then
+    warn "node_modules not found — running pnpm install..."
+    (cd "$FRONTEND" && "${PNPM_CMD[@]}" install --silent)
+fi
+
+(cd "$FRONTEND" && PORT=3003 "${PNPM_CMD[@]}" run dev) \
     > "$LOG_DIR/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 echo $FRONTEND_PID > "$LOG_DIR/frontend.pid"

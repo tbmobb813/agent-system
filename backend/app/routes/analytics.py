@@ -3,6 +3,7 @@ Analytics routes for cost, performance, and tool usage insights.
 """
 
 import json
+import logging
 from calendar import monthrange
 from datetime import datetime
 
@@ -17,6 +18,7 @@ from app.agent.cost_learning import get_efficiency_scores
 from app.agent.ab_testing import run_ab_test
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
+logger = logging.getLogger(__name__)
 
 
 class SkillUpsertRequest(BaseModel):
@@ -302,8 +304,9 @@ async def upsert_skill_profile(
         )
     except RuntimeError:
         raise HTTPException(status_code=503, detail="Database not connected")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Could not upsert skill: {e}")
+    except Exception:
+        logger.exception("Could not upsert skill profile")
+        raise HTTPException(status_code=500, detail="Could not upsert skill")
 
     return {"status": "upserted", "task_type": body.task_type.strip()}
 
@@ -321,8 +324,9 @@ async def delete_skill_profile(
         await execute("DELETE FROM skills WHERE task_type = $1", normalized)
     except RuntimeError:
         raise HTTPException(status_code=503, detail="Database not connected")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Could not delete skill: {e}")
+    except Exception:
+        logger.exception("Could not delete skill profile")
+        raise HTTPException(status_code=500, detail="Could not delete skill")
 
     return {"status": "deleted", "task_type": normalized}
 

@@ -375,6 +375,9 @@ class ModelRouter:
         # Downgrade if budget is moderate but tier is expensive.
         if budget_remaining < 8.0 and tier == "premium":
             tier = "advanced"
+        if tier not in self._TOOL_SAFE_TIERS:
+            logger.warning("Tier '%s' is not tool-safe; falling back to agent", tier)
+            tier = "agent"
 
         model = self.MODELS[tier]["model"]
         logger.info(
