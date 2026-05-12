@@ -736,6 +736,90 @@ class ToolRegistry:
                 schemas.append(self._dynamic_schemas[n])
         return schemas
 
+    # ── Precondition registry (sync, no I/O) ─────────────────────────────────
+    # Each entry: tool_name → (check_fn, reason_when_missing)
+    # check_fn must be a zero-arg callable returning bool.
+
+    @staticmethod
+    def _playwright_available() -> bool:
+        """Cached check — importlib only, no browser launch."""
+        if not hasattr(ToolRegistry, "_playwright_ok"):
+            try:
+                import importlib
+                importlib.import_module("playwright")
+                ToolRegistry._playwright_ok = True
+            except ImportError:
+                ToolRegistry._playwright_ok = False
+        return ToolRegistry._playwright_ok  # type: ignore[attr-defined]
+
+    def _precondition_ok(self, name: str) -> tuple[bool, str]:
+        """
+        Return (ok, reason_string) for a single tool.
+        Checks only in-process state — no network I/O.
+        """
+        checks: dict[str, tuple[bool, str]] = {
+            "web_search": (
+                bool(settings.SEARXNG_URL or settings.BRAVE_SEARCH_API_KEY),
+                "no search provider configured (set SEARXNG_URL or BRAVE_SEARCH_API_KEY)",
+            ),
+            "browser_automation": (
+                self._playwright_available(),
+                "Playwright not installed (run: pip install playwright && playwright install chromium)",
+            ),
+            "code_execution": (
+                bool(settings.E2B_API_KEY),
+                "E2B_API_KEY not set",
+            ),
+            "github": (
+                bool(settings.GITHUB_TOKEN),
+                "GITHUB_TOKEN not set",
+            ),
+        }
+        if name not in checks:
+            return True, ""
+        ok, reason = checks[name]
+        return ok, reason
+
+    # Tools filtered out when the budget is critically low.
+    _BUDGET_EXPENSIVE: frozenset[str] = frozenset({"browser_automation", "code_execution"})
+    BUDGET_CRITICAL_USD: float = 1.0  # below this → strip expensive tools
+    BUDGET_LOW_USD: float = 3.0       # below this → urgent guardrail language
+
+    def get_available_tools_filtered(
+        self,
+        allowed: Optional[list[str]],
+        budget_remaining: float,
+    ) -> tuple[list[dict], list[tuple[str, str]]]:
+        """
+        Return (filtered_schemas, removed_list) where removed_list is
+        [(tool_name, reason), ...].
+
+        Filters apply in order:
+        1. Precondition checks — sync, no I/O
+        2. Budget filter — expensive tools removed below BUDGET_CRITICAL_USD
+        """
+        all_schemas = self.get_tool_schemas(allowed)
+        filtered: list[dict] = []
+        removed: list[tuple[str, str]] = []
+
+        for schema in all_schemas:
+            name = schema.get("function", {}).get("name", "")
+
+            ok, reason = self._precondition_ok(name)
+            if not ok:
+                removed.append((name, f"precondition: {reason}"))
+                logger.debug("Tool %s filtered — %s", name, reason)
+                continue
+
+            if budget_remaining < self.BUDGET_CRITICAL_USD and name in self._BUDGET_EXPENSIVE:
+                removed.append((name, f"budget_critical (${budget_remaining:.2f} remaining)"))
+                logger.info("Tool %s filtered — budget critical (${%.2f})", name, budget_remaining)
+                continue
+
+            filtered.append(schema)
+
+        return filtered, removed
+
     def get_tool_info(self, tool_name: str) -> dict:
         """Get information about a tool."""
         if tool_name not in self.tools:

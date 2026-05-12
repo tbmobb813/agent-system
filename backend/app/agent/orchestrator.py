@@ -315,8 +315,6 @@ class AgentOrchestrator:
         self.active_tasks[task_id] = state
 
         try:
-            tool_schemas = self.tools.get_tool_schemas(tools)
-
             # ── Round 1: fully independent startup work in parallel ───────────
             # get_spent_month, get_or_create, and context retrieval have no
             # dependencies on each other — run them concurrently to minimize
@@ -346,6 +344,24 @@ class AgentOrchestrator:
                 _get_settings(),
                 get_tool_hint(query),
             )
+
+            # ── #5 Tool precondition + budget filtering ───────────────────────
+            # Runs after budget_remaining is known; sync checks only (no I/O).
+            tool_schemas, removed_tools = self.tools.get_available_tools_filtered(
+                tools, budget_remaining
+            )
+            for removed_name, removed_reason in removed_tools:
+                if "budget_critical" in removed_reason:
+                    yield ExecutionEvent(
+                        type=EventType.STATUS,
+                        content=f"budget low — {removed_name} disabled to conserve funds",
+                    )
+                elif tools and removed_name in tools:
+                    # Only warn if the user explicitly requested this tool
+                    yield ExecutionEvent(
+                        type=EventType.STATUS,
+                        content=f"{removed_name} unavailable — {removed_reason.replace('precondition: ', '')}",
+                    )
 
             # Background learning jobs — all throttled internally, never block.
             asyncio.create_task(skill_registry.update_skills())

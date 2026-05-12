@@ -48,11 +48,38 @@ def fiscal_context_section(
     budget_remaining: float,
     monthly_budget_usd: float,
 ) -> str:
-    """Budget nudge for cost-aware behavior."""
+    """Tiered budget guidance — escalates urgency as remaining budget drops."""
+    remaining = float(budget_remaining)
+    budget = float(monthly_budget_usd)
+    pct = (remaining / budget * 100) if budget else 100.0
+
+    if remaining < 1.0:
+        urgency = "CRITICAL — budget nearly depleted"
+        instruction = (
+            "Do NOT use browser automation or code execution. "
+            "Answer from your own knowledge wherever possible. "
+            "If a search is truly necessary, use web_search only once."
+        )
+    elif remaining < 3.0:
+        urgency = "WARNING — budget low"
+        instruction = (
+            "Avoid browser automation and code execution unless essential. "
+            "Prefer web_search over browser_automation. "
+            "Minimise the number of tool calls."
+        )
+    else:
+        urgency = ""
+        instruction = (
+            "Prefer cheaper approaches, fewer tool calls, and avoid unnecessary searches."
+        )
+
+    header = (
+        f"{urgency + '. ' if urgency else ''}"
+        f"Monthly budget: ${budget:.2f} — remaining: ${remaining:.2f} ({pct:.0f}%)."
+    )
     return (
-        "\n\n<fiscal_context>\n"
-        f"Monthly budget (USD): ${float(monthly_budget_usd):.2f}. "
-        f"Estimated remaining this month: ${float(budget_remaining):.2f}.\n"
-        "When remaining is low, prefer cheaper approaches, fewer API/tool calls, and avoid unnecessary searches.\n"
-        "</fiscal_context>"
+        f"\n\n<fiscal_context>\n"
+        f"{header}\n"
+        f"{instruction}\n"
+        f"</fiscal_context>"
     )
