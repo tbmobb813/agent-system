@@ -139,7 +139,7 @@ export function useAgentExecutorState() {
     const timer = setTimeout(async () => {
       try {
         const data = await getTaskSuggestions(tid)
-        if (!cancelled && data.ready && data.suggestions.length > 0) {
+        if (!cancelled && data.ready && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
           setSuggestions(data.suggestions)
         }
       } catch { /* non-critical */ }
