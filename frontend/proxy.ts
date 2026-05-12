@@ -56,6 +56,6 @@ export const config = {
   // Exclude: login page, auth API routes, and static assets.
   matcher: [
     '/api/backend/:path*',
-    '/((?!login|api/auth|_next/static|_next/image|favicon|logo|manifest|icons).*)',
+    '/((?!login|api/auth|_next/static|_next/image|favicon|logo|glyph|manifest|icons|assets).*)',
   ],
 }
