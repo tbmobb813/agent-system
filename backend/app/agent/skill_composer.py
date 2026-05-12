@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
 from app import database as _db
 from app.agent.skill_registry import classify_query
@@ -115,6 +115,41 @@ async def create_chain(
     )
     row = await _db.fetchrow("SELECT * FROM skill_chains WHERE id = $1", chain_id)
     return _row_to_chain(row)
+
+
+async def update_chain(
+    chain_id: str,
+    *,
+    steps: Optional[list[dict]] = None,
+    description: Optional[str] = None,
+    trigger_keywords: Optional[list[str]] = None,
+) -> Optional[dict]:
+    """Update mutable fields on an existing skill chain. Returns updated chain or None."""
+    sets: list[str] = ["updated_at = NOW()"]
+    params: list[Any] = []
+    idx = 1
+    if steps is not None:
+        sets.append(f"steps = ${idx}")
+        params.append(json.dumps(steps))
+        idx += 1
+    if description is not None:
+        sets.append(f"description = ${idx}")
+        params.append(description)
+        idx += 1
+    if trigger_keywords is not None:
+        sets.append(f"trigger_keywords = ${idx}")
+        params.append(json.dumps(trigger_keywords))
+        idx += 1
+    if len(sets) == 1:
+        row = await _db.fetchrow("SELECT * FROM skill_chains WHERE id = $1", chain_id)
+        return _row_to_chain(row) if row else None
+    params.append(chain_id)
+    await _db.execute(
+        f"UPDATE skill_chains SET {', '.join(sets)} WHERE id = ${idx}",
+        *params,
+    )
+    row = await _db.fetchrow("SELECT * FROM skill_chains WHERE id = $1", chain_id)
+    return _row_to_chain(row) if row else None
 
 
 async def delete_chain(chain_id: str) -> bool:

@@ -586,13 +586,12 @@ class AgentOrchestrator:
                     )
                     agent_model = upgraded
 
-            # System + history + new user message (with plan prepended if available)
-            messages = [
-                {
-                    "role": "system",
-                    "content": _compose_system_with_progress(system_base, state),
-                }
-            ]
+            # System message is FROZEN after this point — never mutated so the
+            # LLM prefix cache stays valid for the whole run.  Dynamic context
+            # (progress checkpoints, warnings) is collected in _dynamic_context
+            # and injected as an ephemeral trailing message before each LLM call.
+            messages = [{"role": "system", "content": system_base}]
+            _dynamic_context: list[str] = []  # warnings accumulate here
             messages.extend(history)
             user_content = (
                 f"[Plan]\n{plan_prefix}\n\n[Task]\n{query}" if plan_prefix else query
@@ -606,6 +605,23 @@ class AgentOrchestrator:
                 )
 
             yield ExecutionEvent(type=EventType.STATUS, content="thinking...")
+
+            def _llm_messages() -> list[dict]:
+                """
+                Build the message list for the next LLM call.
+                messages[0] (system) is never mutated — prefix cache stays valid.
+                Progress checkpoint and warnings are injected as an ephemeral
+                trailing user message that does NOT become part of the stored history.
+                """
+                progress = _format_progress_checkpoint(state)
+                parts = list(_dynamic_context)
+                if progress:
+                    parts.append(
+                        f"<progress_checkpoint>\n{progress}\n</progress_checkpoint>"
+                    )
+                if not parts:
+                    return messages
+                return messages + [{"role": "user", "content": "\n\n".join(parts)}]
 
             # ── #4 Tool quality tracking — consecutive low-score counter per tool ─
             _tool_low_quality_streak: dict[str, int] = {}
@@ -636,7 +652,7 @@ class AgentOrchestrator:
                         sampling = self.router.sampling_params_for_model(current_model)
                         create_kwargs: dict[str, Any] = {
                             "model": current_model,
-                            "messages": messages,
+                            "messages": _llm_messages(),
                             "stream": True,
                             "stream_options": {"include_usage": True},
                             "temperature": sampling["temperature"],
@@ -1184,19 +1200,14 @@ class AgentOrchestrator:
                 ]
                 if poor_tools:
                     tools_str = ", ".join(poor_tools)
-                    _replan_warning = (
-                        f"\n\n<tool_quality_warning>"
+                    _dynamic_context.append(
+                        f"<tool_quality_warning>"
                         f"The following tool(s) have returned low-quality results "
                         f"{_LOW_QUALITY_THRESHOLD} times in a row: {tools_str}. "
                         f"Consider switching to a different tool, rephrasing your query, "
                         f"or answering from your own knowledge if you have enough context."
                         f"</tool_quality_warning>"
                     )
-                    system_base += _replan_warning
-
-                messages[0]["content"] = _compose_system_with_progress(
-                    system_base, state
-                )
 
                 # ── #6 Goal-state alignment check every 3 tool rounds ────────
                 _GOAL_CHECK_INTERVAL = 3
@@ -1227,17 +1238,13 @@ class AgentOrchestrator:
                         )
                     )
                     if alignment < 0.30:
-                        warning = (
-                            f"\n\n<goal_alignment_warning>"
+                        _dynamic_context.append(
+                            f"<goal_alignment_warning>"
                             f"Goal alignment is LOW ({alignment:.0%}). "
                             f"Assessment: {assessment} "
                             f"Reconsider your approach — try a different tool, ask "
                             f"a clarifying question, or state clearly what is blocking you."
                             f"</goal_alignment_warning>"
-                        )
-                        system_base += warning
-                        messages[0]["content"] = _compose_system_with_progress(
-                            system_base, state
                         )
 
                 yield ExecutionEvent(

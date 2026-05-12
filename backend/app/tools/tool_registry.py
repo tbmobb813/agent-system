@@ -128,6 +128,18 @@ class ToolRegistry:
             required_args=["action"],
         )
 
+        # Skill management — agent-writable skill chains
+        self.register(
+            name="skill_manage",
+            func=self._skill_manage,
+            description=(
+                "Create, update, delete, list, or search your own skill chains. "
+                "After solving a novel or complex task, save the approach as a skill "
+                "so future similar tasks benefit from what you learned."
+            ),
+            required_args=["action"],
+        )
+
     @staticmethod
     def _json_schema_to_openai_params(schema: Any) -> dict:
         if not isinstance(schema, dict) or not schema:
@@ -723,6 +735,54 @@ class ToolRegistry:
                     },
                 },
             },
+            "skill_manage": {
+                "type": "function",
+                "function": {
+                    "name": "skill_manage",
+                    "description": (
+                        "Manage your skill chain library. Use 'create' after solving a novel task "
+                        "to save the approach for reuse. Use 'list' or 'search' to find existing "
+                        "chains. Use 'update' to refine steps. Use 'delete' to remove outdated chains."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "enum": ["create", "update", "delete", "list", "search"],
+                                "description": "Operation: create new chain, update existing, delete, list all, or search by task_type",
+                            },
+                            "name": {
+                                "type": "string",
+                                "description": "Unique chain name (required for create; snake_case recommended)",
+                            },
+                            "task_type": {
+                                "type": "string",
+                                "description": "Task category: coding, research, writing, analysis, data, planning, automation, general",
+                            },
+                            "steps": {
+                                "type": "array",
+                                "description": "Ordered tool steps. Each item: {tool: str, description: str, hint?: str}",
+                                "items": {"type": "object"},
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": "Human-readable summary of when to use this chain",
+                            },
+                            "trigger_keywords": {
+                                "type": "array",
+                                "description": "Extra keywords that activate this chain (beyond task_type matching)",
+                                "items": {"type": "string"},
+                            },
+                            "chain_id": {
+                                "type": "string",
+                                "description": "Chain UUID — required for update and delete",
+                            },
+                        },
+                        "required": ["action"],
+                    },
+                },
+            },
         }
 
         names = allowed if allowed is not None else list(self.tools.keys())
@@ -1267,3 +1327,99 @@ class ToolRegistry:
             username=username,
             limit=limit,
         )
+
+    async def _skill_manage(
+        self,
+        action: str,
+        name: str = "",
+        task_type: str = "general",
+        steps: Optional[list] = None,
+        description: str = "",
+        trigger_keywords: Optional[list] = None,
+        chain_id: str = "",
+    ) -> dict:
+        """Agent-callable skill chain management."""
+        from app.agent.skill_composer import (
+            list_chains,
+            create_chain,
+            update_chain,
+            delete_chain,
+            get_applicable_chain,
+        )
+
+        action = (action or "").strip().lower()
+
+        if action == "list":
+            chains = await list_chains()
+            if not chains:
+                return {"chains": [], "message": "No skill chains defined yet."}
+            summary = [
+                {
+                    "id": c["id"],
+                    "name": c["name"],
+                    "task_type": c["task_type"],
+                    "steps": [s.get("tool") for s in (c.get("steps") or [])],
+                    "success_rate": c["success_rate"],
+                    "total_runs": c["total_runs"],
+                }
+                for c in chains
+            ]
+            return {"chains": summary, "count": len(chains)}
+
+        if action == "search":
+            chain = await get_applicable_chain(task_type or name or "general")
+            if not chain:
+                return {"found": False, "message": f"No chain found for task_type='{task_type}'"}
+            return {"found": True, "chain": chain}
+
+        if action == "create":
+            if not name:
+                return {"error": "name is required for create"}
+            if not steps:
+                return {"error": "steps list is required for create"}
+            step_objs = []
+            for s in steps:
+                if isinstance(s, str):
+                    step_objs.append({"tool": s, "description": ""})
+                elif isinstance(s, dict):
+                    step_objs.append(s)
+            try:
+                chain = await create_chain(
+                    name=name.strip(),
+                    task_type=task_type or "general",
+                    steps=step_objs,
+                    description=description,
+                    trigger_keywords=trigger_keywords or [],
+                )
+                return {"created": True, "chain": chain, "message": f"Skill chain '{name}' saved."}
+            except Exception as e:
+                return {"error": str(e)}
+
+        if action == "update":
+            if not chain_id:
+                return {"error": "chain_id is required for update"}
+            step_objs = None
+            if steps is not None:
+                step_objs = [
+                    {"tool": s, "description": ""} if isinstance(s, str) else s
+                    for s in steps
+                ]
+            updated = await update_chain(
+                chain_id,
+                steps=step_objs,
+                description=description or None,
+                trigger_keywords=trigger_keywords,
+            )
+            if not updated:
+                return {"error": f"Chain {chain_id} not found"}
+            return {"updated": True, "chain": updated}
+
+        if action == "delete":
+            if not chain_id:
+                return {"error": "chain_id is required for delete"}
+            deleted = await delete_chain(chain_id)
+            if not deleted:
+                return {"error": f"Chain {chain_id} not found"}
+            return {"deleted": True, "chain_id": chain_id}
+
+        return {"error": f"Unknown action '{action}'. Use: create, update, delete, list, search"}

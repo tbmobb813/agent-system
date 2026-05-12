@@ -750,8 +750,13 @@ async def test_stream_plan_tool_then_final_updates_progress_checkpoint(monkeypat
     first_stream = completions[1]["messages"][0]["content"]
     assert "<plan_meta>" in first_stream
     assert "<fiscal_context>" in first_stream
-    second_stream_sys = completions[2]["messages"][0]["content"]
-    assert "<progress_checkpoint>" in second_stream_sys
+    # Progress checkpoint is now in an ephemeral trailing message, not messages[0],
+    # so the system message (prefix cache) stays frozen across iterations.
+    second_stream_msgs = completions[2]["messages"]
+    assert any(
+        "<progress_checkpoint>" in (m.get("content") or "")
+        for m in second_stream_msgs
+    )
 
 
 def test_parse_plan_llm_output_valid_json():
