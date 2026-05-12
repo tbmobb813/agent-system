@@ -97,6 +97,31 @@ async def _record_latency_metric(
         logger.debug(f"Could not persist latency metric: {e}")
 
 
+def _schedule_followup_suggestions(
+    *,
+    query: str,
+    result: str,
+    task_id: str | None,
+    user_id: str | None,
+) -> None:
+    """Fire-and-forget follow-up suggestion generation for completed tasks."""
+    if not task_id:
+        return
+    try:
+        from app.agent.followup import generate_followup_suggestions
+
+        asyncio.create_task(
+            generate_followup_suggestions(
+                task_id=task_id,
+                query=query,
+                result=result,
+                user_id=user_id,
+            )
+        )
+    except Exception as e:
+        logger.debug(f"Could not schedule followup suggestions: {e}")
+
+
 def _schedule_quality_scoring(
     *,
     query: str,
@@ -361,6 +386,12 @@ async def stream_agent(
                         user_id=user_id,
                         model_used=model_used,
                     )
+                    _schedule_followup_suggestions(
+                        query=body.query,
+                        result="".join(result_parts),
+                        task_id=task_id,
+                        user_id=user_id,
+                    )
                 yield format_sse_event(data)
 
             # Stream ended without DONE (stopped or interrupted) — update DB
@@ -500,6 +531,24 @@ async def stop_agent(
     if not success:
         raise HTTPException(status_code=404, detail=f"Task {task_id_str} not found")
     return {"status": "stopped", "task_id": task_id_str}
+
+
+@router.get("/suggestions/{task_id}")
+@limiter.limit("60/minute")
+async def get_task_suggestions(
+    request: Request,
+    task_id: str,
+    api_key: str = Depends(verify_api_key),
+):
+    """Retrieve follow-up suggestions for a completed task (generated asynchronously)."""
+    from app.database import fetchrow as db_fetchrow
+
+    row = await db_fetchrow(
+        "SELECT suggestions FROM task_suggestions WHERE task_id = $1", task_id
+    )
+    if not row:
+        return {"task_id": task_id, "suggestions": [], "ready": False}
+    return {"task_id": task_id, "suggestions": row["suggestions"], "ready": True}
 
 
 @router.get("/tools/health")

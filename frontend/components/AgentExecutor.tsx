@@ -131,7 +131,8 @@ export default function AgentExecutor() {
     modelsModalOpen, setModelsModalOpen, modelsModalState, opsModalOpen, setOpsModalOpen, opsPanel, opsModalState,
     quickActionsRef, quickActionsButtonRef,
     events, merged, isRunning, error, conversationId, run, stop, reset, newConversation,
-    latestRunCost, lastUserMessage, openOpsPanel, loadModelsForModal, skipReasoningModalSig
+    latestRunCost, lastUserMessage, openOpsPanel, loadModelsForModal, skipReasoningModalSig,
+    suggestions,
   } = useAgentExecutorState()
 
   type PendingAttachment = {
@@ -926,6 +927,37 @@ export default function AgentExecutor() {
               </div>
             </div>
           </form>
+          {!isRunning && suggestions.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', padding: '0.5rem 1rem 0.25rem', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted, #8899aa)', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
+                Follow up:
+              </span>
+              {suggestions.map((s, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => { setQuery(s); queryInputRef.current?.focus() }}
+                  style={{
+                    padding: '0.3rem 0.75rem',
+                    background: 'var(--surface)',
+                    border: '1px solid color-mix(in oklab, var(--accent), transparent 65%)',
+                    borderRadius: '999px',
+                    color: 'var(--accent)',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                    transition: 'background 0.15s',
+                    maxWidth: '320px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={s}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
           <p className="dr-chat-disclaimer">Agent can make mistakes. Verify important information.</p>
         </div>
       </div>

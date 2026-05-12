@@ -9,6 +9,7 @@ import {
   getHistory,
   getMcpServers,
   getSettings,
+  getTaskSuggestions,
   getTools,
   listConnectors,
   saveConnector,
@@ -121,6 +122,31 @@ export function useAgentExecutorState() {
 
   const completedRuns = useMemo(() => merged.filter(ev => ev.type === 'done').length, [merged])
   const dismissFeedbackNudge = useCallback(() => { lastFeedbackNudgeDismissedAt.current = completedRuns; setShowFeedbackNudge(false) }, [completedRuns])
+
+  // ── Follow-up suggestions (Feature #1) ──────────────────────────────────
+  const [suggestions, setSuggestions] = useState<string[]>([])
+
+  // Clear suggestions when a new run starts
+  useEffect(() => { if (isRunning) setSuggestions([]) }, [isRunning])
+
+  // After each completed run, wait briefly for the background generator then fetch
+  useEffect(() => {
+    if (completedRuns === 0) return
+    const doneEvent = [...merged].reverse().find(ev => ev.type === 'done')
+    const tid = doneEvent?.task_id
+    if (!tid) return
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      try {
+        const data = await getTaskSuggestions(tid)
+        if (!cancelled && data.ready && data.suggestions.length > 0) {
+          setSuggestions(data.suggestions)
+        }
+      } catch { /* non-critical */ }
+    }, 1800)
+    return () => { cancelled = true; clearTimeout(timer) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completedRuns])
 
   useEffect(() => {
     if (prevConversationId.current !== conversationId) {
@@ -263,6 +289,7 @@ export function useAgentExecutorState() {
     modelsModalOpen, setModelsModalOpen, modelsModalState, opsModalOpen, setOpsModalOpen, opsPanel, opsModalState,
     mcpDeleteBusyName, setMcpDeleteBusyName, quickActionsRef, quickActionsButtonRef,
     events, merged, isRunning, error, conversationId, run, reset, stop, newConversation,
-    latestRunCost, lastUserMessage, openOpsPanel, loadModelsForModal, skipReasoningModalSig
+    latestRunCost, lastUserMessage, openOpsPanel, loadModelsForModal, skipReasoningModalSig,
+    suggestions,
   }
 }

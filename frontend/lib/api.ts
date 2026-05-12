@@ -300,6 +300,12 @@ export async function getAgentModels() {
   return res.json()
 }
 
+export async function getTaskSuggestions(taskId: string): Promise<{ suggestions: string[]; ready: boolean }> {
+  const res = await fetchWithTimeout(`${API_URL}/agent/suggestions/${taskId}`, { headers: headers() }, 5000)
+  if (!res.ok) return { suggestions: [], ready: false }
+  return res.json()
+}
+
 export async function stopAgent(taskId: string) {
   const res = await fetchWithTimeout(`${API_URL}/agent/stop?task_id=${taskId}`, {
     method: 'POST',
