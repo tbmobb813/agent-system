@@ -1,42 +1,41 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-function unauthorizedResponse() {
-  return new NextResponse('Unauthorized', {
-    status: 401,
-    headers: { 'WWW-Authenticate': 'Basic realm="Agent System"' },
-  })
+const SESSION_COOKIE = 'agent-session'
+const SESSION_MESSAGE = 'authenticated'
+
+async function computeToken(secret: string): Promise<string> {
+  const enc = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  )
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(SESSION_MESSAGE))
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-function decodeBasicAuth(headerValue: string): { user: string; pass: string } | null {
-  if (!headerValue.startsWith('Basic ')) return null
-  const encoded = headerValue.slice(6).trim()
-  if (!encoded) return null
-  try {
-    const decoded = atob(encoded)
-    const sep = decoded.indexOf(':')
-    if (sep < 0) return null
-    return { user: decoded.slice(0, sep), pass: decoded.slice(sep + 1) }
-  } catch {
-    return null
-  }
-}
+export async function proxy(request: NextRequest) {
+  const requireAuth = (process.env.FRONTEND_REQUIRE_PROXY_AUTH || '').toLowerCase() === 'true'
+  const isBackendProxy = request.nextUrl.pathname.startsWith('/api/backend')
 
-export function proxy(request: NextRequest) {
-  const basicUser = (process.env.FRONTEND_BASIC_AUTH_USER || '').trim()
-  const basicPass = (process.env.FRONTEND_BASIC_AUTH_PASSWORD || '').trim()
-  const requireProxyAuth = (process.env.FRONTEND_REQUIRE_PROXY_AUTH || '').toLowerCase() === 'true'
-  const basicAuthConfigured = basicUser.length > 0 && basicPass.length > 0
-
-  if (requireProxyAuth || basicAuthConfigured) {
-    if (!basicAuthConfigured) {
-      return new NextResponse('Proxy auth is enabled but credentials are missing', { status: 500 })
+  if (requireAuth) {
+    const secret = (process.env.SESSION_SECRET || '').trim()
+    if (!secret) {
+      return new NextResponse('SESSION_SECRET is not set', { status: 500 })
     }
-    const parsed = decodeBasicAuth(request.headers.get('authorization') || '')
-    if (!parsed || parsed.user !== basicUser || parsed.pass !== basicPass) {
-      return unauthorizedResponse()
+    const expected = await computeToken(secret)
+    const cookie = request.cookies.get(SESSION_COOKIE)?.value ?? ''
+    if (cookie !== expected) {
+      if (isBackendProxy) {
+        return new NextResponse('Unauthorized', { status: 401 })
+      }
+      const loginUrl = new URL('/login', request.url)
+      loginUrl.searchParams.set('next', request.nextUrl.pathname)
+      return NextResponse.redirect(loginUrl)
     }
   }
+
+  // Only add the backend Authorization header for /api/backend/* requests
+  if (!isBackendProxy) return NextResponse.next()
 
   const apiKey = process.env.BACKEND_API_KEY || process.env.API_KEY
   if (!apiKey) {
@@ -53,5 +52,10 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: '/api/backend/:path*',
+  // Protect all pages and the backend proxy.
+  // Exclude: login page, auth API routes, and static assets.
+  matcher: [
+    '/api/backend/:path*',
+    '/((?!login|api/auth|_next/static|_next/image|favicon|logo|manifest|icons).*)',
+  ],
 }
