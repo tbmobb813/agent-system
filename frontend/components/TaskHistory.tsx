@@ -471,13 +471,13 @@ export default function TaskHistory() {
               <span className="dr-align-right">Cost</span>
             </div>
 
-            {data.tasks.length === 0 && (
+            {(Array.isArray(data.tasks) ? data.tasks : []).length === 0 && (
               <div className="dr-history-empty">
                 {activeSearch ? `No runs match "${activeSearch}".` : 'No runs yet.'}
               </div>
             )}
 
-            {(data.tasks as Task[] ?? []).map((task) => (
+            {(Array.isArray(data.tasks) ? data.tasks as Task[] : []).map((task) => (
               <div key={task.id}>
                 <div
                   role="button"
