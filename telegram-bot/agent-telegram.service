@@ -1,0 +1,16 @@
+[Unit]
+Description=Agent System Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/agent-system/telegram-bot
+EnvironmentFile=/root/agent-system/backend/.env
+Environment=BACKEND_API_URL=http://localhost:8000
+ExecStart=/root/agent-system/telegram-bot/venv/bin/python3 bot.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

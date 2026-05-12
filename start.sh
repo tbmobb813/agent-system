@@ -95,11 +95,33 @@ if [ ! -d "$BOT_VENV" ]; then
     "$BOT_VENV/bin/pip" install -q -r "$BOT/requirements-telegram.txt"
 fi
 
-(cd "$BOT" && venv/bin/python3 bot.py) \
-    > "$LOG_DIR/telegram.log" 2>&1 &
-BOT_PID=$!
-echo $BOT_PID > "$LOG_DIR/telegram.pid"
-log "Telegram bot started (pid $BOT_PID) — logs: logs/telegram.log"
+# Install systemd service for auto-start on reboot (requires root)
+SERVICE_SRC="$BOT/agent-telegram.service"
+SERVICE_DST="/etc/systemd/system/agent-telegram.service"
+if [ -f "$SERVICE_SRC" ] && command -v systemctl >/dev/null 2>&1; then
+    if ! systemctl is-enabled agent-telegram >/dev/null 2>&1; then
+        if [ "$(id -u)" -eq 0 ]; then
+            cp "$SERVICE_SRC" "$SERVICE_DST"
+            systemctl daemon-reload
+            systemctl enable agent-telegram >/dev/null 2>&1
+            log "Telegram bot registered as systemd service (agent-telegram)"
+        else
+            warn "Run as root to install the systemd service for auto-start on reboot"
+        fi
+    fi
+fi
+
+# Prefer systemd management when the service is installed; fall back to background process
+if systemctl is-enabled agent-telegram >/dev/null 2>&1; then
+    systemctl restart agent-telegram
+    log "Telegram bot started via systemd — logs: journalctl -u agent-telegram -f"
+else
+    (cd "$BOT" && venv/bin/python3 bot.py) \
+        > "$LOG_DIR/telegram.log" 2>&1 &
+    BOT_PID=$!
+    echo $BOT_PID > "$LOG_DIR/telegram.pid"
+    log "Telegram bot started (pid $BOT_PID) — logs: logs/telegram.log"
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
