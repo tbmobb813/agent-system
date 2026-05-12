@@ -206,8 +206,23 @@ class StdioMcpRunner:
     async def _worker(self) -> None:
         from mcp import ClientSession
         from mcp.client.stdio import StdioServerParameters, stdio_client
+        from pathlib import Path
 
         merged_env = dict(os.environ)
+        # Pydantic BaseSettings reads .env into settings objects but does not
+        # populate os.environ, so stdio subprocesses would miss those vars.
+        # Explicitly merge the .env file so MCP servers see all declared keys.
+        try:
+            from dotenv import dotenv_values
+            _env_file = Path(__file__).resolve().parents[3] / "backend" / ".env"
+            if not _env_file.is_file():
+                _env_file = Path(__file__).resolve().parents[2] / ".env"
+            if _env_file.is_file():
+                for k, v in dotenv_values(_env_file).items():
+                    if k not in merged_env and v is not None:
+                        merged_env[k] = v
+        except Exception:
+            pass
         if self.env:
             merged_env.update({k: str(v) for k, v in self.env.items()})
 
