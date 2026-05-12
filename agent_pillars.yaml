@@ -186,7 +186,12 @@ tools:
   
   mcp:
     enabled: true   # HTTP JSON-RPC (`url` + /rpc) and hub transports (sse, stdio) via ToolRegistry + McpConnectionHub
-    servers: []
+    servers:
+      - name: "brave_search"
+        transport: stdio
+        command: "npx"
+        args: ["-y", "@modelcontextprotocol/server-brave-search"]
+        # BRAVE_API_KEY is inherited from the process environment (set in .env)
     # Examples:
     # - name: "remote_http"
     #   transport: http_json   # default when omitted; requires MCP HTTP bridge at url + /rpc
