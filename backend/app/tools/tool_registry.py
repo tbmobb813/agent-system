@@ -73,7 +73,7 @@ class ToolRegistry:
         self.register(
             name="web_search",
             func=self._web_search,
-            description="Search the web for information. Returns top results with titles, URLs, and snippets.",
+            description="Search the web. Call multiple times with different queries for thorough research. Supports pagination via page=2/3.",
             required_args=["query"],
         )
 
@@ -480,7 +480,13 @@ class ToolRegistry:
                 "type": "function",
                 "function": {
                     "name": "web_search",
-                    "description": "Search the web for current information. Use this for facts, news, or anything requiring up-to-date data.",
+                    "description": (
+                        "Search the web for current information. "
+                        "For thorough research: call this 2-4 times with different query angles "
+                        "(e.g. broad overview first, then specific subtopics). "
+                        "Use page=2 or page=3 to get more results beyond the first batch. "
+                        "Use max_results=10 or higher for comprehensive coverage."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -490,8 +496,13 @@ class ToolRegistry:
                             },
                             "max_results": {
                                 "type": "integer",
-                                "description": "Number of results (default 5)",
-                                "default": 5,
+                                "description": "Number of results to return (default 10, max 20)",
+                                "default": 10,
+                            },
+                            "page": {
+                                "type": "integer",
+                                "description": "Result page number for pagination — use 2 or 3 to get additional results beyond the first batch (default 1)",
+                                "default": 1,
                             },
                         },
                         "required": ["query"],
@@ -896,22 +907,24 @@ class ToolRegistry:
     # Built-in Tool Implementations (Placeholders)
     # ========================================================================
 
-    async def _web_search(self, query: str, max_results: int = 5) -> dict:
+    async def _web_search(self, query: str, max_results: int = 10, page: int = 1) -> dict:
         """
         Search the web. Tries SearXNG first, falls back to Brave Search if unreachable.
         """
-        result = await self._searxng_search(query, max_results)
+        max_results = min(max(1, max_results), 20)  # clamp 1–20
+        page = max(1, page)
+        result = await self._searxng_search(query, max_results, page)
         if result.get("results"):
             return result
 
         logger.warning("SearXNG returned no results — trying Brave Search fallback")
-        return await self._brave_search(query, max_results)
+        return await self._brave_search(query, max_results, page)
 
-    async def _searxng_search(self, query: str, max_results: int = 5) -> dict:
+    async def _searxng_search(self, query: str, max_results: int = 10, page: int = 1) -> dict:
         """Search via SearXNG (primary)."""
-        logger.info(f"SearXNG search: {query}")
+        logger.info(f"SearXNG search: {query} (max={max_results}, page={page})")
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=20.0) as client:
                 resp = await client.get(
                     f"{settings.SEARXNG_URL}/search",
                     params={
@@ -919,6 +932,7 @@ class ToolRegistry:
                         "format": "json",
                         "categories": "general",
                         "language": "en",
+                        "pageno": page,
                     },
                     headers={"Accept": "application/json"},
                 )
@@ -939,6 +953,7 @@ class ToolRegistry:
                 "results": results,
                 "total": len(results),
                 "provider": "searxng",
+                "page": page,
             }
 
         except httpx.ConnectError:
@@ -948,7 +963,7 @@ class ToolRegistry:
             logger.error(f"SearXNG search failed: {e}")
             return {"query": query, "results": [], "error": str(e)}
 
-    async def _brave_search(self, query: str, max_results: int = 5) -> dict:
+    async def _brave_search(self, query: str, max_results: int = 10, page: int = 1) -> dict:
         """Search via Brave Search API (fallback)."""
         if not settings.BRAVE_SEARCH_API_KEY:
             logger.error(
@@ -960,12 +975,13 @@ class ToolRegistry:
                 "error": "no_search_provider_available",
             }
 
-        logger.info(f"Brave Search fallback: {query}")
+        offset = (page - 1) * max_results
+        logger.info(f"Brave Search: {query} (count={max_results}, offset={offset})")
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=20.0) as client:
                 resp = await client.get(
                     "https://api.search.brave.com/res/v1/web/search",
-                    params={"q": query, "count": max_results},
+                    params={"q": query, "count": max_results, "offset": offset},
                     headers={
                         "Accept": "application/json",
                         "Accept-Encoding": "gzip",
@@ -989,6 +1005,7 @@ class ToolRegistry:
                 "results": results,
                 "total": len(results),
                 "provider": "brave",
+                "page": page,
             }
 
         except Exception as e:

@@ -130,10 +130,10 @@ async def test_registry_call_raises_for_unknown_tool():
 async def test_web_search_uses_primary_when_results_available(monkeypatch):
     registry = ToolRegistry()
 
-    async def fake_primary(query, max_results=5):
+    async def fake_primary(query, max_results=10, page=1):
         return {"query": query, "results": [{"title": "x"}], "provider": "searxng"}
 
-    async def fake_fallback(query, max_results=5):
+    async def fake_fallback(query, max_results=10, page=1):
         return {"query": query, "results": [], "provider": "brave"}
 
     monkeypatch.setattr(registry, "_searxng_search", fake_primary)
@@ -148,10 +148,10 @@ async def test_web_search_uses_primary_when_results_available(monkeypatch):
 async def test_web_search_falls_back_when_primary_empty(monkeypatch):
     registry = ToolRegistry()
 
-    async def fake_primary(query, max_results=5):
+    async def fake_primary(query, max_results=10, page=1):
         return {"query": query, "results": []}
 
-    async def fake_fallback(query, max_results=5):
+    async def fake_fallback(query, max_results=10, page=1):
         return {"query": query, "results": [{"title": "fallback"}], "provider": "brave"}
 
     monkeypatch.setattr(registry, "_searxng_search", fake_primary)
