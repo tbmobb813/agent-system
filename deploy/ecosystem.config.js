@@ -38,7 +38,7 @@ module.exports = {
       name: 'agent-frontend',
       cwd: path.join(ROOT, 'frontend'),
       // standalone build output — faster startup than `next start`
-      script: '.next/standalone/server.js',
+      script: '.next/standalone/frontend/server.js',
       interpreter: 'node',
       env_file: path.join(ROOT, 'frontend/.env.local'),
       env: {
