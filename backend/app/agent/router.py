@@ -152,27 +152,16 @@ class ModelRouter:
         q = query.lower().strip()
 
         # Very short / conversational
-        conversational = [
-            "hi",
-            "hello",
-            "hey",
-            "good morning",
-            "good afternoon",
-            "good evening",
-            "how are you",
-            "what's up",
-            "thanks",
-            "thank you",
-            "ok",
-            "okay",
-            "sure",
-            "yes",
-            "no",
+        conversational_starts = [
+            "hi", "hello", "hey", "good morning", "good afternoon", "good evening",
+            "how are you", "what's up", "thanks", "thank you", "ok", "okay",
+            "sure", "yes", "no", "nice", "great", "awesome", "cool", "lol",
+            "are you", "can you help", "do you know",
         ]
-        if any(q.startswith(w) for w in conversational) or len(q.split()) <= 4:
+        if any(q.startswith(w) for w in conversational_starts) or len(q.split()) <= 3:
             return "conversational"
 
-        # Premium — explicit quality signals or long-form serious work
+        # Premium — explicit quality request or high-stakes long-form work
         premium_keywords = [
             "best possible",
             "use your best",
@@ -180,22 +169,100 @@ class ModelRouter:
             "use sonnet",
             "most thorough",
             "spare no detail",
-            "write a full",
             "write a complete",
             "professional report",
+            "comprehensive report",
+            "detailed report",
+            "full report",
+            "thorough analysis",
+            "full analysis",
+            "in-depth analysis",
+            "complete guide",
+            "in-depth guide",
             "cover letter",
             "business plan",
-            "legal",
-            "medical",
+            "executive summary",
+            "white paper",
+            "literature review",
         ]
         if any(kw in q for kw in premium_keywords):
             return "premium"
 
-        # Research / long-context (Gemini Flash excels here)
+        # Coding — specific programming signals (avoid broad words like "write", "test", "fix")
+        coding_keywords = [
+            "code",
+            "coding",
+            "codebase",
+            "implement",
+            "function",
+            "debug",
+            "class",
+            "method",
+            "algorithm",
+            "python",
+            "javascript",
+            "typescript",
+            "java ",
+            "rust",
+            "golang",
+            "c++",
+            "c#",
+            " sql ",
+            "bash script",
+            "shell script",
+            "write a script",
+            "write code",
+            "write a function",
+            "write a class",
+            "write a program",
+            "program",
+            "refactor",
+            "syntax error",
+            "traceback",
+            "stack trace",
+            "exception",
+            "dockerfile",
+            "kubernetes",
+            "k8s",
+            "regex",
+            "api endpoint",
+            "rest api",
+            "graphql",
+            "unit test",
+            "integration test",
+            "npm",
+            "pip install",
+            "import ",
+            "package",
+            "repository",
+            "pull request",
+            "git commit",
+            "compile",
+            "linter",
+            "type error",
+            "null pointer",
+            "segfault",
+        ]
+        if any(kw in q for kw in coding_keywords):
+            return "coding"
+
+        # Research / long-context — broad coverage of information-gathering queries
         research_keywords = [
             "research",
-            "summarize this",
-            "summarise this",
+            "latest",
+            "recent",
+            "current",
+            "news about",
+            "what's happening",
+            "what is happening",
+            "tell me about",
+            "information about",
+            "information on",
+            "facts about",
+            "history of",
+            "overview of",
+            "summarize",
+            "summarise",
             "read this",
             "review this document",
             "long article",
@@ -204,79 +271,80 @@ class ModelRouter:
             "deep dive",
             "comprehensive overview",
             "market research",
+            "explain how",
+            "how does",
+            "how do",
+            "what are the",
+            "who are the",
+            "search for",
+            "look up",
+            "find out",
+            "investigate",
+            "explore",
+            "trends in",
+            "state of",
+            "landscape of",
+            "developments in",
+            "advances in",
+            "updates on",
         ]
         if any(kw in q for kw in research_keywords):
             return "research"
 
-        # Coding
-        coding_keywords = [
-            "code",
-            "write",
-            "implement",
-            "function",
-            "debug",
-            "fix",
-            "class",
-            "method",
-            "algorithm",
-            "python",
-            "javascript",
-            "typescript",
-            "java",
-            "rust",
-            "golang",
-            "sql",
-            "script",
-            "program",
-            "refactor",
-            "bug",
-            "error",
-            "exception",
-            "dockerfile",
-            "regex",
-            "api",
-            "endpoint",
-            "test",
-        ]
-        if any(kw in q for kw in coding_keywords):
-            return "coding"
-
-        # Complex reasoning
+        # Complex reasoning — multi-step thinking, evaluation, structured output
         complex_keywords = [
             "analyze",
             "analyse",
             "compare",
             "evaluate",
             "strategy",
+            "strategic",
             "explain in detail",
             "pros and cons",
             "trade-off",
-            "architecture",
-            "design",
+            "tradeoff",
+            "system design",
+            "architecture design",
+            "design a system",
             "step by step",
-            "breakdown",
+            "recommend",
+            "decision",
+            "framework",
+            "roadmap",
             "essay",
-            "report",
-            "plan",
+            "detailed plan",
+            "make a plan",
+            "write a plan",
+            "weigh",
+            "assess",
+            "critique",
+            "structured",
+            "technical design",
         ]
         if any(kw in q for kw in complex_keywords):
             return "complex"
 
         # Simple lookup / facts
         simple_keywords = [
-            "what is",
             "who is",
             "when did",
             "where is",
-            "define",
+            "define ",
             "meaning of",
             "capital of",
             "how many",
             "what does",
-            "convert",
+            "convert ",
             "translate",
-            "spell",
+            "spell ",
             "calculate",
+            "what year",
+            "what time",
+            "how far",
+            "how long",
+            "how much does",
+            "what is the price",
+            "what is the cost",
         ]
         if any(kw in q for kw in simple_keywords):
             return "simple"
@@ -360,15 +428,17 @@ class ModelRouter:
             return self.select_model(query, budget_remaining=budget_remaining)
 
         # Tool run: classify by complexity, then ensure the chosen tier is tool-safe.
+        # Note: balanced/simple/conversational use agent (Haiku) not DeepSeek —
+        # DeepSeek function calling is inconsistent; reliability > cost for tool runs.
         query_type = self._classify(query)
         tier_map = {
-            "conversational": "agent",  # simple chit-chat still needs tools → agent floor
-            "simple": "agent",  # same
-            "balanced": "balanced",
-            "coding": "coding",
-            "research": "research",
-            "complex": "advanced",
-            "premium": "premium",
+            "conversational": "agent",
+            "simple": "agent",
+            "balanced": "agent",   # agent floor — DeepSeek tool calling is unreliable
+            "coding": "coding",    # DeepSeek excels at code generation + tool use
+            "research": "research",  # Gemini Flash — long context + tool use
+            "complex": "advanced",   # Haiku — reliable reasoning + tool use
+            "premium": "premium",    # Sonnet 4 — best quality
         }
         tier = tier_map.get(query_type, "agent")
 
