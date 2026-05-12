@@ -508,6 +508,7 @@ class AgentOrchestrator:
                 persona_prompt,
                 budget_remaining=budget_remaining,
                 monthly_budget_usd=float(settings.OPENROUTER_BUDGET_MONTHLY),
+                tool_names=self.tools.list_tools(),
             )
 
             # ── Plan-then-execute for qualifying multi-step queries ───

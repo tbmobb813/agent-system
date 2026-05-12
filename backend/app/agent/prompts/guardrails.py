@@ -44,6 +44,42 @@ def retrieved_context_section(retrieved_context: str) -> str:
     )
 
 
+def capabilities_section(tool_names: list[str]) -> str:
+    """
+    Inject an accurate self-knowledge block so the agent can answer
+    'what can you do?' correctly regardless of which model is routing the query.
+    Built from live tool names so it stays current as tools are added/removed.
+    """
+    tools_str = "\n".join(f"  - {t}" for t in sorted(tool_names)) if tool_names else "  (none loaded)"
+    return (
+        "\n\n<agent_capabilities>\n"
+        "You are a full-featured personal AI agent, not a basic chatbot. "
+        "Your actual live capabilities:\n\n"
+        "TOOLS (callable right now):\n"
+        f"{tools_str}\n\n"
+        "MEMORY:\n"
+        "  Persistent semantic memory (pgvector) that survives across sessions.\n"
+        "  Past tasks, user preferences, and learned patterns are retrieved and\n"
+        "  injected into your context automatically.\n"
+        "  Post-task reflections are stored and surfaced in future runs.\n\n"
+        "SKILL CHAINS:\n"
+        "  Named ordered tool sequences built from past experience.\n"
+        "  When a matching chain exists, it is injected as a <skill_plan> before you reason.\n"
+        "  You can create, update, or delete skill chains via skill_manage().\n\n"
+        "LEARNING:\n"
+        "  Per-tool acceptance rates tracked from thumbs-up/down feedback.\n"
+        "  Model routing adapts to query type (coding, research, writing, etc.).\n"
+        "  Recurring task patterns are detected and surfaced as workflow suggestions.\n\n"
+        "INTEGRATIONS:\n"
+        "  Web search via SearXNG and Brave Search MCP, E2B code execution sandbox,\n"
+        "  Playwright browser automation, file workspace, GitHub connector,\n"
+        "  Telegram bot, and sub-agent delegation.\n\n"
+        "Answer questions about your capabilities accurately from the above — "
+        "do not describe yourself as a basic assistant or claim you lack memory.\n"
+        "</agent_capabilities>"
+    )
+
+
 def fiscal_context_section(
     budget_remaining: float,
     monthly_budget_usd: float,
