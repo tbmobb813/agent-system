@@ -94,7 +94,7 @@ class Settings(BaseSettings):
     # Premium — best quality, used only for explicit high-effort requests
     DEFAULT_MODEL_PREMIUM: str = Field(default="anthropic/claude-sonnet-4")
     # Research — long context, detailed analysis (Gemini Flash is very cheap)
-    DEFAULT_MODEL_RESEARCH: str = Field(default="google/gemini-2.5-flash-preview-04-17")
+    DEFAULT_MODEL_RESEARCH: str = Field(default="google/gemini-2.5-flash")
     # Agent — must reliably support function calling; Haiku is the sweet spot
     DEFAULT_MODEL_AGENT: str = Field(default="anthropic/claude-3.5-haiku")
 
@@ -144,7 +144,6 @@ class CostTracker:
         # ── Mid tier ──────────────────────────────────────────────────────────
         # Gemini Flash — best for long context and research
         "google/gemini-2.5-flash": {"input": 0.075, "output": 0.30},
-        "google/gemini-2.5-flash-preview-04-17": {"input": 0.075, "output": 0.30},
         # Claude Haiku — reliable tool use, quality responses
         "anthropic/claude-3.5-haiku": {"input": 1.00, "output": 5.00},
         # ── Premium tier ──────────────────────────────────────────────────────
