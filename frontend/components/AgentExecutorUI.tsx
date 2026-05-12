@@ -19,7 +19,7 @@ import {
   IconPlug,
 } from './Icons'
 
-export type OpsPanel = 'tools' | 'skills' | 'mcp' | 'stats' | 'history' | 'connectors' | 'workflows'
+export type OpsPanel = 'tools' | 'skills' | 'mcp' | 'stats' | 'history' | 'connectors' | 'workflows' | 'skill_chains'
 
 export function ContextMetricsCompact({ events }: { events: StreamEvent[] }) {
   const ctx = useMemo(() => {
@@ -119,7 +119,8 @@ export function QuickActionsMenu({
         { id: 'skills', icon: <IconZap />, label: 'Skills analytics', action: () => onOpenOps('skills') },
         { id: 'mcp', icon: <IconServer />, label: 'MCP servers', action: () => onOpenOps('mcp') },
         { id: 'connectors', icon: <IconPlug />, label: 'Connectors', action: () => onOpenOps('connectors') },
-        { id: 'workflows', icon: <IconHistory />, label: 'Workflow suggestions', action: () => onOpenOps('workflows') }
+        { id: 'workflows', icon: <IconHistory />, label: 'Workflow suggestions', action: () => onOpenOps('workflows') },
+        { id: 'skill_chains', icon: <IconZap />, label: 'Skill chains', action: () => onOpenOps('skill_chains') }
       ]
     },
     {

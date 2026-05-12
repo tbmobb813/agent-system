@@ -1007,6 +1007,75 @@ async def get_workflow_suggestions(
     return {"suggestions": await _get_suggestions(min_occurrences=min_occurrences)}
 
 
+@router.get("/skill-chains")
+@limiter.limit("60/minute")
+async def list_skill_chains(
+    request: Request,
+    api_key: str = Depends(verify_api_key),
+):
+    """List all defined skill chains."""
+    from app.agent.skill_composer import list_chains
+    return {"chains": await list_chains()}
+
+
+@router.post("/skill-chains")
+@limiter.limit("30/minute")
+async def create_skill_chain(
+    request: Request,
+    api_key: str = Depends(verify_api_key),
+):
+    """Create a new skill chain."""
+    from app.agent.skill_composer import create_chain
+    body = await request.json()
+    name = str(body.get("name") or "").strip()
+    task_type = str(body.get("task_type") or "general").strip()
+    steps = body.get("steps") or []
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if not isinstance(steps, list) or not steps:
+        raise HTTPException(status_code=400, detail="steps must be a non-empty list")
+    try:
+        chain = await create_chain(
+            name=name,
+            task_type=task_type,
+            steps=steps,
+            description=str(body.get("description") or ""),
+            trigger_keywords=body.get("trigger_keywords") or [],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return chain
+
+
+@router.delete("/skill-chains/{chain_id}")
+@limiter.limit("30/minute")
+async def delete_skill_chain(
+    request: Request,
+    chain_id: str,
+    api_key: str = Depends(verify_api_key),
+):
+    """Delete a skill chain by ID."""
+    from app.agent.skill_composer import delete_chain
+    deleted = await delete_chain(chain_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Skill chain not found")
+    return {"deleted": chain_id}
+
+
+@router.post("/skill-chains/auto-generate")
+@limiter.limit("10/minute")
+async def auto_generate_skill_chains(
+    request: Request,
+    api_key: str = Depends(verify_api_key),
+):
+    """Promote top tool_recommendations into skill chains automatically."""
+    from app.agent.skill_composer import auto_generate_chains
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    min_occ = int((body or {}).get("min_occurrences") or 5)
+    created = await auto_generate_chains(min_occurrences=min_occ)
+    return {"created": created, "count": len(created)}
+
+
 @router.post("/workflows/{name}/run")
 @limiter.limit("10/minute")
 async def run_declared_workflow(

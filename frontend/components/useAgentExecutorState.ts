@@ -9,6 +9,7 @@ import {
   getHistory,
   getMcpServers,
   getSettings,
+  getSkillChains,
   getTaskSuggestions,
   getTools,
   getWorkflowSuggestions,
@@ -33,6 +34,7 @@ const INITIAL_OPS_MODAL_STATE: OpsModalState = {
   history: 'loading',
   connectors: 'loading',
   workflows: 'loading',
+  skill_chains: 'loading',
 }
 
 function errMessage(e: unknown): string {
@@ -286,6 +288,15 @@ export function useAgentExecutorState() {
           }))
         })
         .catch((e: unknown) => setOpsModalState((prev) => ({ ...prev, workflows: { err: errMessage(e) } })))
+    } else if (panel === 'skill_chains') {
+      getSkillChains()
+        .then((d) => {
+          setOpsModalState((prev) => ({
+            ...prev,
+            skill_chains: { ok: { chains: Array.isArray(d.chains) ? d.chains : [] } },
+          }))
+        })
+        .catch((e: unknown) => setOpsModalState((prev) => ({ ...prev, skill_chains: { err: errMessage(e) } })))
     }
   }, [])
 

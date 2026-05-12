@@ -12,7 +12,11 @@ import {
   upsertAnalyticsSkill,
   saveConnector,
   testConnector,
+  createSkillChain,
+  deleteSkillChain,
+  autoGenerateSkillChains,
   type ConnectorStatus,
+  type SkillChain,
 } from '@/lib/api'
 import {
   EventLine,
@@ -151,6 +155,7 @@ export default function AgentExecutor() {
   const [opsNotice, setOpsNotice] = useState<string | null>(null)
   const [mcpForm, setMcpForm] = useState({ name: '', transport: 'http_json', url: '', command: '', args: '' })
   const [skillForm, setSkillForm] = useState({ task_type: '', skill_name: '', required_tools: '' })
+  const [chainForm, setChainForm] = useState({ name: '', task_type: 'research', description: '', steps: '' })
 
   const suggestionRows = useMemo(
     () => buildSuggestionRows(query, queryCursor, suggestDismissed, toolNames),
@@ -399,6 +404,54 @@ export default function AgentExecutor() {
       openOpsPanel('skills')
     } catch (err) {
       setOpsNotice(err instanceof Error ? err.message : 'Could not delete skill')
+    } finally {
+      setOpsBusy(null)
+    }
+  }, [openOpsPanel])
+
+  const createChain = useCallback(async () => {
+    if (!chainForm.name.trim() || !chainForm.steps.trim()) {
+      setOpsNotice('Name and at least one step (tool name) are required')
+      return
+    }
+    setOpsBusy('chain:add')
+    setOpsNotice(null)
+    try {
+      const steps = chainForm.steps.split(',').map(s => s.trim()).filter(Boolean).map(tool => ({ tool, description: '' }))
+      await createSkillChain({ name: chainForm.name.trim(), task_type: chainForm.task_type, steps, description: chainForm.description.trim() })
+      setChainForm({ name: '', task_type: 'research', description: '', steps: '' })
+      setOpsNotice('Skill chain created')
+      openOpsPanel('skill_chains')
+    } catch (err) {
+      setOpsNotice(err instanceof Error ? err.message : 'Could not create chain')
+    } finally {
+      setOpsBusy(null)
+    }
+  }, [chainForm, openOpsPanel])
+
+  const removeChain = useCallback(async (chainId: string) => {
+    setOpsBusy(`chain:del:${chainId}`)
+    setOpsNotice(null)
+    try {
+      await deleteSkillChain(chainId)
+      setOpsNotice('Chain deleted')
+      openOpsPanel('skill_chains')
+    } catch (err) {
+      setOpsNotice(err instanceof Error ? err.message : 'Could not delete chain')
+    } finally {
+      setOpsBusy(null)
+    }
+  }, [openOpsPanel])
+
+  const autoGenerateChains = useCallback(async () => {
+    setOpsBusy('chain:auto')
+    setOpsNotice(null)
+    try {
+      const result = await autoGenerateSkillChains()
+      setOpsNotice(result.count > 0 ? `Generated ${result.count} chain${result.count !== 1 ? 's' : ''}` : 'No new patterns to promote yet')
+      openOpsPanel('skill_chains')
+    } catch (err) {
+      setOpsNotice(err instanceof Error ? err.message : 'Auto-generate failed')
     } finally {
       setOpsBusy(null)
     }
@@ -744,6 +797,56 @@ export default function AgentExecutor() {
       )
     }
 
+    if (opsPanel === 'skill_chains') {
+      const chains = Array.isArray(data.chains) ? data.chains as SkillChain[] : []
+      const TASK_TYPES = ['research', 'coding', 'writing', 'analysis', 'data', 'planning', 'automation', 'general']
+      return (
+        <div className="space-y-3">
+          <div className="panel panel-soft p-3 rounded-lg space-y-2">
+            <p className="text-xs uppercase tracking-[0.14em] text-muted">Define a skill chain</p>
+            <div className="grid sm:grid-cols-2 gap-2">
+              <input value={chainForm.name} onChange={e => setChainForm(p => ({ ...p, name: e.target.value }))} placeholder="chain name (e.g. web_research)" className="dr-agent-model-select h-9" />
+              <select aria-label="Task type" value={chainForm.task_type} onChange={e => setChainForm(p => ({ ...p, task_type: e.target.value }))} className="dr-agent-model-select h-9">
+                {TASK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <input value={chainForm.steps} onChange={e => setChainForm(p => ({ ...p, steps: e.target.value }))} placeholder="tools comma-separated (e.g. mcp_brave_search_brave_web_search,file_operations)" className="dr-agent-model-select h-9 w-full" />
+            <input value={chainForm.description} onChange={e => setChainForm(p => ({ ...p, description: e.target.value }))} placeholder="description (optional)" className="dr-agent-model-select h-9 w-full" />
+            <div className="flex gap-2 flex-wrap">
+              <button type="button" onClick={() => void createChain()} disabled={opsBusy === 'chain:add'} className="dr-btn-accent px-3 py-1.5 rounded text-xs disabled:opacity-50">{opsBusy === 'chain:add' ? 'Creating…' : 'Create Chain'}</button>
+              <button type="button" onClick={() => void autoGenerateChains()} disabled={opsBusy === 'chain:auto'} className="dr-btn-ghost px-3 py-1.5 rounded text-xs disabled:opacity-50">{opsBusy === 'chain:auto' ? 'Generating…' : 'Auto-generate from patterns'}</button>
+            </div>
+          </div>
+          {chains.length === 0 ? <p className="text-sm text-muted">No skill chains yet. Create one above or auto-generate from your task history.</p> : null}
+          {chains.map((chain) => (
+            <div key={chain.id} className="panel panel-soft p-3 rounded-lg space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{chain.name}</p>
+                  <p className="text-xs text-muted mt-0.5">
+                    {chain.task_type}
+                    {chain.success_rate != null ? ` · ${Math.round(chain.success_rate * 100)}% success` : ''}
+                    {chain.total_runs > 0 ? ` · ${chain.total_runs} run${chain.total_runs !== 1 ? 's' : ''}` : ''}
+                  </p>
+                  {chain.description ? <p className="text-xs text-muted mt-0.5 italic">{chain.description}</p> : null}
+                </div>
+                <button type="button" onClick={() => void removeChain(chain.id)} disabled={opsBusy === `chain:del:${chain.id}`} className="dr-btn-ghost px-2 py-0.5 rounded text-[10px] text-[color:var(--danger)] disabled:opacity-50 shrink-0">Delete</button>
+              </div>
+              <ol className="space-y-1">
+                {chain.steps.map((step, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs">
+                    <span className="text-muted shrink-0 w-4 text-right">{i + 1}.</span>
+                    <span className="font-mono bg-[color:var(--surface-soft)] px-1.5 py-0.5 rounded shrink-0">{step.tool}</span>
+                    {step.description ? <span className="text-muted">{step.description}</span> : null}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
+        </div>
+      )
+    }
+
     return (
       <div className="panel panel-soft p-3 rounded-lg text-xs font-mono overflow-x-auto">
         {JSON.stringify(data, null, 2)}
@@ -751,12 +854,16 @@ export default function AgentExecutor() {
     )
   }, [
     addSkill,
+    autoGenerateChains,
+    chainForm,
+    createChain,
     createMcpServer,
     mcpForm,
     opsBusy,
     opsModalState,
     opsPanel,
     openOpsPanel,
+    removeChain,
     removeMcpServer,
     removeSkill,
     setOpsNotice,

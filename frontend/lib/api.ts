@@ -300,6 +300,63 @@ export async function getAgentModels() {
   return res.json()
 }
 
+export interface SkillChainStep {
+  tool: string
+  description: string
+  hint?: string
+}
+
+export interface SkillChain {
+  id: string
+  name: string
+  description: string
+  task_type: string
+  steps: SkillChainStep[]
+  trigger_keywords: string[]
+  success_rate: number | null
+  total_runs: number
+  created_at: string | null
+  updated_at: string | null
+}
+
+export async function getSkillChains(): Promise<{ chains: SkillChain[] }> {
+  const res = await fetchWithTimeout(`${API_URL}/agent/skill-chains`, { headers: headers() })
+  if (!res.ok) return { chains: [] }
+  return res.json()
+}
+
+export async function createSkillChain(data: {
+  name: string
+  task_type: string
+  steps: SkillChainStep[]
+  description?: string
+  trigger_keywords?: string[]
+}): Promise<SkillChain> {
+  const res = await fetchWithTimeout(`${API_URL}/agent/skill-chains`, {
+    method: 'POST', headers: headers(), body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed (${res.status})` }))
+    throw new Error(String((err as Record<string, unknown>).detail ?? `Failed (${res.status})`))
+  }
+  return res.json()
+}
+
+export async function deleteSkillChain(chainId: string): Promise<void> {
+  const res = await fetchWithTimeout(`${API_URL}/agent/skill-chains/${chainId}`, {
+    method: 'DELETE', headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Failed to delete skill chain (${res.status})`)
+}
+
+export async function autoGenerateSkillChains(minOccurrences = 5): Promise<{ created: SkillChain[]; count: number }> {
+  const res = await fetchWithTimeout(`${API_URL}/agent/skill-chains/auto-generate`, {
+    method: 'POST', headers: headers(), body: JSON.stringify({ min_occurrences: minOccurrences }),
+  })
+  if (!res.ok) return { created: [], count: 0 }
+  return res.json()
+}
+
 export async function getWorkflowSuggestions(minOccurrences = 3): Promise<{
   suggestions: Array<{
     task_type: string

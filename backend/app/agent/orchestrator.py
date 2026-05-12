@@ -38,6 +38,7 @@ from app.agent.tool_learning import get_tool_hint, learn_tool_chains
 from app.agent.cost_learning import refresh_efficiency_cache
 from app.agent.prompts.system_prompt import PROMPT_VERSION, build_system_prompt
 from app.agent import tool_preferences as _tool_prefs
+from app.agent import skill_composer as _skill_composer
 
 
 def _score_tool_result(name: str, result: str, err: Optional[str]) -> float:
@@ -364,6 +365,7 @@ class AgentOrchestrator:
                 user_settings,
                 tool_hint,
                 tool_bias_hint,
+                active_skill_chain,
             ) = await asyncio.gather(
                 _get_budget(),
                 conversation_manager.get_or_create(conversation_id, user_id=user_id),
@@ -371,6 +373,7 @@ class AgentOrchestrator:
                 _get_settings(),
                 get_tool_hint(query),
                 _get_bias_hint(),
+                _skill_composer.get_applicable_chain(query),
             )
 
             # ── #5 Tool precondition + budget filtering ───────────────────────
@@ -491,6 +494,14 @@ class AgentOrchestrator:
                 combined_context = (combined_context + "\n\n" + tool_hint).strip()
             if tool_bias_hint:
                 combined_context = (combined_context + "\n\n" + tool_bias_hint).strip()
+            if active_skill_chain:
+                chain_hint = _skill_composer.format_chain_hint(active_skill_chain)
+                if chain_hint:
+                    combined_context = (combined_context + "\n\n" + chain_hint).strip()
+                    yield ExecutionEvent(
+                        type=EventType.STATUS,
+                        content=f"applying skill plan: {active_skill_chain['name']}",
+                    )
             system_base = build_system_prompt(
                 retrieved_context,
                 combined_context or None,
@@ -1005,6 +1016,12 @@ class AgentOrchestrator:
                     asyncio.create_task(
                         decision_tracker.mark_outcome(task_id, "success")
                     )
+                    if active_skill_chain:
+                        asyncio.create_task(
+                            _skill_composer.record_chain_outcome(
+                                active_skill_chain["id"], success=True
+                            )
+                        )
 
                     break  # Done
 
@@ -1256,6 +1273,12 @@ class AgentOrchestrator:
             state.errors.append(str(e))
             logger.error(f"Agent execution failed: {e}", exc_info=True)
             asyncio.create_task(decision_tracker.mark_outcome(task_id, "failure"))
+            if active_skill_chain:
+                asyncio.create_task(
+                    _skill_composer.record_chain_outcome(
+                        active_skill_chain["id"], success=False
+                    )
+                )
             yield ExecutionEvent(type=EventType.ERROR, error=f"Execution failed: {e}")
 
         finally:
