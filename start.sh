@@ -43,12 +43,34 @@ if [ ! -d "$BACKEND/.venv" ]; then
     "$BACKEND/.venv/bin/pip" install -q -r "$BACKEND/requirements.txt"
 fi
 
-(cd "$BACKEND" && .venv/bin/uvicorn app.main:app \
-    --host 0.0.0.0 --port 8000 --reload) \
-    > "$LOG_DIR/backend.log" 2>&1 &
-BACKEND_PID=$!
-echo $BACKEND_PID > "$LOG_DIR/backend.pid"
-log "Backend started (pid $BACKEND_PID) — logs: logs/backend.log"
+# Install systemd service for auto-start on reboot (requires root)
+SERVICE_SRC="$BACKEND/agent-backend.service"
+SERVICE_DST="/etc/systemd/system/agent-backend.service"
+if [ -f "$SERVICE_SRC" ] && command -v systemctl >/dev/null 2>&1; then
+    if ! systemctl is-enabled agent-backend >/dev/null 2>&1; then
+        if [ "$(id -u)" -eq 0 ]; then
+            cp "$SERVICE_SRC" "$SERVICE_DST"
+            systemctl daemon-reload
+            systemctl enable agent-backend >/dev/null 2>&1
+            log "Backend registered as systemd service (agent-backend)"
+        else
+            warn "Run as root to install the systemd service for auto-start on reboot"
+        fi
+    fi
+fi
+
+# Prefer systemd management when the service is installed; fall back to background process
+if systemctl is-enabled agent-backend >/dev/null 2>&1; then
+    systemctl restart agent-backend
+    log "Backend started via systemd — logs: journalctl -u agent-backend -f"
+else
+    (cd "$BACKEND" && .venv/bin/uvicorn app.main:app \
+        --host 127.0.0.1 --port 8000 --workers 2) \
+        > "$LOG_DIR/backend.log" 2>&1 &
+    BACKEND_PID=$!
+    echo $BACKEND_PID > "$LOG_DIR/backend.pid"
+    log "Backend started (pid $BACKEND_PID) — logs: logs/backend.log"
+fi
 
 # Wait for backend to be ready
 log "Waiting for backend to be ready..."
