@@ -9,6 +9,10 @@ export const metadata: Metadata = {
   title: 'AI Agent System',
   description: 'Personal AI co-worker dashboard',
   manifest: '/manifest.json',
+  icons: {
+    icon: '/glyph.svg',
+    apple: '/logo-mark.svg',
+  },
   appleWebApp: {
     capable: true,
     title: 'AI Agent',
