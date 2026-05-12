@@ -994,6 +994,19 @@ async def replay_dead_letter_task(
     return out
 
 
+@router.get("/workflow-suggestions")
+@limiter.limit("30/minute")
+async def get_workflow_suggestions(
+    request: Request,
+    min_occurrences: int = 3,
+    api_key: str = Depends(verify_api_key),
+):
+    """Return recurring task patterns that are candidates for workflow automation."""
+    from app.agent.workflow_suggestions import get_workflow_suggestions as _get_suggestions
+
+    return {"suggestions": await _get_suggestions(min_occurrences=min_occurrences)}
+
+
 @router.post("/workflows/{name}/run")
 @limiter.limit("10/minute")
 async def run_declared_workflow(

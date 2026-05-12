@@ -700,6 +700,50 @@ export default function AgentExecutor() {
       )
     }
 
+    if (opsPanel === 'workflows') {
+      type WfSuggestion = { task_type: string; tools: string[]; occurrences: number; success_rate: number; suggested_name: string; suggested_query: string }
+      const suggestions = Array.isArray(data.suggestions) ? data.suggestions as WfSuggestion[] : []
+      return (
+        <div className="space-y-3">
+          <p className="text-xs text-muted">
+            These task patterns appear frequently enough to automate. Run them via{' '}
+            <code className="text-[10px] bg-[color:var(--surface-soft)] px-1 py-0.5 rounded">
+              POST /agent/workflows/&#123;name&#125;/run
+            </code>
+            {' '}or use as a template.
+          </p>
+          {suggestions.length === 0 ? (
+            <p className="text-sm text-muted">
+              No recurring patterns detected yet — run more tasks to build history.
+            </p>
+          ) : null}
+          {suggestions.map((s, i) => (
+            <div key={`wf-${i}`} className="panel panel-soft p-3 rounded-lg space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium capitalize">{s.task_type.replace(/_/g, ' ')} tasks</p>
+                  <p className="text-xs text-muted mt-0.5">
+                    {s.occurrences} runs · {Math.round(s.success_rate * 100)}% success
+                  </p>
+                </div>
+                <code className="text-[10px] bg-[color:var(--surface-soft)] px-2 py-1 rounded shrink-0 text-muted">
+                  {s.suggested_name}
+                </code>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {s.tools.map(t => (
+                  <span key={t} className="text-[10px] px-2 py-0.5 rounded border border-[color:var(--border)] bg-[color:var(--surface-soft)] text-muted">
+                    {t}
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-muted italic">{s.suggested_query}</p>
+            </div>
+          ))}
+        </div>
+      )
+    }
+
     return (
       <div className="panel panel-soft p-3 rounded-lg text-xs font-mono overflow-x-auto">
         {JSON.stringify(data, null, 2)}

@@ -11,6 +11,7 @@ import {
   getSettings,
   getTaskSuggestions,
   getTools,
+  getWorkflowSuggestions,
   listConnectors,
   saveConnector,
   type ConnectorStatus,
@@ -31,6 +32,7 @@ const INITIAL_OPS_MODAL_STATE: OpsModalState = {
   stats: 'loading',
   history: 'loading',
   connectors: 'loading',
+  workflows: 'loading',
 }
 
 function errMessage(e: unknown): string {
@@ -275,6 +277,15 @@ export function useAgentExecutorState() {
           }))
         })
         .catch((e: unknown) => setOpsModalState((prev) => ({ ...prev, mcp: { err: errMessage(e) } })))
+    } else if (panel === 'workflows') {
+      getWorkflowSuggestions()
+        .then((d) => {
+          setOpsModalState((prev) => ({
+            ...prev,
+            workflows: { ok: { suggestions: Array.isArray(d.suggestions) ? d.suggestions : [] } },
+          }))
+        })
+        .catch((e: unknown) => setOpsModalState((prev) => ({ ...prev, workflows: { err: errMessage(e) } })))
     }
   }, [])
 

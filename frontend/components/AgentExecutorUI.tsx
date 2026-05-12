@@ -19,7 +19,7 @@ import {
   IconPlug,
 } from './Icons'
 
-export type OpsPanel = 'tools' | 'skills' | 'mcp' | 'stats' | 'history' | 'connectors'
+export type OpsPanel = 'tools' | 'skills' | 'mcp' | 'stats' | 'history' | 'connectors' | 'workflows'
 
 export function ContextMetricsCompact({ events }: { events: StreamEvent[] }) {
   const ctx = useMemo(() => {
@@ -118,7 +118,8 @@ export function QuickActionsMenu({
         { id: 'tools', icon: <IconTool />, label: 'Tools menu', action: () => onOpenOps('tools') },
         { id: 'skills', icon: <IconZap />, label: 'Skills analytics', action: () => onOpenOps('skills') },
         { id: 'mcp', icon: <IconServer />, label: 'MCP servers', action: () => onOpenOps('mcp') },
-        { id: 'connectors', icon: <IconPlug />, label: 'Connectors', action: () => onOpenOps('connectors') }
+        { id: 'connectors', icon: <IconPlug />, label: 'Connectors', action: () => onOpenOps('connectors') },
+        { id: 'workflows', icon: <IconHistory />, label: 'Workflow suggestions', action: () => onOpenOps('workflows') }
       ]
     },
     {

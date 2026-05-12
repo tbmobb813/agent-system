@@ -175,6 +175,13 @@ async def submit_task_feedback(
                 "Feedback learning promotion failed for task %s: %s", task_id, e
             )
 
+    # ── #7 Implicit preference learning: attribute outcome to tools used ──────
+    import asyncio as _asyncio
+    from app.agent.tool_preferences import record_tool_outcome
+    _asyncio.create_task(
+        record_tool_outcome(task_id, body.signal, task_user_id)
+    )
+
     return {
         "status": "recorded",
         "task_id": task_id,

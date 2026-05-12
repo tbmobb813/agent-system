@@ -37,6 +37,28 @@ from app.agent import skill_registry
 from app.agent.tool_learning import get_tool_hint, learn_tool_chains
 from app.agent.cost_learning import refresh_efficiency_cache
 from app.agent.prompts.system_prompt import PROMPT_VERSION, build_system_prompt
+from app.agent import tool_preferences as _tool_prefs
+
+
+def _score_tool_result(name: str, result: str, err: Optional[str]) -> float:
+    """
+    Heuristic quality score 0.0–1.0 for a single tool result.
+    Used to detect low-signal streaks and trigger a replanning nudge.
+    """
+    if err:
+        return 0.0
+    text = (result or "").strip()
+    if len(text) < 20:
+        return 0.1
+    lower = text.lower()
+    _FAILURE_PHRASES = (
+        "no results", "not found", "0 results", "nothing found",
+        "error:", "failed:", "could not", "unable to", "no matches",
+        "no data", "empty response", "no information",
+    )
+    if any(p in lower for p in _FAILURE_PHRASES):
+        return 0.25
+    return min(0.25 + len(text) / 500, 1.0)
 
 
 def _openrouter_client() -> AsyncOpenAI:
@@ -331,18 +353,24 @@ class AgentOrchestrator:
             async def _get_settings() -> dict:
                 return await asyncio.to_thread(load_settings_dict)
 
+            async def _get_bias_hint() -> str:
+                biases = await _tool_prefs.get_tool_biases(user_id)
+                return _tool_prefs.format_bias_hint(biases)
+
             (
                 budget_remaining,
                 conversation_id,
                 retrieved_context,
                 user_settings,
                 tool_hint,
+                tool_bias_hint,
             ) = await asyncio.gather(
                 _get_budget(),
                 conversation_manager.get_or_create(conversation_id, user_id=user_id),
                 context_builder.build(query, user_id=user_id),
                 _get_settings(),
                 get_tool_hint(query),
+                _get_bias_hint(),
             )
 
             # ── #5 Tool precondition + budget filtering ───────────────────────
@@ -461,6 +489,8 @@ class AgentOrchestrator:
             combined_context = context or ""
             if tool_hint:
                 combined_context = (combined_context + "\n\n" + tool_hint).strip()
+            if tool_bias_hint:
+                combined_context = (combined_context + "\n\n" + tool_bias_hint).strip()
             system_base = build_system_prompt(
                 retrieved_context,
                 combined_context or None,
@@ -565,6 +595,9 @@ class AgentOrchestrator:
                 )
 
             yield ExecutionEvent(type=EventType.STATUS, content="thinking...")
+
+            # ── #4 Tool quality tracking — consecutive low-score counter per tool ─
+            _tool_low_quality_streak: dict[str, int] = {}
 
             for iteration in range(max_iterations):
                 # Check for stop request before each LLM call
@@ -1117,6 +1150,32 @@ class AgentOrchestrator:
                             "content": result_str,
                         }
                     )
+                    # ── #4 Track low-quality streaks ─────────────────────────────
+                    quality = _score_tool_result(name, result_str, err)
+                    if quality < 0.3:
+                        _tool_low_quality_streak[name] = (
+                            _tool_low_quality_streak.get(name, 0) + 1
+                        )
+                    else:
+                        _tool_low_quality_streak[name] = 0
+
+                # ── #4 Inject replanning nudge when a tool keeps returning poor results ─
+                _LOW_QUALITY_THRESHOLD = 2
+                poor_tools = [
+                    t for t, streak in _tool_low_quality_streak.items()
+                    if streak >= _LOW_QUALITY_THRESHOLD
+                ]
+                if poor_tools:
+                    tools_str = ", ".join(poor_tools)
+                    _replan_warning = (
+                        f"\n\n<tool_quality_warning>"
+                        f"The following tool(s) have returned low-quality results "
+                        f"{_LOW_QUALITY_THRESHOLD} times in a row: {tools_str}. "
+                        f"Consider switching to a different tool, rephrasing your query, "
+                        f"or answering from your own knowledge if you have enough context."
+                        f"</tool_quality_warning>"
+                    )
+                    system_base += _replan_warning
 
                 messages[0]["content"] = _compose_system_with_progress(
                     system_base, state

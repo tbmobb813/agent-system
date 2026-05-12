@@ -300,6 +300,25 @@ export async function getAgentModels() {
   return res.json()
 }
 
+export async function getWorkflowSuggestions(minOccurrences = 3): Promise<{
+  suggestions: Array<{
+    task_type: string
+    tools: string[]
+    occurrences: number
+    success_rate: number
+    updated_at: string | null
+    suggested_name: string
+    suggested_query: string
+  }>
+}> {
+  const res = await fetchWithTimeout(
+    `${API_URL}/agent/workflow-suggestions?min_occurrences=${minOccurrences}`,
+    { headers: headers() },
+  )
+  if (!res.ok) return { suggestions: [] }
+  return res.json()
+}
+
 export async function getTaskSuggestions(taskId: string): Promise<{ suggestions: string[]; ready: boolean }> {
   const res = await fetchWithTimeout(`${API_URL}/agent/suggestions/${taskId}`, { headers: headers() }, 5000)
   if (!res.ok) return { suggestions: [], ready: false }
