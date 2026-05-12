@@ -541,6 +541,39 @@ class ModelRouter:
             top_p = defaults["top_p"]
         return {"temperature": temperature, "top_p": top_p}
 
+    # Rank used by select_for_confidence — higher = more capable / expensive.
+    _TIER_RANK: dict[str, int] = {
+        "free": 0, "simple": 1, "balanced": 2,
+        "coding": 2, "research": 2, "agent": 3,
+        "advanced": 4, "premium": 5,
+    }
+
+    def select_for_confidence(
+        self,
+        confidence: float,
+        current_model: str,
+        budget_remaining: float = 30.0,
+    ) -> str:
+        """
+        Return an upgraded model when plan confidence is low.
+        - confidence < 0.65 → at least advanced tier (Haiku)
+        - confidence < 0.45 → premium tier (Sonnet), if budget allows
+        No-ops if current model is already at or above the target tier.
+        """
+        if budget_remaining < 2.0:
+            return current_model
+        current_tier = self.tier_key_for_model(current_model) or "agent"
+        current_rank = self._TIER_RANK.get(current_tier, 3)
+        if confidence < 0.45 and budget_remaining >= 5.0:
+            target_tier, target_rank = "premium", self._TIER_RANK["premium"]
+        elif confidence < 0.65:
+            target_tier, target_rank = "advanced", self._TIER_RANK["advanced"]
+        else:
+            return current_model
+        if current_rank >= target_rank:
+            return current_model
+        return self.MODELS[target_tier]["model"]
+
     def get_next_fallback(self, current_model: str) -> Optional[str]:
         """Get next model in fallback chain after current fails."""
         try:

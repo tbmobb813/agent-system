@@ -224,6 +224,7 @@ class ExecutionState(BaseModel):
     working_memory: list[dict[str, Any]] = Field(default_factory=list)
     goal: Optional[str] = None
     done_when: Optional[str] = None
+    goal_alignment_scores: list[float] = Field(default_factory=list)
     start_time: datetime
     last_update: datetime
 
@@ -500,6 +501,33 @@ class AgentOrchestrator:
                             user_id=user_id,
                         )
                     )
+
+                # ── #3 Confidence-based model upgrade ────────────────────────
+                upgraded = self.router.select_for_confidence(
+                    plan_result.plan_confidence, agent_model, budget_remaining
+                )
+                if upgraded != agent_model:
+                    yield ExecutionEvent(
+                        type=EventType.STATUS,
+                        content=(
+                            f"plan confidence {plan_result.plan_confidence:.0%} — "
+                            f"upgrading to stronger model for reliability"
+                        ),
+                    )
+                    asyncio.create_task(
+                        decision_tracker.log_decision(
+                            task_id=task_id,
+                            decision_point="confidence_model_upgrade",
+                            chosen=upgraded,
+                            reasoning=(
+                                f"plan_confidence={plan_result.plan_confidence:.0%} below threshold; "
+                                f"upgrading from {agent_model}"
+                            ),
+                            confidence=plan_result.plan_confidence,
+                            user_id=user_id,
+                        )
+                    )
+                    agent_model = upgraded
 
             # System + history + new user message (with plan prepended if available)
             messages = [
@@ -1078,6 +1106,48 @@ class AgentOrchestrator:
                     system_base, state
                 )
 
+                # ── #6 Goal-state alignment check every 3 tool rounds ────────
+                _GOAL_CHECK_INTERVAL = 3
+                if (
+                    state.done_when
+                    and (iteration + 1) % _GOAL_CHECK_INTERVAL == 0
+                ):
+                    alignment, assessment = await self._check_goal_alignment(
+                        state, run_client
+                    )
+                    state.goal_alignment_scores.append(alignment)
+                    if assessment:
+                        yield ExecutionEvent(
+                            type=EventType.THINKING,
+                            content=(
+                                f"Goal check (round {iteration + 1}): "
+                                f"{assessment} [{alignment:.0%} aligned]"
+                            ),
+                        )
+                    asyncio.create_task(
+                        decision_tracker.log_decision(
+                            task_id=task_id,
+                            decision_point="goal_alignment_check",
+                            chosen=f"{alignment:.0%}",
+                            reasoning=assessment or f"alignment={alignment:.0%}",
+                            confidence=alignment,
+                            user_id=user_id,
+                        )
+                    )
+                    if alignment < 0.30:
+                        warning = (
+                            f"\n\n<goal_alignment_warning>"
+                            f"Goal alignment is LOW ({alignment:.0%}). "
+                            f"Assessment: {assessment} "
+                            f"Reconsider your approach — try a different tool, ask "
+                            f"a clarifying question, or state clearly what is blocking you."
+                            f"</goal_alignment_warning>"
+                        )
+                        system_base += warning
+                        messages[0]["content"] = _compose_system_with_progress(
+                            system_base, state
+                        )
+
                 yield ExecutionEvent(
                     type=EventType.STATUS,
                     content=f"processing results (round {iteration + 1})...",
@@ -1123,6 +1193,49 @@ class AgentOrchestrator:
                 and self._active_conversations.get(conversation_id) == task_id
             ):
                 del self._active_conversations[conversation_id]
+
+    async def _check_goal_alignment(
+        self,
+        state: ExecutionState,
+        client: AsyncOpenAI,
+    ) -> tuple[float, str]:
+        """
+        Ask the cheap model to score progress toward the goal (0–100).
+        Returns (score as 0.0–1.0, one-sentence assessment).
+        Uses DEFAULT_MODEL_SIMPLE — cheap, fast, no tool use needed.
+        """
+        recent = []
+        for entry in state.working_memory[-6:]:
+            if entry.get("type") == "tool_result":
+                recent.append(f"- {entry['tool']}: {entry.get('result_preview', '')[:200]}")
+            elif entry.get("type") == "tool_error":
+                recent.append(f"- {entry['tool']} FAILED: {entry.get('error', '')}")
+        results_text = "\n".join(recent) if recent else "No tool results yet."
+
+        prompt = (
+            f"Goal: {state.goal}\n"
+            f"Success criterion: {state.done_when or 'Task completed successfully'}\n"
+            f"Tool results so far:\n{results_text}\n\n"
+            "Rate progress 0-100 (0=blocked/off-track, 50=partial, 100=achieved). "
+            'Reply ONLY with JSON: {"score": <number>, "assessment": "<one sentence>"}'
+        )
+        try:
+            resp = await client.chat.completions.create(
+                model=settings.DEFAULT_MODEL_SIMPLE,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=80,
+                temperature=0,
+            )
+            raw = (resp.choices[0].message.content or "").strip()
+            # Strip markdown fences if present
+            raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.DOTALL).strip()
+            data = json.loads(raw)
+            score = max(0.0, min(1.0, float(data.get("score", 50)) / 100.0))
+            assessment = str(data.get("assessment", "")).strip()
+            return score, assessment
+        except Exception as e:
+            logger.debug(f"Goal alignment check failed: {e}")
+            return 0.5, ""
 
     async def _make_plan(
         self,
