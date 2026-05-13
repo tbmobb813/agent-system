@@ -1067,4 +1067,28 @@
   .dr-chat-thread {
     padding: 20px 12px 12px;
   }
+
+  /* ── Mobile: compact header ──────────────────────────────────────────── */
+  /* Prevent nav links wrapping into multiple rows and eating screen height. */
+  .dr-shell-header {
+    flex-wrap: nowrap;
+    gap: 12px;
+    padding-bottom: 10px;
+  }
+
+  .dr-shell-brand-title {
+    font-size: 14px;
+  }
+
+  /* Single scrollable row instead of wrapping grid */
+  .dr-shell-nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 12px;
+    padding-bottom: 2px;
+  }
+  .dr-shell-nav::-webkit-scrollbar { display: none; }
+  .dr-shell-nav .nav-link { white-space: nowrap; }
 }
