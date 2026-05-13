@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from datetime import datetime
+from datetime import UTC, datetime
 
 from app.agent.orchestrator import (
     AgentOrchestrator,
@@ -783,8 +783,8 @@ def test_format_progress_checkpoint_skip_when_memory_empty():
         current_step=0,
         total_steps=3,
         goal="hello",
-        start_time=datetime.utcnow(),
-        last_update=datetime.utcnow(),
+        start_time=datetime.now(UTC),
+        last_update=datetime.now(UTC),
     )
     assert _format_progress_checkpoint(st) == ""
 
@@ -797,8 +797,8 @@ def test_compose_system_with_progress_after_tool_round():
         total_steps=3,
         goal="Get weather",
         done_when="Done when: temp returned",
-        start_time=datetime.utcnow(),
-        last_update=datetime.utcnow(),
+        start_time=datetime.now(UTC),
+        last_update=datetime.now(UTC),
         working_memory=[
             {
                 "iteration": 1,
@@ -820,16 +820,16 @@ def test_execution_state_initializes_working_memory_independently():
         status=TaskStatus.RUNNING,
         current_step=0,
         total_steps=2,
-        start_time=datetime.utcnow(),
-        last_update=datetime.utcnow(),
+        start_time=datetime.now(UTC),
+        last_update=datetime.now(UTC),
     )
     second = ExecutionState(
         task_id="t2",
         status=TaskStatus.RUNNING,
         current_step=0,
         total_steps=2,
-        start_time=datetime.utcnow(),
-        last_update=datetime.utcnow(),
+        start_time=datetime.now(UTC),
+        last_update=datetime.now(UTC),
     )
 
     first.working_memory.append({"note": "x"})

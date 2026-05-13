@@ -343,19 +343,12 @@ class ToolRegistry:
             }
         )
 
-        browser_ok = False
-        berr = ""
-        try:
-            from playwright.async_api import async_playwright  # noqa: F401
-
-            browser_ok = True
-        except Exception as e:
-            berr = str(e)
+        browser_ok = self._playwright_available()
         rows.append(
             {
                 "tool": "browser_automation",
                 "ok": browser_ok,
-                "detail": "playwright_import" if browser_ok else berr,
+                "detail": "chromium_binary_found" if browser_ok else "run: playwright install chromium",
             }
         )
 
@@ -813,15 +806,25 @@ class ToolRegistry:
 
     @staticmethod
     def _playwright_available() -> bool:
-        """Cached check — importlib only, no browser launch."""
-        if not hasattr(ToolRegistry, "_playwright_ok"):
-            try:
-                import importlib
-                importlib.import_module("playwright")
-                ToolRegistry._playwright_ok = True
-            except ImportError:
-                ToolRegistry._playwright_ok = False
-        return ToolRegistry._playwright_ok  # type: ignore[attr-defined]
+        """Check that playwright package is installed AND a chromium binary directory exists.
+
+        Not cached — the filesystem glob is cheap and this way the check stays
+        accurate after ``playwright install`` without requiring a server restart.
+        """
+        try:
+            import importlib
+            import platform
+            importlib.import_module("playwright")
+            system = platform.system()
+            if system == "Darwin":
+                base = Path.home() / "Library" / "Caches" / "ms-playwright"
+            elif system == "Windows":
+                base = Path.home() / "AppData" / "Local" / "ms-playwright"
+            else:
+                base = Path.home() / ".cache" / "ms-playwright"
+            return base.exists() and bool(list(base.glob("chromium*")))
+        except Exception:
+            return False
 
     def _precondition_ok(self, name: str) -> tuple[bool, str]:
         """
@@ -1247,36 +1250,120 @@ class ToolRegistry:
         params: Optional[dict] = None,
         timeout: float = 15.0,
     ) -> dict:
-        """Make HTTP requests to external APIs."""
+        """Make HTTP requests to external APIs.
+
+        Connects to the pre-resolved IP address to prevent DNS rebinding attacks.
+        For HTTPS the original hostname is used for both TLS SNI and cert verification
+        via httpcore's sni_hostname extension, so certificate validation is unaffected.
+        """
+        import asyncio as _asyncio
+        import ipaddress as _ipaddress
+        import json as _json
+        import socket as _socket
+        import ssl as _ssl
+        import httpcore
+
         logger.info(f"API call: {method} {url}")
 
-        # Basic URL validation — must be http/https
         if not url.startswith(("http://", "https://")):
             return {"error": "URL must start with http:// or https://"}
         ok, reason = validate_agent_outbound_url(url)
         if not ok:
             return {"error": f"URL not allowed: {reason}"}
 
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.request(
-                    method=method.upper(),
-                    url=url,
-                    headers=headers or {},
-                    json=data if method.upper() in ("POST", "PUT", "PATCH") else None,
-                    params=params,
-                )
-                try:
-                    body = resp.json()
-                except Exception:
-                    body = resp.text[:2000]
+        parsed = urlparse(url)
+        host = parsed.hostname or ""
+        scheme = parsed.scheme
+        default_port = 443 if scheme == "https" else 80
+        port = parsed.port or default_port
 
-                return {
-                    "status": resp.status_code,
-                    "headers": redact_response_headers(dict(resp.headers)),
-                    "data": body,
-                }
-        except httpx.TimeoutException:
+        # ── Pre-resolve DNS so the TCP connection uses the validated IP directly.
+        # This closes the window between SSRF validation and the actual connection
+        # (DNS rebinding: a TTL-0 response could flip to a private IP between calls).
+        try:
+            loop = _asyncio.get_event_loop()
+            infos = await loop.getaddrinfo(host, port, type=_socket.SOCK_STREAM)
+            if not infos:
+                return {"error": f"Could not resolve host: {host}"}
+            resolved_ip = infos[0][4][0]
+            ip_obj = _ipaddress.ip_address(resolved_ip)
+            if not ip_obj.is_global:
+                return {"error": f"Host resolved to non-public IP at connection time: {resolved_ip}"}
+        except (OSError, ValueError) as e:
+            return {"error": f"DNS resolution failed: {e}"}
+
+        # Build URL target path (including query string and any extra params)
+        target = parsed.path or "/"
+        query = parsed.query or ""
+        if params:
+            from urllib.parse import urlencode
+            extra = urlencode(params)
+            query = f"{query}&{extra}" if query else extra
+        if query:
+            target = f"{target}?{query}"
+
+        # Build request headers — Host must reflect the original hostname for HTTP/1.1
+        req_headers: list[tuple[bytes, bytes]] = [
+            (b"host", host.encode()),
+            (b"user-agent", b"agent/1.0"),
+            (b"accept", b"application/json, */*"),
+        ]
+        for k, v in (headers or {}).items():
+            req_headers.append((k.encode() if isinstance(k, str) else k,
+                                 v.encode() if isinstance(v, str) else v))
+
+        body_bytes = b""
+        if method.upper() in ("POST", "PUT", "PATCH") and data is not None:
+            body_bytes = _json.dumps(data).encode()
+            req_headers.append((b"content-type", b"application/json"))
+            req_headers.append((b"content-length", str(len(body_bytes)).encode()))
+
+        # ── Connect to the pre-resolved IP.
+        # For HTTPS: sni_hostname tells httpcore/ssl to use the original hostname
+        # for TLS SNI negotiation and certificate verification.
+        extensions: dict = {}
+        ssl_context = None
+        if scheme == "https":
+            ssl_context = _ssl.create_default_context()
+            extensions["sni_hostname"] = host.encode()
+
+        try:
+            async with httpcore.AsyncConnectionPool(
+                ssl_context=ssl_context,
+                keepalive_expiry=timeout,
+            ) as pool:
+                response = await _asyncio.wait_for(
+                    pool.request(
+                        method=method.upper().encode(),
+                        url=httpcore.URL(
+                            scheme=scheme.encode(),
+                            host=resolved_ip.encode(),
+                            port=port,
+                            target=target.encode(),
+                        ),
+                        headers=req_headers,
+                        content=body_bytes,
+                        extensions=extensions,
+                    ),
+                    timeout=timeout,
+                )
+                raw_body = await response.aread()
+
+            try:
+                body: Any = _json.loads(raw_body)
+            except Exception:
+                body = raw_body.decode("utf-8", errors="replace")[:2000]
+
+            resp_headers = {
+                k.decode("latin-1"): v.decode("latin-1")
+                for k, v in response.headers.raw_items()
+            }
+            return {
+                "status": response.status,
+                "headers": redact_response_headers(resp_headers),
+                "data": body,
+            }
+        except _asyncio.TimeoutError:
             return {"error": f"Request timed out after {timeout}s"}
         except Exception as e:
             return {"error": str(e)}

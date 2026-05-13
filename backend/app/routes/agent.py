@@ -14,7 +14,7 @@ import asyncio
 import uuid
 import time
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 import yaml
 
 from fastapi import APIRouter, HTTPException, Depends, Request, Query
@@ -233,7 +233,7 @@ async def stream_agent(
 
     task_id = str(uuid.uuid4())
     user_id = body.user_id
-    started_at = datetime.utcnow()
+    started_at = datetime.now(UTC)
 
     async def _persist_terminal_status(status: str):
         if not _db.db_pool:
@@ -242,7 +242,7 @@ async def stream_agent(
             await execute(
                 "UPDATE tasks SET status = $1, completed_at = $2 WHERE id = $3",
                 status,
-                datetime.utcnow(),
+                datetime.now(UTC),
                 task_id,
             )
         except Exception as e:
@@ -360,7 +360,7 @@ async def stream_agent(
                     # Persist completed task
                     if _db.db_pool:
                         try:
-                            elapsed = (datetime.utcnow() - started_at).total_seconds()
+                            elapsed = (datetime.now(UTC) - started_at).total_seconds()
                             await execute(
                                 """
                                 UPDATE tasks
@@ -372,7 +372,7 @@ async def stream_agent(
                                 status,
                                 "".join(result_parts)[:10000],
                                 final_cost,
-                                datetime.utcnow(),
+                                datetime.now(UTC),
                                 elapsed,
                                 model_used,
                                 task_id,
@@ -424,7 +424,7 @@ async def stream_agent(
                 {"type": "error", "error": error_code, "task_id": task_id}
             )
         finally:
-            elapsed_ms = int((datetime.utcnow() - started_at).total_seconds() * 1000)
+            elapsed_ms = int((datetime.now(UTC) - started_at).total_seconds() * 1000)
             await _record_latency_metric(
                 endpoint="/agent/stream",
                 duration_ms=elapsed_ms,
@@ -494,7 +494,7 @@ async def enqueue_agent_task(
                 task_id,
                 body.user_id,
                 body.query,
-                datetime.utcnow(),
+                datetime.now(UTC),
             )
         except Exception as e:
             logger.warning(f"Could not pre-insert queued task: {e}")

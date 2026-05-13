@@ -11,7 +11,7 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Callable, Optional
 
 from app.utils.pillar_loader import get_pillar_config
@@ -106,7 +106,7 @@ class SseMcpRunner:
                         self._holder.connected = True
                         self._holder.last_error = None
                         self._holder.reconnect_attempts = 0
-                        self._holder.last_connected_at = datetime.utcnow()
+                        self._holder.last_connected_at = datetime.now(UTC)
                         self._holder.started.set()
                         backoff = 1.0
                         await self._holder.stop.wait()
@@ -241,7 +241,7 @@ class StdioMcpRunner:
                         self._holder.connected = True
                         self._holder.last_error = None
                         self._holder.reconnect_attempts = 0
-                        self._holder.last_connected_at = datetime.utcnow()
+                        self._holder.last_connected_at = datetime.now(UTC)
                         self._holder.started.set()
                         backoff = 1.0
                         await self._holder.stop.wait()

@@ -11,7 +11,7 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable, Optional
 
 from app.agent.memory import memory_manager
@@ -56,7 +56,7 @@ class OrchestrationRuntime:
                 "name": name,
                 "interval_seconds": max(1, int(interval_seconds)),
                 "callback": callback,
-                "next_run_at": datetime.utcnow()
+                "next_run_at": datetime.now(UTC)
                 + timedelta(seconds=max(1, int(interval_seconds))),
             }
         )
@@ -235,7 +235,7 @@ class OrchestrationRuntime:
                                 task_id,
                                 uid,
                                 q,
-                                datetime.utcnow(),
+                                datetime.now(UTC),
                             )
                         except Exception as e:
                             logger.warning(
@@ -337,7 +337,7 @@ class OrchestrationRuntime:
             if payload is None:
                 continue
             task_id = payload.get("task_id")
-            started_at = datetime.utcnow()
+            started_at = datetime.now(UTC)
             try:
                 if _db.db_pool and task_id:
                     await execute(
@@ -358,7 +358,7 @@ class OrchestrationRuntime:
                     reasoning_effort=payload.get("reasoning_effort"),
                 )
                 if _db.db_pool and task_id:
-                    elapsed = (datetime.utcnow() - started_at).total_seconds()
+                    elapsed = (datetime.now(UTC) - started_at).total_seconds()
                     await execute(
                         """
                         UPDATE tasks
@@ -370,7 +370,7 @@ class OrchestrationRuntime:
                         """,
                         task_id,
                         (result or "")[:10000],
-                        datetime.utcnow(),
+                        datetime.now(UTC),
                         elapsed,
                     )
                 self.emit_event(
@@ -385,7 +385,7 @@ class OrchestrationRuntime:
                 logger.warning("Deferred task failed: %s", e)
                 err = str(e)
                 if _db.db_pool and task_id:
-                    elapsed = (datetime.utcnow() - started_at).total_seconds()
+                    elapsed = (datetime.now(UTC) - started_at).total_seconds()
                     await execute(
                         """
                         UPDATE tasks
@@ -397,7 +397,7 @@ class OrchestrationRuntime:
                         """,
                         task_id,
                         err[:10000],
-                        datetime.utcnow(),
+                        datetime.now(UTC),
                         elapsed,
                     )
                 await self._persist_failed_task(payload, err)
@@ -408,7 +408,7 @@ class OrchestrationRuntime:
 
     async def _scheduler_loop(self) -> None:
         while self._running:
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             for job in self._jobs:
                 if now < job["next_run_at"]:
                     continue
@@ -444,7 +444,7 @@ class OrchestrationRuntime:
             logger.debug("scheduled_tasks query skipped: %s", e)
             return
 
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         for row in rows:
             sid = row["id"]
             uid = row["user_id"]
@@ -557,7 +557,7 @@ class OrchestrationRuntime:
                     new_task_id,
                     user_id,
                     query,
-                    datetime.utcnow(),
+                    datetime.now(UTC),
                 )
             except Exception as e:
                 logger.warning("Replay task insert failed: %s", e)

@@ -1,6 +1,6 @@
 """Schedules API with DB mocked."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -30,7 +30,7 @@ async def test_schedules_require_db(monkeypatch):
 async def test_schedules_create_and_list_and_delete(monkeypatch):
     monkeypatch.setattr("app.routes.schedules._db.db_pool", object())
     sid = uuid4()
-    next_at = datetime.utcnow()
+    next_at = datetime.now(UTC)
     row_single = {
         "id": sid,
         "next_run_at": next_at,

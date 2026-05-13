@@ -1,7 +1,7 @@
 """skill_registry DB helpers."""
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -26,7 +26,7 @@ async def test_update_skills_no_pool(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_skills_throttled(monkeypatch):
     monkeypatch.setattr(sr._db, "db_pool", object())
-    sr._LAST_UPDATE = datetime.utcnow()
+    sr._LAST_UPDATE = datetime.now(UTC)
     called = []
 
     async def _fetch(*_a, **_k):
@@ -121,7 +121,7 @@ async def test_get_agent_profile_partitions(monkeypatch):
             "total_uses": 10,
             "proficiency_level": "expert",
             "required_tools": json.dumps([]),
-            "last_computed": datetime.utcnow(),
+            "last_computed": datetime.now(UTC),
         },
         {
             "task_type": "research",

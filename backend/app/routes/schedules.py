@@ -6,7 +6,7 @@ User-defined cron schedules → rows in ``scheduled_tasks``, dispatched by
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 from uuid import UUID
 
@@ -33,7 +33,7 @@ def _validate_cron(expr: str) -> None:
             detail="croniter is not installed — cannot validate schedules",
         ) from e
     try:
-        croniter(expr.strip(), datetime.utcnow())
+        croniter(expr.strip(), datetime.now(UTC))
     except Exception as e:
         raise HTTPException(
             status_code=400, detail=f"Invalid cron expression: {e}"
@@ -71,7 +71,7 @@ async def create_schedule(
     _validate_cron(body.cron)
     from croniter import croniter
 
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     next_run = croniter(body.cron.strip(), now).get_next(datetime)
 
     row = await fetchrow(

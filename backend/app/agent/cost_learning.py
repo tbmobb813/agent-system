@@ -17,7 +17,7 @@ Two public helpers for the router:
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 
 from app import database as _db
@@ -39,7 +39,7 @@ class EfficiencyScore:
     thumbs_up_rate: float  # 0–1 from task_feedback
     sample_count: int
     efficiency: float  # thumbs_up_rate / avg_cost  (higher = better value)
-    last_updated: datetime = field(default_factory=datetime.utcnow)
+    last_updated: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 # Module-level cache: model_id → EfficiencyScore
@@ -56,7 +56,7 @@ async def refresh_efficiency_cache() -> None:
 
     if not _db.db_pool:
         return
-    if _last_refresh and datetime.utcnow() - _last_refresh < timedelta(
+    if _last_refresh and datetime.now(UTC) - _last_refresh < timedelta(
         hours=CACHE_TTL_HOURS
     ):
         return
@@ -105,7 +105,7 @@ async def refresh_efficiency_cache() -> None:
 
     if new_cache:
         _cache = new_cache
-        _last_refresh = datetime.utcnow()
+        _last_refresh = datetime.now(UTC)
         logger.info(f"Efficiency cache refreshed: {len(_cache)} models")
 
 

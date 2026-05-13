@@ -14,7 +14,7 @@ import re
 import uuid
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, AsyncIterator, Optional
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
@@ -268,12 +268,12 @@ class AgentOrchestrator:
     def _is_circuit_open(self) -> bool:
         if self._circuit_open_until is None:
             return False
-        return datetime.utcnow() < self._circuit_open_until
+        return datetime.now(UTC) < self._circuit_open_until
 
     def _record_circuit_failure(self) -> None:
         self._circuit_failures += 1
         if self._circuit_failures >= self._circuit_failure_threshold:
-            self._circuit_open_until = datetime.utcnow() + timedelta(
+            self._circuit_open_until = datetime.now(UTC) + timedelta(
                 seconds=self._circuit_recovery_seconds
             )
 
@@ -332,8 +332,8 @@ class AgentOrchestrator:
             current_step=0,
             total_steps=max_iterations,
             goal=query,
-            start_time=datetime.utcnow(),
-            last_update=datetime.utcnow(),
+            start_time=datetime.now(UTC),
+            last_update=datetime.now(UTC),
         )
         self.active_tasks[task_id] = state
 
@@ -624,6 +624,33 @@ class AgentOrchestrator:
                     return messages
                 return messages + [{"role": "user", "content": "\n\n".join(parts)}]
 
+            # Tools permanently removed mid-run due to infrastructure failures.
+            _permanently_disabled_tools: set[str] = set()
+
+            # Patterns that signal a non-recoverable infrastructure failure
+            # (missing binary, unconfigured API key, etc.) — not transient errors.
+            _PERM_FAIL_SIGNALS = (
+                "executable doesn't exist",
+                "playwright install",
+                "browsertype.launch",
+                "not installed",
+                "api_key not set",
+                "e2b_api_key",
+            )
+
+            def _is_permanent_failure(result: str) -> bool:
+                lower = result.lower()
+                return any(sig in lower for sig in _PERM_FAIL_SIGNALS)
+
+            def _active_tool_schemas() -> list[dict]:
+                """Return tool schemas minus any permanently disabled tools."""
+                if not _permanently_disabled_tools:
+                    return tool_schemas
+                return [
+                    s for s in tool_schemas
+                    if s.get("function", {}).get("name") not in _permanently_disabled_tools
+                ]
+
             # ── #4 Tool quality tracking — consecutive low-score counter per tool ─
             _tool_low_quality_streak: dict[str, int] = {}
 
@@ -637,7 +664,7 @@ class AgentOrchestrator:
                     )
 
                 state.current_step = iteration + 1
-                state.last_update = datetime.utcnow()
+                state.last_update = datetime.now(UTC)
 
                 # ── Ask the LLM with classifier-based error recovery ──────────
                 # Use the run-level client on the first call; error/timeout paths
@@ -659,8 +686,9 @@ class AgentOrchestrator:
                             "temperature": sampling["temperature"],
                             "top_p": sampling["top_p"],
                         }
-                        if tool_schemas:
-                            create_kwargs["tools"] = tool_schemas
+                        active_schemas = _active_tool_schemas()
+                        if active_schemas:
+                            create_kwargs["tools"] = active_schemas
                             create_kwargs["tool_choice"] = "auto"
                         reasoning_extra = _openrouter_reasoning_extra_body(
                             reasoning_effort
@@ -1177,6 +1205,22 @@ class AgentOrchestrator:
                             tool_name=name,
                             tool_result=result_str,
                         )
+
+                    # ── Permanent failure detection ───────────────────────────────
+                    # If a tool returns an infrastructure error (missing binary,
+                    # unconfigured key, etc.) it won't recover this session — remove
+                    # it from tool_schemas immediately so the LLM stops retrying it.
+                    if name not in _permanently_disabled_tools and _is_permanent_failure(result_str):
+                        _permanently_disabled_tools.add(name)
+                        logger.warning("Tool '%s' permanently disabled this run: %s", name, result_str[:120])
+                        _dynamic_context.append(
+                            f"<tool_disabled tool=\"{name}\">"
+                            f"{name} has encountered a non-recoverable infrastructure error "
+                            f"and has been disabled for this session. "
+                            f"Do NOT call it again. Use an alternative tool to complete the task."
+                            f"</tool_disabled>"
+                        )
+
                     messages.append(
                         {
                             "role": "tool",

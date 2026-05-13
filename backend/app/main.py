@@ -14,7 +14,7 @@ from app.utils.limiter import limiter
 from contextlib import asynccontextmanager
 import logging
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 
 from app.config import settings, CostTracker
 from app.agent.orchestrator import AgentOrchestrator
@@ -161,7 +161,7 @@ async def health_check(request: Request):
     """Health check endpoint."""
     return {
         "status": "ok",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "agent_ready": getattr(request.app.state, "agent_orchestrator", None)
         is not None,
         "cost_tracking": getattr(request.app.state, "cost_tracker", None) is not None,

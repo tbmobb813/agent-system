@@ -66,18 +66,41 @@ function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: React.R
   return <label htmlFor={htmlFor} className="block text-xs uppercase tracking-widest text-muted mb-1">{children}</label>
 }
 
-function TextInput({ id, value, onChange, placeholder, type = 'text', className = '' }: {
+function TextInput({ id, value, onChange, placeholder, type = 'text', className = '', min, max, step }: {
   id?: string; value: string | number; onChange: (v: string) => void
   placeholder?: string; type?: string; className?: string
+  min?: number; max?: number; step?: number | string
 }) {
   return (
     <input
       id={id} type={type} value={value} placeholder={placeholder}
+      min={min} max={max} step={step}
       onChange={e => onChange(e.target.value)}
       className={`w-full bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[color:var(--accent)] ${className}`}
     />
   )
 }
+
+const INPUT_CLASS = 'w-full bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[color:var(--accent)]'
+
+// All IANA timezone names available in this browser (falls back gracefully).
+const TZ_OPTIONS: string[] = (() => {
+  try {
+    return (Intl as any).supportedValuesOf('timeZone') as string[]
+  } catch {
+    return [
+      'America/New_York','America/Chicago','America/Denver','America/Los_Angeles',
+      'America/Anchorage','Pacific/Honolulu','America/Toronto','America/Vancouver',
+      'America/Sao_Paulo','America/Argentina/Buenos_Aires','Europe/London',
+      'Europe/Paris','Europe/Berlin','Europe/Rome','Europe/Madrid','Europe/Amsterdam',
+      'Europe/Stockholm','Europe/Warsaw','Europe/Athens','Europe/Istanbul',
+      'Europe/Moscow','Africa/Cairo','Africa/Johannesburg','Africa/Lagos',
+      'Asia/Dubai','Asia/Kolkata','Asia/Dhaka','Asia/Bangkok','Asia/Singapore',
+      'Asia/Shanghai','Asia/Tokyo','Asia/Seoul','Australia/Sydney','Pacific/Auckland',
+      'UTC',
+    ]
+  }
+})()
 
 function Toggle({ id, checked, onChange, label, description }: {
   id: string; checked: boolean; onChange: (v: boolean) => void; label: string; description?: string
@@ -410,7 +433,8 @@ export default function SettingsPage() {
               </div>
               <div>
                 <FieldLabel htmlFor="budget">Monthly Budget (USD)</FieldLabel>
-                <TextInput id="budget" type="number" value={settings.max_monthly_cost} onChange={v => setSettings({ ...settings, max_monthly_cost: parseFloat(v) })} />
+                <TextInput id="budget" type="number" value={settings.max_monthly_cost} min={0} step={0.01}
+                  onChange={v => setSettings({ ...settings, max_monthly_cost: Math.max(0, parseFloat(v) || 0) })} />
               </div>
               <div>
                 <FieldLabel htmlFor="model">Preferred Model</FieldLabel>
@@ -419,8 +443,18 @@ export default function SettingsPage() {
               </div>
               <div>
                 <FieldLabel htmlFor="tz">Timezone</FieldLabel>
-                <TextInput id="tz" value={settings.timezone} onChange={v => setSettings({ ...settings, timezone: v })} placeholder="America/New_York" />
-                <p className="text-xs text-muted mt-1">IANA timezone name.</p>
+                <input
+                  id="tz"
+                  list="tz-datalist"
+                  value={settings.timezone}
+                  onChange={e => setSettings({ ...settings, timezone: e.target.value })}
+                  placeholder="Search timezone…"
+                  className={INPUT_CLASS}
+                />
+                <datalist id="tz-datalist">
+                  {TZ_OPTIONS.map(tz => <option key={tz} value={tz} />)}
+                </datalist>
+                <p className="text-xs text-muted mt-1">Type to search — e.g. America/New_York.</p>
               </div>
 
               <div className="pt-2 border-t border-[color:var(--border)] space-y-3">

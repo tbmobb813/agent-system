@@ -8,7 +8,7 @@ Deduplication: each threshold fires at most once per calendar month.
 """
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 import httpx
 
@@ -41,7 +41,7 @@ class AlertManager:
             return
 
         percent = spent / budget
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         period = (now.year, now.month)
 
         for threshold, label in self.THRESHOLDS:

@@ -3,7 +3,7 @@ Pydantic models for the AI agent system.
 """
 
 from pydantic import BaseModel, Field, field_validator
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional, Literal
 from enum import Enum
 
@@ -143,7 +143,7 @@ class ExecutionEvent(BaseModel):
     """Single event during agent execution."""
 
     type: EventType
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     content: Optional[str] = None
     model: Optional[str] = None
     tokens: Optional[dict] = Field(None, description="{'input': int, 'output': int}")
@@ -168,7 +168,7 @@ class AgentResponse(BaseModel):
     tokens: Optional[dict] = None
     execution_time: float = Field(default=0.0, description="Seconds")
     conversation_id: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class CostStatus(BaseModel):

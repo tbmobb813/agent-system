@@ -5,7 +5,7 @@ Analytics routes for cost, performance, and tool usage insights.
 import json
 import logging
 from calendar import monthrange
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -31,7 +31,7 @@ class SkillUpsertRequest(BaseModel):
 
 
 def _projected_month_total(spent_month: float) -> float:
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     days_in_month = monthrange(now.year, now.month)[1]
     # Include current day as elapsed to avoid division by zero on the 1st.
     days_elapsed = max(now.day, 1)
@@ -65,7 +65,7 @@ async def get_analytics_overview(api_key: str = Depends(verify_api_key)):
     budget = float(settings.OPENROUTER_BUDGET_MONTHLY)
     remaining = max(0.0, budget - spent_month)
 
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     days_in_month = monthrange(now.year, now.month)[1]
     days_elapsed = max(now.day, 1)
     daily_avg = spent_month / days_elapsed

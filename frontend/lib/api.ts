@@ -438,6 +438,17 @@ export async function uploadDocument(file: File) {
   return res.json()
 }
 
+export async function getDocumentContent(documentId: string): Promise<{
+  document_id: string; filename: string; file_type: string
+  content: string; chunk_count: number
+}> {
+  const res = await fetchWithTimeout(`${API_URL}/documents/${documentId}/content`, {
+    headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Failed to fetch document content (${res.status})`)
+  return res.json()
+}
+
 export async function deleteDocument(documentId: string) {
   const res = await fetchWithTimeout(`${API_URL}/documents/${documentId}`, {
     method: 'DELETE',

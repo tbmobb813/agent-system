@@ -341,35 +341,49 @@ async def test_brave_search_handles_generic_exception(monkeypatch):
 
 
 def _stub_outbound_url_checks(monkeypatch):
-    """Tests mock httpx/Playwright; skip live DNS for hostname SSRF checks."""
+    """Skip live network calls in _api_call: patch URL validation and DNS resolution."""
     monkeypatch.setattr(
         "app.tools.tool_registry.validate_agent_outbound_url",
         lambda _url: (True, ""),
     )
+    # Stub asyncio getaddrinfo so tests don't make real DNS lookups and always
+    # return a valid globally-routable IP (203.0.113.x is TEST-NET-3, but
+    # ipaddress.ip_address("203.0.113.1").is_global == True).
+    import socket as _socket
+
+    async def _fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(_socket.AF_INET, _socket.SOCK_STREAM, 0, "", ("203.0.113.1", port or 443))]
+
+    monkeypatch.setattr("asyncio.AbstractEventLoop.getaddrinfo", _fake_getaddrinfo)
 
 
 async def test_api_call_handles_timeout(monkeypatch):
+    import asyncio
     registry = ToolRegistry()
     _stub_outbound_url_checks(monkeypatch)
 
-    class _TimeoutClient:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return False
-
+    class _Pool:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return False
         async def request(self, *args, **kwargs):
-            raise httpx.TimeoutException("slow")
+            raise asyncio.TimeoutError()
 
-    monkeypatch.setattr(
-        "app.tools.tool_registry.httpx.AsyncClient",
-        lambda timeout=15.0: _TimeoutClient(),
-    )
+    monkeypatch.setattr("httpcore.AsyncConnectionPool", _Pool)
 
     result = await registry._api_call(url="https://example.com", timeout=3.0)
 
     assert result["error"] == "Request timed out after 3.0s"
+
+
+class _RawHeaders:
+    """Minimal httpcore-compatible headers mock with raw_items()."""
+    def __init__(self, d: dict):
+        self._pairs = [(k.lower().encode(), v.encode()) for k, v in d.items()]
+    def raw_items(self):
+        return self._pairs
+    def items(self):
+        return [(k.decode(), v.decode()) for k, v in self._pairs]
 
 
 async def test_api_call_handles_non_json_response(monkeypatch):
@@ -377,26 +391,17 @@ async def test_api_call_handles_non_json_response(monkeypatch):
     _stub_outbound_url_checks(monkeypatch)
 
     class _Resp:
-        status_code = 200
-        headers = {"x": "y"}
-        text = "plain text body"
+        status = 200
+        headers = _RawHeaders({"x": "y"})
+        async def aread(self): return b"plain text body"
 
-        def json(self):
-            raise ValueError("no json")
+    class _Pool:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return False
+        async def request(self, *args, **kwargs): return _Resp()
 
-    class _Client:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return False
-
-        async def request(self, *args, **kwargs):
-            return _Resp()
-
-    monkeypatch.setattr(
-        "app.tools.tool_registry.httpx.AsyncClient", lambda timeout=15.0: _Client()
-    )
+    monkeypatch.setattr("httpcore.AsyncConnectionPool", _Pool)
 
     result = await registry._api_call(url="https://example.com")
 
@@ -409,8 +414,8 @@ async def test_api_call_redacts_sensitive_response_headers(monkeypatch):
     _stub_outbound_url_checks(monkeypatch)
 
     class _Resp:
-        status_code = 200
-        headers = httpx.Headers(
+        status = 200
+        headers = _RawHeaders(
             {
                 "Content-Type": "application/json",
                 "Set-Cookie": "sid=supersecret",
@@ -418,24 +423,15 @@ async def test_api_call_redacts_sensitive_response_headers(monkeypatch):
                 "X-Trace": "abc",
             }
         )
-        text = "{}"
+        async def aread(self): return b"{}"
 
-        def json(self):
-            return {}
+    class _Pool:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return False
+        async def request(self, *args, **kwargs): return _Resp()
 
-    class _Client:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return False
-
-        async def request(self, *args, **kwargs):
-            return _Resp()
-
-    monkeypatch.setattr(
-        "app.tools.tool_registry.httpx.AsyncClient", lambda timeout=15.0: _Client()
-    )
+    monkeypatch.setattr("httpcore.AsyncConnectionPool", _Pool)
 
     result = await registry._api_call(url="https://example.com")
 

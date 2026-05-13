@@ -13,7 +13,7 @@ is safe to call from the orchestrator on every startup without hammering the DB.
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 
 from app import database as _db
@@ -169,7 +169,7 @@ async def update_skills() -> None:
     global _LAST_UPDATE
     if not _db.db_pool:
         return
-    if _LAST_UPDATE and datetime.utcnow() - _LAST_UPDATE < timedelta(
+    if _LAST_UPDATE and datetime.now(UTC) - _LAST_UPDATE < timedelta(
         hours=REFRESH_INTERVAL_HOURS
     ):
         return
@@ -223,7 +223,7 @@ async def update_skills() -> None:
     except Exception as e:
         logger.debug(f"Skill registry tool fetch failed: {e}")
 
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     for task_type, stats in type_stats.items():
         if stats["total"] < MIN_SAMPLE_SIZE:
             continue
@@ -256,7 +256,7 @@ async def update_skills() -> None:
         except Exception as e:
             logger.debug(f"Skill upsert failed for {task_type}: {e}")
 
-    _LAST_UPDATE = datetime.utcnow()
+    _LAST_UPDATE = datetime.now(UTC)
     logger.info(f"Skill registry updated: {len(type_stats)} task types processed")
 
 

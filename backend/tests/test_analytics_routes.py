@@ -1,6 +1,6 @@
 """Analytics API routes — DB calls mocked."""
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -226,7 +226,7 @@ async def test_analytics_cost_efficiency_empty(monkeypatch):
 
 
 async def test_analytics_cost_efficiency_ranked(monkeypatch):
-    t = datetime.utcnow()
+    t = datetime.now(UTC)
     scores = {
         "a": EfficiencyScore(
             model="a",
