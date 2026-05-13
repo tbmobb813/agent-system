@@ -54,6 +54,58 @@
   cursor: pointer;
 }
 
+/* Hamburger toggle — hidden on desktop, shown via mobile media query */
+.dr-shell-hamburger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.dr-shell-hamburger:hover {
+  background: var(--surface-soft);
+}
+
+/* Mobile nav drawer — slides in below the header */
+.dr-mobile-nav {
+  position: fixed;
+  top: 57px; /* sits flush under the header */
+  left: 0;
+  right: 0;
+  z-index: 150;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0 12px;
+}
+
+.dr-mobile-nav-link {
+  display: block;
+  padding: 12px 20px;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--text);
+  text-decoration: none;
+  border-left: 3px solid transparent;
+  transition: background 0.12s, border-color 0.12s;
+}
+.dr-mobile-nav-link:hover {
+  background: var(--surface-soft);
+}
+.dr-mobile-nav-link.is-active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  background: color-mix(in oklab, var(--accent), transparent 92%);
+}
+
 .dr-shell-profile-btn {
   width: 34px;
   height: 34px;
@@ -1068,27 +1120,8 @@
     padding: 20px 12px 12px;
   }
 
-  /* ── Mobile: compact header ──────────────────────────────────────────── */
-  /* Prevent nav links wrapping into multiple rows and eating screen height. */
-  .dr-shell-header {
-    flex-wrap: nowrap;
-    gap: 12px;
-    padding-bottom: 10px;
-  }
-
-  .dr-shell-brand-title {
-    font-size: 14px;
-  }
-
-  /* Single scrollable row instead of wrapping grid */
-  .dr-shell-nav {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    gap: 12px;
-    padding-bottom: 2px;
-  }
-  .dr-shell-nav::-webkit-scrollbar { display: none; }
-  .dr-shell-nav .nav-link { white-space: nowrap; }
+  /* ── Mobile: hamburger nav ───────────────────────────────────────────── */
+  .dr-shell-nav { display: none; }        /* hide desktop nav row */
+  .dr-shell-hamburger { display: flex; }  /* show hamburger button */
+  .dr-shell-brand-title { font-size: 14px; }
 }
