@@ -11,7 +11,7 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Callable, Optional
 
 from app.utils.pillar_loader import get_pillar_config
@@ -106,7 +106,7 @@ class SseMcpRunner:
                         self._holder.connected = True
                         self._holder.last_error = None
                         self._holder.reconnect_attempts = 0
-                        self._holder.last_connected_at = datetime.utcnow()
+                        self._holder.last_connected_at = datetime.now(UTC)
                         self._holder.started.set()
                         backoff = 1.0
                         await self._holder.stop.wait()
@@ -206,8 +206,23 @@ class StdioMcpRunner:
     async def _worker(self) -> None:
         from mcp import ClientSession
         from mcp.client.stdio import StdioServerParameters, stdio_client
+        from pathlib import Path
 
         merged_env = dict(os.environ)
+        # Pydantic BaseSettings reads .env into settings objects but does not
+        # populate os.environ, so stdio subprocesses would miss those vars.
+        # Explicitly merge the .env file so MCP servers see all declared keys.
+        try:
+            from dotenv import dotenv_values
+            _env_file = Path(__file__).resolve().parents[3] / "backend" / ".env"
+            if not _env_file.is_file():
+                _env_file = Path(__file__).resolve().parents[2] / ".env"
+            if _env_file.is_file():
+                for k, v in dotenv_values(_env_file).items():
+                    if k not in merged_env and v is not None:
+                        merged_env[k] = v
+        except Exception:
+            pass
         if self.env:
             merged_env.update({k: str(v) for k, v in self.env.items()})
 
@@ -226,7 +241,7 @@ class StdioMcpRunner:
                         self._holder.connected = True
                         self._holder.last_error = None
                         self._holder.reconnect_attempts = 0
-                        self._holder.last_connected_at = datetime.utcnow()
+                        self._holder.last_connected_at = datetime.now(UTC)
                         self._holder.started.set()
                         backoff = 1.0
                         await self._holder.stop.wait()

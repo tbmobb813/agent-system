@@ -114,6 +114,35 @@ async def delete_document(
     return {"status": "deleted", "document_id": document_id}
 
 
+@router.get("/{document_id}/content")
+async def get_document_content(
+    document_id: str,
+    api_key: str = Depends(verify_api_key),
+):
+    """Return the full extracted text of a document (all chunks joined in order)."""
+    doc = await fetchrow(
+        "SELECT id, filename, file_type FROM documents WHERE id = $1", document_id
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    chunks = await fetch(
+        """
+        SELECT content FROM document_chunks
+        WHERE document_id = $1
+        ORDER BY chunk_index
+        """,
+        document_id,
+    )
+    return {
+        "document_id": document_id,
+        "filename": doc["filename"],
+        "file_type": doc["file_type"],
+        "content": "\n\n".join(r["content"] for r in chunks),
+        "chunk_count": len(chunks),
+    }
+
+
 @router.get("/search")
 async def search(
     q: str = Query(..., description="Search query"),

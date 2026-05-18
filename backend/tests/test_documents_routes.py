@@ -5,7 +5,7 @@ from app.main import app
 
 async def test_documents_upload_rejects_empty_file():
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.post(
             "/documents/upload",
             headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -23,7 +23,7 @@ async def test_documents_upload_maps_value_error_to_422(monkeypatch):
     monkeypatch.setattr("app.routes.documents.ingest_document", fake_ingest)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.post(
             "/documents/upload",
             headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -38,7 +38,7 @@ async def test_list_documents_returns_empty_when_db_unavailable(monkeypatch):
     monkeypatch.setattr("app.routes.documents._db.db_pool", None)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/documents", headers={"Authorization": "Bearer sk-agent-local-dev"}
         )
@@ -54,7 +54,7 @@ async def test_delete_document_returns_404_when_missing(monkeypatch):
     monkeypatch.setattr("app.routes.documents.fetchrow", fake_fetchrow)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.delete(
             "/documents/doc-1", headers={"Authorization": "Bearer sk-agent-local-dev"}
         )
@@ -70,7 +70,7 @@ async def test_search_documents_route_returns_wrapped_results(monkeypatch):
     monkeypatch.setattr("app.routes.documents.search_documents", fake_search)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/documents/search",
             params={"q": "hello", "limit": 1},

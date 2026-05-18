@@ -9,6 +9,7 @@ from __future__ import annotations
 import sys
 import pytest
 
+
 def pytest_configure(config: pytest.Config) -> None:
     try:
         import fastapi  # noqa: F401

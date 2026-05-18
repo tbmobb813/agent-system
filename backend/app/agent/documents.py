@@ -10,7 +10,7 @@ import asyncio
 import io
 import uuid
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 
 import tiktoken
@@ -183,7 +183,7 @@ async def ingest_document(
             file_type,
             len(data),
             len(chunks),
-            datetime.utcnow(),
+            datetime.now(UTC),
         )
 
     # 4. Embed chunks with bounded concurrency, then store
@@ -198,7 +198,7 @@ async def ingest_document(
     embeddings = await asyncio.gather(*[_embed_limited(c) for c in chunks])
 
     stored = 0
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     async with _db.db_pool.acquire() as conn:
         for i, (chunk_text, token_count, embedding) in enumerate(
             zip(chunks, token_counts, embeddings)

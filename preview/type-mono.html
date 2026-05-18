@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en" data-theme="neon-command" data-density="comfortable" data-motion="cinematic">
+<head>
+<meta charset="utf-8">
+<title>type-mono</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="./styles.css">
+<style>
+  html, body { margin: 0; padding: 0; }
+  body.atmosphere { padding: 18px 22px; min-height: 160px; box-sizing: border-box; }
+  .row { display: flex; align-items: center; gap: 14px; }
+  .col { display: flex; flex-direction: column; gap: 6px; }
+  .grid { display: grid; gap: 10px; }
+</style>
+</head>
+<body class="atmosphere">
+<div class="col pr-gap-8">
+  <div style="font-family: var(--font-mono); font-size: 14px; color: var(--accent-2);">anthropic/claude-3.5-haiku</div>
+  <div style="font-family: var(--font-mono); font-size: 13px; color: var(--text);">curl -X POST http://localhost:8000/agent/stream</div>
+  <code style="font-family: var(--font-mono); font-size: 12px; color: var(--accent-2); background: var(--surface-soft); border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px; align-self: flex-start;">OPENROUTER_API_KEY</code>
+  <div class="pr-font-body-11-muted-margin-top">JetBrains Mono · model IDs, commands, env vars</div>
+</div>
+</body></html>

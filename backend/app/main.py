@@ -14,7 +14,7 @@ from app.utils.limiter import limiter
 from contextlib import asynccontextmanager
 import logging
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 
 from app.config import settings, CostTracker
 from app.agent.orchestrator import AgentOrchestrator
@@ -31,6 +31,8 @@ from app.routes.conversations import router as conversations_router
 from app.routes.documents import router as documents_router
 from app.routes.analytics import router as analytics_router
 from app.routes.integrations import router as integrations_router
+from app.routes.connectors import router as connectors_router
+from app.routes.projects import router as projects_router
 
 # Configure logging
 logging.basicConfig(
@@ -145,6 +147,8 @@ app.include_router(conversations_router)
 app.include_router(documents_router)
 app.include_router(analytics_router)
 app.include_router(integrations_router)
+app.include_router(connectors_router)
+app.include_router(projects_router)
 
 
 # ============================================================================
@@ -157,7 +161,7 @@ async def health_check(request: Request):
     """Health check endpoint."""
     return {
         "status": "ok",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "agent_ready": getattr(request.app.state, "agent_orchestrator", None)
         is not None,
         "cost_tracking": getattr(request.app.state, "cost_tracker", None) is not None,

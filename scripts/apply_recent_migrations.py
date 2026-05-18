@@ -29,6 +29,9 @@ REPO = Path(__file__).resolve().parents[1]
 MIGRATIONS_DEFAULT = [
     REPO / "supabase/migrations/016_scheduled_tasks.sql",
     REPO / "supabase/migrations/017_latency_metrics.sql",
+    REPO / "supabase/migrations/018_projects.sql",
+    REPO / "backend/supabase/migrations/019_tool_preferences.sql",
+    REPO / "supabase/migrations/019_skill_chains.sql",
 ]
 
 

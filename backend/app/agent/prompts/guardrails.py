@@ -44,15 +44,78 @@ def retrieved_context_section(retrieved_context: str) -> str:
     )
 
 
+def capabilities_section(tool_names: list[str]) -> str:
+    """
+    Inject an accurate self-knowledge block so the agent can answer
+    'what can you do?' correctly regardless of which model is routing the query.
+    Built from live tool names so it stays current as tools are added/removed.
+    """
+    tools_str = "\n".join(f"  - {t}" for t in sorted(tool_names)) if tool_names else "  (none loaded)"
+    return (
+        "\n\n<agent_capabilities>\n"
+        "You are a full-featured personal AI agent, not a basic chatbot. "
+        "Your actual live capabilities:\n\n"
+        "TOOLS (callable right now):\n"
+        f"{tools_str}\n\n"
+        "MEMORY:\n"
+        "  Persistent semantic memory (pgvector) that survives across sessions.\n"
+        "  Past tasks, user preferences, and learned patterns are retrieved and\n"
+        "  injected into your context automatically.\n"
+        "  Post-task reflections are stored and surfaced in future runs.\n\n"
+        "SKILL CHAINS:\n"
+        "  Named ordered tool sequences built from past experience.\n"
+        "  When a matching chain exists, it is injected as a <skill_plan> before you reason.\n"
+        "  You can create, update, or delete skill chains via skill_manage().\n\n"
+        "LEARNING:\n"
+        "  Per-tool acceptance rates tracked from thumbs-up/down feedback.\n"
+        "  Model routing adapts to query type (coding, research, writing, etc.).\n"
+        "  Recurring task patterns are detected and surfaced as workflow suggestions.\n\n"
+        "INTEGRATIONS:\n"
+        "  Web search via SearXNG and Brave Search MCP, E2B code execution sandbox,\n"
+        "  Playwright browser automation, file workspace, GitHub connector,\n"
+        "  Telegram bot, and sub-agent delegation.\n\n"
+        "Answer questions about your capabilities accurately from the above — "
+        "do not describe yourself as a basic assistant or claim you lack memory.\n"
+        "</agent_capabilities>"
+    )
+
+
 def fiscal_context_section(
     budget_remaining: float,
     monthly_budget_usd: float,
 ) -> str:
-    """Budget nudge for cost-aware behavior."""
+    """Tiered budget guidance — escalates urgency as remaining budget drops."""
+    remaining = float(budget_remaining)
+    budget = float(monthly_budget_usd)
+    pct = (remaining / budget * 100) if budget else 100.0
+
+    if remaining < 1.0:
+        urgency = "CRITICAL — budget nearly depleted"
+        instruction = (
+            "Do NOT use browser automation or code execution. "
+            "Answer from your own knowledge wherever possible. "
+            "If a search is truly necessary, use web_search only once."
+        )
+    elif remaining < 3.0:
+        urgency = "WARNING — budget low"
+        instruction = (
+            "Avoid browser automation and code execution unless essential. "
+            "Prefer web_search over browser_automation. "
+            "Minimise the number of tool calls."
+        )
+    else:
+        urgency = ""
+        instruction = (
+            "Prefer cheaper approaches, fewer tool calls, and avoid unnecessary searches."
+        )
+
+    header = (
+        f"{urgency + '. ' if urgency else ''}"
+        f"Monthly budget: ${budget:.2f} — remaining: ${remaining:.2f} ({pct:.0f}%)."
+    )
     return (
-        "\n\n<fiscal_context>\n"
-        f"Monthly budget (USD): ${float(monthly_budget_usd):.2f}. "
-        f"Estimated remaining this month: ${float(budget_remaining):.2f}.\n"
-        "When remaining is low, prefer cheaper approaches, fewer API/tool calls, and avoid unnecessary searches.\n"
-        "</fiscal_context>"
+        f"\n\n<fiscal_context>\n"
+        f"{header}\n"
+        f"{instruction}\n"
+        f"</fiscal_context>"
     )

@@ -36,19 +36,23 @@ fi
 
 # ── Backend ───────────────────────────────────────────────────────────────────
 log "Starting backend..."
-if [ ! -d "$BACKEND/venv" ]; then
-    warn "venv not found — creating it now..."
-    python3 -m venv "$BACKEND/venv"
-    "$BACKEND/venv/bin/pip" install -q --upgrade pip
-    "$BACKEND/venv/bin/pip" install -q -r "$BACKEND/requirements.txt"
+if [ ! -d "$BACKEND/.venv" ]; then
+    warn ".venv not found — creating it now..."
+    python3 -m venv "$BACKEND/.venv"
+    "$BACKEND/.venv/bin/pip" install -q --upgrade pip
+    "$BACKEND/.venv/bin/pip" install -q -r "$BACKEND/requirements.txt"
 fi
 
-(cd "$BACKEND" && venv/bin/uvicorn app.main:app \
-    --host 0.0.0.0 --port 8000 --reload) \
-    > "$LOG_DIR/backend.log" 2>&1 &
-BACKEND_PID=$!
-echo $BACKEND_PID > "$LOG_DIR/backend.pid"
-log "Backend started (pid $BACKEND_PID) — logs: logs/backend.log"
+if command -v pm2 >/dev/null 2>&1 && pm2 describe agent-backend >/dev/null 2>&1; then
+    pm2 restart agent-backend
+    log "Backend restarted via PM2 — logs: pm2 logs agent-backend"
+else
+    (cd "$BACKEND" && .venv/bin/uvicorn app.main:app \
+        --host 127.0.0.1 --port 8000 --workers 2) \
+        > "$LOG_DIR/backend.log" 2>&1 &
+    echo $! > "$LOG_DIR/backend.pid"
+    log "Backend started (pid $(cat "$LOG_DIR/backend.pid")) — logs: logs/backend.log"
+fi
 
 # Wait for backend to be ready
 log "Waiting for backend to be ready..."
@@ -59,22 +63,35 @@ for i in $(seq 1 20); do
     fi
     sleep 1
     if [ "$i" -eq 20 ]; then
-        warn "Backend did not become ready in 20s — check logs/backend.log"
+        warn "Backend did not become ready in 20s — check logs"
     fi
 done
 
 # ── Frontend ──────────────────────────────────────────────────────────────────
 log "Starting frontend..."
-if [ ! -d "$FRONTEND/node_modules" ]; then
-    warn "node_modules not found — running npm install..."
-    (cd "$FRONTEND" && npm install --silent)
-fi
+if command -v pm2 >/dev/null 2>&1 && pm2 describe agent-frontend >/dev/null 2>&1; then
+    pm2 restart agent-frontend
+    log "Frontend restarted via PM2 — logs: pm2 logs agent-frontend"
+else
+    if command -v pnpm >/dev/null 2>&1; then
+        PNPM_CMD=(pnpm)
+    elif command -v corepack >/dev/null 2>&1; then
+        warn "pnpm not found — using corepack pnpm"
+        PNPM_CMD=(corepack pnpm)
+    else
+        die "pnpm is required for frontend startup (install pnpm or enable corepack)"
+    fi
 
-(cd "$FRONTEND" && PORT=3003 npm run dev) \
-    > "$LOG_DIR/frontend.log" 2>&1 &
-FRONTEND_PID=$!
-echo $FRONTEND_PID > "$LOG_DIR/frontend.pid"
-log "Frontend started (pid $FRONTEND_PID) — logs: logs/frontend.log"
+    if [ ! -d "$FRONTEND/node_modules" ]; then
+        warn "node_modules not found — running pnpm install..."
+        (cd "$FRONTEND" && "${PNPM_CMD[@]}" install --silent)
+    fi
+
+    (cd "$FRONTEND" && PORT=3003 "${PNPM_CMD[@]}" run dev) \
+        > "$LOG_DIR/frontend.log" 2>&1 &
+    echo $! > "$LOG_DIR/frontend.pid"
+    log "Frontend started (pid $(cat "$LOG_DIR/frontend.pid")) — logs: logs/frontend.log"
+fi
 
 # ── Telegram Bot ──────────────────────────────────────────────────────────────
 log "Starting Telegram bot..."
@@ -86,11 +103,31 @@ if [ ! -d "$BOT_VENV" ]; then
     "$BOT_VENV/bin/pip" install -q -r "$BOT/requirements-telegram.txt"
 fi
 
-(cd "$BOT" && venv/bin/python3 bot.py) \
-    > "$LOG_DIR/telegram.log" 2>&1 &
-BOT_PID=$!
-echo $BOT_PID > "$LOG_DIR/telegram.pid"
-log "Telegram bot started (pid $BOT_PID) — logs: logs/telegram.log"
+# Install systemd service for auto-start on reboot (requires root)
+SERVICE_SRC="$BOT/agent-telegram.service"
+SERVICE_DST="/etc/systemd/system/agent-telegram.service"
+if [ -f "$SERVICE_SRC" ] && command -v systemctl >/dev/null 2>&1; then
+    if ! systemctl is-enabled agent-telegram >/dev/null 2>&1; then
+        if [ "$(id -u)" -eq 0 ]; then
+            cp "$SERVICE_SRC" "$SERVICE_DST"
+            systemctl daemon-reload
+            systemctl enable agent-telegram >/dev/null 2>&1
+            log "Telegram bot registered as systemd service (agent-telegram)"
+        else
+            warn "Run as root to install the systemd service for auto-start on reboot"
+        fi
+    fi
+fi
+
+if systemctl is-enabled agent-telegram >/dev/null 2>&1; then
+    systemctl restart agent-telegram
+    log "Telegram bot started via systemd — logs: journalctl -u agent-telegram -f"
+else
+    (cd "$BOT" && venv/bin/python3 bot.py) \
+        > "$LOG_DIR/telegram.log" 2>&1 &
+    echo $! > "$LOG_DIR/telegram.pid"
+    log "Telegram bot started (pid $(cat "$LOG_DIR/telegram.pid")) — logs: logs/telegram.log"
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
@@ -100,11 +137,7 @@ echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━
 echo -e "  Web UI:    http://localhost:3003"
 echo -e "  Backend:   http://localhost:8000"
 echo -e "  SearXNG:   http://localhost:8888"
-echo -e "  Logs:      $LOG_DIR/"
+echo -e "  Logs:      pm2 logs  /  journalctl -u agent-telegram -f"
 echo ""
 echo -e "  Run ${YELLOW}./stop.sh${NC} to stop everything"
 echo ""
-
-# Keep script alive so Ctrl+C stops all services
-trap './stop.sh 2>/dev/null; exit 0' INT TERM
-wait

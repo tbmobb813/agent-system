@@ -1,0 +1,2115 @@
+FFFFFFFFFFFFFFFFFF...F.........F.FFFFFF.FFFFFFFFF..FF..............FF... [ 20%]
+.........................FFF.....................FFFFF.................. [ 41%]
+FFFFFFF...................FFFFFF........................................ [ 62%]
+........................................FFFFF........................... [ 83%]
+.......................................................
+ERROR: Coverage failure: total of 56 is less than fail-under=65
+                                                                         [100%]
+=================================== FAILURES ===================================
+__________________ test_run_agent_returns_completed_response ___________________
+
+    async def test_run_agent_returns_completed_response():
+        original_orch = getattr(app.state, "agent_orchestrator", None)
+        original_cost = getattr(app.state, "cost_tracker", None)
+    
+        app.state.agent_orchestrator = DummyOrchestrator()
+        app.state.cost_tracker = DummyCostTracker(
+            estimate=0.01, spent=0.0, last_cost=0.0025
+        )
+    
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.post(
+                    "/agent/run",
+                    headers={"Authorization": "Bearer sk-agent-local-dev"},
+                    json={"query": "Say hello", "conversation_id": "conv-123"},
+                )
+    
+>           assert response.status_code == 200
+E           assert 503 == 200
+E            +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:116: AssertionError
+______ test_run_agent_returns_402_when_estimate_exceeds_remaining_budget _______
+
+    async def test_run_agent_returns_402_when_estimate_exceeds_remaining_budget():
+        original_orch = getattr(app.state, "agent_orchestrator", None)
+        original_cost = getattr(app.state, "cost_tracker", None)
+    
+        app.state.agent_orchestrator = DummyOrchestrator()
+        app.state.cost_tracker = DummyCostTracker(estimate=5.0, spent=29.5)
+    
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.post(
+                    "/agent/run",
+                    headers={"Authorization": "Bearer sk-agent-local-dev"},
+                    json={"query": "Very expensive task"},
+                )
+    
+>           assert response.status_code == 402
+E           assert 503 == 402
+E            +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:145: AssertionError
+____________ test_stream_agent_emits_budget_error_when_over_budget _____________
+
+    async def test_stream_agent_emits_budget_error_when_over_budget():
+        original_orch = getattr(app.state, "agent_orchestrator", None)
+        original_cost = getattr(app.state, "cost_tracker", None)
+    
+        app.state.agent_orchestrator = DummyStreamOrchestrator()
+        app.state.cost_tracker = DummyCostTracker(estimate=50.0, spent=0.0)
+    
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.post(
+                    "/agent/stream",
+                    headers={"Authorization": "Bearer sk-agent-local-dev"},
+                    json={"query": "too expensive"},
+                )
+    
+>           assert response.status_code == 200
+E           assert 503 == 200
+E            +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:171: AssertionError
+________ test_stream_agent_cleans_cost_tracker_call_info_on_completion _________
+
+    async def test_stream_agent_cleans_cost_tracker_call_info_on_completion():
+        from uuid import UUID
+    
+        original_orch = getattr(app.state, "agent_orchestrator", None)
+        original_cost = getattr(app.state, "cost_tracker", None)
+    
+        tracker = DummyCostTracker(estimate=0.01, spent=0.0, last_cost=0.003)
+        app.state.agent_orchestrator = DummyStreamOrchestrator()
+        app.state.cost_tracker = tracker
+    
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.post(
+                    "/agent/stream",
+                    headers={"Authorization": "Bearer sk-agent-local-dev"},
+                    json={"query": "stream and finish"},
+                )
+    
+>           assert response.status_code == 200
+E           assert 503 == 200
+E            +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:199: AssertionError
+_____________________ test_stream_agent_times_out_cleanly ______________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895946ded0>
+
+    async def test_stream_agent_times_out_cleanly(monkeypatch):
+        original_orch = getattr(app.state, "agent_orchestrator", None)
+        original_cost = getattr(app.state, "cost_tracker", None)
+    
+        app.state.agent_orchestrator = TimeoutStreamOrchestrator()
+        app.state.cost_tracker = DummyCostTracker(estimate=0.01, spent=0.0)
+    
+        monkeypatch.setattr("app.routes.agent.settings.MAX_STREAM_SECONDS", 0)
+    
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.post(
+                    "/agent/stream",
+                    headers={"Authorization": "Bearer sk-agent-local-dev"},
+                    json={"query": "will timeout"},
+                )
+    
+>           assert response.status_code == 200
+E           assert 503 == 200
+E            +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:234: AssertionError
+________________ test_stop_agent_returns_stopped_for_known_task ________________
+
+    async def test_stop_agent_returns_stopped_for_known_task():
+        original_orch = getattr(app.state, "agent_orchestrator", None)
+        app.state.agent_orchestrator = DummyStreamOrchestrator(stop_ok=True)
+    
+        task_id = "11111111-1111-1111-1111-111111111111"
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.post(
+                    f"/agent/stop?task_id={task_id}",
+                    headers={"Authorization": "Bearer sk-agent-local-dev"},
+                )
+    
+>           assert response.status_code == 200
+E           assert 503 == 200
+E            +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:254: AssertionError
+_________________ test_stop_agent_returns_404_for_unknown_task _________________
+
+    async def test_stop_agent_returns_404_for_unknown_task():
+        original_orch = getattr(app.state, "agent_orchestrator", None)
+        app.state.agent_orchestrator = DummyStreamOrchestrator(stop_ok=False)
+    
+        task_id = "22222222-2222-2222-2222-222222222222"
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.post(
+                    f"/agent/stop?task_id={task_id}",
+                    headers={"Authorization": "Bearer sk-agent-local-dev"},
+                )
+    
+>           assert response.status_code == 404
+E           assert 503 == 404
+E            +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:275: AssertionError
+________________ test_stop_agent_rejects_invalid_task_id_format ________________
+
+    async def test_stop_agent_rejects_invalid_task_id_format():
+        original_orch = getattr(app.state, "agent_orchestrator", None)
+        app.state.agent_orchestrator = DummyStreamOrchestrator(stop_ok=True)
+    
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.post(
+                    "/agent/stop?task_id=not-a-uuid",
+                    headers={"Authorization": "Bearer sk-agent-local-dev"},
+                )
+    
+>           assert response.status_code == 422
+E           assert 503 == 422
+E            +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:293: AssertionError
+________________ test_stop_agent_rejects_non_uuid_36_char_value ________________
+
+    async def test_stop_agent_rejects_non_uuid_36_char_value():
+        original_orch = getattr(app.state, "agent_orchestrator", None)
+        app.state.agent_orchestrator = DummyStreamOrchestrator(stop_ok=True)
+    
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.post(
+                    "/agent/stop?task_id=123456789012345678901234567890123456",
+                    headers={"Authorization": "Bearer sk-agent-local-dev"},
+                )
+    
+>           assert response.status_code == 422
+E           assert 503 == 422
+E            +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:310: AssertionError
+_____________ test_run_agent_returns_503_when_orchestrator_missing _____________
+
+    async def test_run_agent_returns_503_when_orchestrator_missing():
+        original_orch = getattr(app.state, "agent_orchestrator", None)
+        original_cost = getattr(app.state, "cost_tracker", None)
+        app.state.agent_orchestrator = None
+        app.state.cost_tracker = DummyCostTracker(estimate=0.01, spent=0.0)
+    
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.post(
+                    "/agent/run",
+                    headers={"Authorization": "Bearer sk-agent-local-dev"},
+                    json={"query": "Say hello"},
+                )
+    
+            assert response.status_code == 503
+>           assert response.json()["detail"] == "Agent not ready"
+E           AssertionError: assert 'Database una...in production' == 'Agent not ready'
+E             
+E             - Agent not ready
+E             + Database unavailable; API key validation requires a database in production
+
+tests/test_agent_routes.py:331: AssertionError
+_____________ test_run_agent_returns_503_when_cost_tracker_missing _____________
+
+    async def test_run_agent_returns_503_when_cost_tracker_missing():
+        original_orch = getattr(app.state, "agent_orchestrator", None)
+        original_cost = getattr(app.state, "cost_tracker", None)
+        app.state.agent_orchestrator = DummyOrchestrator()
+        app.state.cost_tracker = None
+    
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.post(
+                    "/agent/run",
+                    headers={"Authorization": "Bearer sk-agent-local-dev"},
+                    json={"query": "Say hello"},
+                )
+    
+            assert response.status_code == 503
+>           assert response.json()["detail"] == "Cost tracker not initialized"
+E           AssertionError: assert 'Database una...in production' == 'Cost tracker not initialized'
+E             
+E             - Cost tracker not initialized
+E             + Database unavailable; API key validation requires a database in production
+
+tests/test_agent_routes.py:353: AssertionError
+___________________ test_list_tools_returns_available_tools ____________________
+
+    async def test_list_tools_returns_available_tools():
+        original_orch = getattr(app.state, "agent_orchestrator", None)
+        app.state.agent_orchestrator = DummyToolOrchestrator()
+    
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.get(
+                    "/agent/tools",
+                    headers={"Authorization": "Bearer sk-agent-local-dev"},
+                )
+    
+>           assert response.status_code == 200
+E           assert 503 == 200
+E            +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:376: AssertionError
+____________________ test_list_models_returns_routing_info _____________________
+
+    async def test_list_models_returns_routing_info():
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/agent/models",
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:392: AssertionError
+____________________ test_enqueue_agent_task_queues_payload ____________________
+
+    async def test_enqueue_agent_task_queues_payload():
+        original_runtime = getattr(app.state, "orchestration_runtime", None)
+        original_cost = getattr(app.state, "cost_tracker", None)
+        app.state.orchestration_runtime = DummyRuntime()
+        app.state.cost_tracker = DummyCostTracker(estimate=0.01, spent=0.0)
+    
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.post(
+                    "/agent/enqueue",
+                    headers={"Authorization": "Bearer sk-agent-local-dev"},
+                    json={"query": "run this later", "user_id": "u1"},
+                )
+    
+>           assert response.status_code == 200
+E           assert 503 == 200
+E            +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:413: AssertionError
+_____________ test_enqueue_agent_task_rejects_when_budget_exceeded _____________
+
+    async def test_enqueue_agent_task_rejects_when_budget_exceeded():
+        original_runtime = getattr(app.state, "orchestration_runtime", None)
+        original_cost = getattr(app.state, "cost_tracker", None)
+        app.state.orchestration_runtime = DummyRuntime()
+        app.state.cost_tracker = DummyCostTracker(estimate=5.0, spent=29.5)
+    
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.post(
+                    "/agent/enqueue",
+                    headers={"Authorization": "Bearer sk-agent-local-dev"},
+                    json={"query": "run this later", "user_id": "u1"},
+                )
+    
+>           assert response.status_code == 402
+E           assert 503 == 402
+E            +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:437: AssertionError
+__________________ test_replay_dead_letter_task_queues_retry ___________________
+
+    async def test_replay_dead_letter_task_queues_retry():
+        original_runtime = getattr(app.state, "orchestration_runtime", None)
+        app.state.orchestration_runtime = DummyRuntime()
+        failed_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.post(
+                    f"/agent/dead-letter/{failed_id}/replay",
+                    headers={"Authorization": "Bearer sk-agent-local-dev"},
+                )
+    
+>           assert response.status_code == 200
+E           assert 503 == 200
+E            +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:458: AssertionError
+______________ test_list_dead_letter_tasks_handles_db_unavailable ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895945aa90>
+
+    async def test_list_dead_letter_tasks_handles_db_unavailable(monkeypatch):
+        import app.routes.agent as agent_routes
+    
+        monkeypatch.setattr(agent_routes._db, "db_pool", None)
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/agent/dead-letter",
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:479: AssertionError
+___________________ test_list_dead_letter_tasks_returns_rows ___________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895945a590>
+
+    async def test_list_dead_letter_tasks_returns_rows(monkeypatch):
+        import app.routes.agent as agent_routes
+        from datetime import datetime
+    
+        monkeypatch.setattr(agent_routes._db, "db_pool", object())
+    
+        async def _fake_fetch(_query: str, *_args):
+            return [
+                {
+                    "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                    "task_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+                    "error": "boom",
+                    "payload": {"query": "x", "user_id": "u1"},
+                    "created_at": datetime(2026, 1, 1, 12, 0, 0),
+                }
+            ]
+    
+        monkeypatch.setattr(agent_routes, "fetch", _fake_fetch)
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/agent/dead-letter?include_payload=true",
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:511: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  app.utils.auth:auth.py:88 API key DB lookup failed: 'object' object has no attribute 'acquire'
+___________ test_run_agent_returns_422_for_invalid_reasoning_effort ____________
+
+    async def test_run_agent_returns_422_for_invalid_reasoning_effort():
+        original_orch = getattr(app.state, "agent_orchestrator", None)
+        original_cost = getattr(app.state, "cost_tracker", None)
+    
+        app.state.agent_orchestrator = DummyOrchestrator()
+        app.state.cost_tracker = DummyCostTracker(
+            estimate=0.01, spent=0.0, last_cost=0.0025
+        )
+    
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+                response = await client.post(
+                    "/agent/run",
+                    headers={"Authorization": "Bearer sk-agent-local-dev"},
+                    json={"query": "Say hello", "reasoning_effort": "not-a-level"},
+                )
+    
+>           assert response.status_code == 422
+E           assert 503 == 422
+E            +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_agent_routes.py:556: AssertionError
+___________________________ test_analytics_overview ____________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895970e350>
+
+    async def test_analytics_overview(monkeypatch):
+        async def fetchval_ov(*_a, **_k):
+            return 5.0
+    
+        monkeypatch.setattr(
+            "app.routes.analytics.fetchval", AsyncMock(side_effect=fetchval_ov)
+        )
+    
+        async def _fetch_forbidden(*_a, **_k):
+            raise AssertionError("fetch should not run for overview")
+    
+        monkeypatch.setattr(
+            "app.routes.analytics.fetch", AsyncMock(side_effect=_fetch_forbidden)
+        )
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.get("/analytics/overview", headers=AUTH)
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:33: AssertionError
+____________ test_analytics_list_routes[/analytics/daily-<lambda>] _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b89594734d0>
+path = '/analytics/daily', checker = <function <lambda> at 0x7b89599494e0>
+
+    @pytest.mark.parametrize(
+        ("path", "checker"),
+        [
+            (
+                "/analytics/daily",
+                lambda b: "points" in b and b["days"] >= 1,
+            ),
+            (
+                "/analytics/models",
+                lambda b: any(m.get("model") == "x/y" for m in b["metrics"]),
+            ),
+            (
+                "/analytics/tools",
+                lambda b: (
+                    b["tools"] and b["tools"][0]["tool_name"] and b["tools"][0]["uses"] >= 1
+                ),
+            ),
+            (
+                "/analytics/decisions",
+                lambda b: b["decisions"] and "decision_point" in b["decisions"][0],
+            ),
+            (
+                "/analytics/errors",
+                lambda b: b["patterns"][0]["error_type"] == "timeout",
+            ),
+        ],
+    )
+    async def test_analytics_list_routes(monkeypatch, path, checker):
+        async def fv(*_a, **_k):
+            return 100.0
+    
+        def _dispatch_sql(query: str, *_args, **_kwargs):
+            ql = query.lower()
+    
+            if "budget_alerts" in ql:
+                return []
+            if "generate_series" in ql:
+                return [{"day": date(2026, 1, 10), "total_cost": 0.1, "calls": 1}]
+            if "from tool_calls tc" in ql and "tool_task_cost" in ql.replace("\n", " "):
+                return [
+                    {
+                        "tool_name": "x",
+                        "uses": 1,
+                        "unique_tasks": 1,
+                        "total_task_cost": 0.1,
+                    },
+                ]
+            if "group by coalesce(model_used" in ql or (
+                "from tasks" in ql and "group by" in ql and "model" in ql
+            ):
+                return [
+                    {
+                        "model": "x/y",
+                        "tasks": 4,
+                        "successful": 2,
+                        "avg_execution_time": 1.5,
+                        "avg_cost": 0.001,
+                        "total_cost": 0.004,
+                    }
+                ]
+            if "from decisions" in ql:
+                return [
+                    {
+                        "decision_point": "tool_selection",
+                        "chosen": "x",
+                        "times_chosen": 2,
+                        "avg_confidence": 0.7,
+                        "successes": 1,
+                        "failures": 0,
+                    }
+                ]
+            if "from error_patterns" in ql:
+                return [
+                    {
+                        "error_type": "timeout",
+                        "recovery_strategy": "retry",
+                        "model_used": "m",
+                        "occurrences": 3,
+                        "recovered": 1,
+                    }
+                ]
+    
+            raise AssertionError(f"unhandled analytics query: {ql[:100]}")
+    
+        monkeypatch.setattr("app.routes.analytics.fetchval", AsyncMock(side_effect=fv))
+        monkeypatch.setattr(
+            "app.routes.analytics.fetch",
+            AsyncMock(side_effect=lambda q, *a, **k: _dispatch_sql(q)),
+        )
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.get(path + "?days=7", headers=AUTH)
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:144: AssertionError
+____________ test_analytics_list_routes[/analytics/models-<lambda>] ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b8959471c50>
+path = '/analytics/models', checker = <function <lambda> at 0x7b8959949580>
+
+    @pytest.mark.parametrize(
+        ("path", "checker"),
+        [
+            (
+                "/analytics/daily",
+                lambda b: "points" in b and b["days"] >= 1,
+            ),
+            (
+                "/analytics/models",
+                lambda b: any(m.get("model") == "x/y" for m in b["metrics"]),
+            ),
+            (
+                "/analytics/tools",
+                lambda b: (
+                    b["tools"] and b["tools"][0]["tool_name"] and b["tools"][0]["uses"] >= 1
+                ),
+            ),
+            (
+                "/analytics/decisions",
+                lambda b: b["decisions"] and "decision_point" in b["decisions"][0],
+            ),
+            (
+                "/analytics/errors",
+                lambda b: b["patterns"][0]["error_type"] == "timeout",
+            ),
+        ],
+    )
+    async def test_analytics_list_routes(monkeypatch, path, checker):
+        async def fv(*_a, **_k):
+            return 100.0
+    
+        def _dispatch_sql(query: str, *_args, **_kwargs):
+            ql = query.lower()
+    
+            if "budget_alerts" in ql:
+                return []
+            if "generate_series" in ql:
+                return [{"day": date(2026, 1, 10), "total_cost": 0.1, "calls": 1}]
+            if "from tool_calls tc" in ql and "tool_task_cost" in ql.replace("\n", " "):
+                return [
+                    {
+                        "tool_name": "x",
+                        "uses": 1,
+                        "unique_tasks": 1,
+                        "total_task_cost": 0.1,
+                    },
+                ]
+            if "group by coalesce(model_used" in ql or (
+                "from tasks" in ql and "group by" in ql and "model" in ql
+            ):
+                return [
+                    {
+                        "model": "x/y",
+                        "tasks": 4,
+                        "successful": 2,
+                        "avg_execution_time": 1.5,
+                        "avg_cost": 0.001,
+                        "total_cost": 0.004,
+                    }
+                ]
+            if "from decisions" in ql:
+                return [
+                    {
+                        "decision_point": "tool_selection",
+                        "chosen": "x",
+                        "times_chosen": 2,
+                        "avg_confidence": 0.7,
+                        "successes": 1,
+                        "failures": 0,
+                    }
+                ]
+            if "from error_patterns" in ql:
+                return [
+                    {
+                        "error_type": "timeout",
+                        "recovery_strategy": "retry",
+                        "model_used": "m",
+                        "occurrences": 3,
+                        "recovered": 1,
+                    }
+                ]
+    
+            raise AssertionError(f"unhandled analytics query: {ql[:100]}")
+    
+        monkeypatch.setattr("app.routes.analytics.fetchval", AsyncMock(side_effect=fv))
+        monkeypatch.setattr(
+            "app.routes.analytics.fetch",
+            AsyncMock(side_effect=lambda q, *a, **k: _dispatch_sql(q)),
+        )
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.get(path + "?days=7", headers=AUTH)
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:144: AssertionError
+____________ test_analytics_list_routes[/analytics/tools-<lambda>] _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b89596e7d10>
+path = '/analytics/tools', checker = <function <lambda> at 0x7b8959949620>
+
+    @pytest.mark.parametrize(
+        ("path", "checker"),
+        [
+            (
+                "/analytics/daily",
+                lambda b: "points" in b and b["days"] >= 1,
+            ),
+            (
+                "/analytics/models",
+                lambda b: any(m.get("model") == "x/y" for m in b["metrics"]),
+            ),
+            (
+                "/analytics/tools",
+                lambda b: (
+                    b["tools"] and b["tools"][0]["tool_name"] and b["tools"][0]["uses"] >= 1
+                ),
+            ),
+            (
+                "/analytics/decisions",
+                lambda b: b["decisions"] and "decision_point" in b["decisions"][0],
+            ),
+            (
+                "/analytics/errors",
+                lambda b: b["patterns"][0]["error_type"] == "timeout",
+            ),
+        ],
+    )
+    async def test_analytics_list_routes(monkeypatch, path, checker):
+        async def fv(*_a, **_k):
+            return 100.0
+    
+        def _dispatch_sql(query: str, *_args, **_kwargs):
+            ql = query.lower()
+    
+            if "budget_alerts" in ql:
+                return []
+            if "generate_series" in ql:
+                return [{"day": date(2026, 1, 10), "total_cost": 0.1, "calls": 1}]
+            if "from tool_calls tc" in ql and "tool_task_cost" in ql.replace("\n", " "):
+                return [
+                    {
+                        "tool_name": "x",
+                        "uses": 1,
+                        "unique_tasks": 1,
+                        "total_task_cost": 0.1,
+                    },
+                ]
+            if "group by coalesce(model_used" in ql or (
+                "from tasks" in ql and "group by" in ql and "model" in ql
+            ):
+                return [
+                    {
+                        "model": "x/y",
+                        "tasks": 4,
+                        "successful": 2,
+                        "avg_execution_time": 1.5,
+                        "avg_cost": 0.001,
+                        "total_cost": 0.004,
+                    }
+                ]
+            if "from decisions" in ql:
+                return [
+                    {
+                        "decision_point": "tool_selection",
+                        "chosen": "x",
+                        "times_chosen": 2,
+                        "avg_confidence": 0.7,
+                        "successes": 1,
+                        "failures": 0,
+                    }
+                ]
+            if "from error_patterns" in ql:
+                return [
+                    {
+                        "error_type": "timeout",
+                        "recovery_strategy": "retry",
+                        "model_used": "m",
+                        "occurrences": 3,
+                        "recovered": 1,
+                    }
+                ]
+    
+            raise AssertionError(f"unhandled analytics query: {ql[:100]}")
+    
+        monkeypatch.setattr("app.routes.analytics.fetchval", AsyncMock(side_effect=fv))
+        monkeypatch.setattr(
+            "app.routes.analytics.fetch",
+            AsyncMock(side_effect=lambda q, *a, **k: _dispatch_sql(q)),
+        )
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.get(path + "?days=7", headers=AUTH)
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:144: AssertionError
+__________ test_analytics_list_routes[/analytics/decisions-<lambda>] ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b89596f3dd0>
+path = '/analytics/decisions', checker = <function <lambda> at 0x7b89599496c0>
+
+    @pytest.mark.parametrize(
+        ("path", "checker"),
+        [
+            (
+                "/analytics/daily",
+                lambda b: "points" in b and b["days"] >= 1,
+            ),
+            (
+                "/analytics/models",
+                lambda b: any(m.get("model") == "x/y" for m in b["metrics"]),
+            ),
+            (
+                "/analytics/tools",
+                lambda b: (
+                    b["tools"] and b["tools"][0]["tool_name"] and b["tools"][0]["uses"] >= 1
+                ),
+            ),
+            (
+                "/analytics/decisions",
+                lambda b: b["decisions"] and "decision_point" in b["decisions"][0],
+            ),
+            (
+                "/analytics/errors",
+                lambda b: b["patterns"][0]["error_type"] == "timeout",
+            ),
+        ],
+    )
+    async def test_analytics_list_routes(monkeypatch, path, checker):
+        async def fv(*_a, **_k):
+            return 100.0
+    
+        def _dispatch_sql(query: str, *_args, **_kwargs):
+            ql = query.lower()
+    
+            if "budget_alerts" in ql:
+                return []
+            if "generate_series" in ql:
+                return [{"day": date(2026, 1, 10), "total_cost": 0.1, "calls": 1}]
+            if "from tool_calls tc" in ql and "tool_task_cost" in ql.replace("\n", " "):
+                return [
+                    {
+                        "tool_name": "x",
+                        "uses": 1,
+                        "unique_tasks": 1,
+                        "total_task_cost": 0.1,
+                    },
+                ]
+            if "group by coalesce(model_used" in ql or (
+                "from tasks" in ql and "group by" in ql and "model" in ql
+            ):
+                return [
+                    {
+                        "model": "x/y",
+                        "tasks": 4,
+                        "successful": 2,
+                        "avg_execution_time": 1.5,
+                        "avg_cost": 0.001,
+                        "total_cost": 0.004,
+                    }
+                ]
+            if "from decisions" in ql:
+                return [
+                    {
+                        "decision_point": "tool_selection",
+                        "chosen": "x",
+                        "times_chosen": 2,
+                        "avg_confidence": 0.7,
+                        "successes": 1,
+                        "failures": 0,
+                    }
+                ]
+            if "from error_patterns" in ql:
+                return [
+                    {
+                        "error_type": "timeout",
+                        "recovery_strategy": "retry",
+                        "model_used": "m",
+                        "occurrences": 3,
+                        "recovered": 1,
+                    }
+                ]
+    
+            raise AssertionError(f"unhandled analytics query: {ql[:100]}")
+    
+        monkeypatch.setattr("app.routes.analytics.fetchval", AsyncMock(side_effect=fv))
+        monkeypatch.setattr(
+            "app.routes.analytics.fetch",
+            AsyncMock(side_effect=lambda q, *a, **k: _dispatch_sql(q)),
+        )
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.get(path + "?days=7", headers=AUTH)
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:144: AssertionError
+____________ test_analytics_list_routes[/analytics/errors-<lambda>] ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895946bbd0>
+path = '/analytics/errors', checker = <function <lambda> at 0x7b8959949760>
+
+    @pytest.mark.parametrize(
+        ("path", "checker"),
+        [
+            (
+                "/analytics/daily",
+                lambda b: "points" in b and b["days"] >= 1,
+            ),
+            (
+                "/analytics/models",
+                lambda b: any(m.get("model") == "x/y" for m in b["metrics"]),
+            ),
+            (
+                "/analytics/tools",
+                lambda b: (
+                    b["tools"] and b["tools"][0]["tool_name"] and b["tools"][0]["uses"] >= 1
+                ),
+            ),
+            (
+                "/analytics/decisions",
+                lambda b: b["decisions"] and "decision_point" in b["decisions"][0],
+            ),
+            (
+                "/analytics/errors",
+                lambda b: b["patterns"][0]["error_type"] == "timeout",
+            ),
+        ],
+    )
+    async def test_analytics_list_routes(monkeypatch, path, checker):
+        async def fv(*_a, **_k):
+            return 100.0
+    
+        def _dispatch_sql(query: str, *_args, **_kwargs):
+            ql = query.lower()
+    
+            if "budget_alerts" in ql:
+                return []
+            if "generate_series" in ql:
+                return [{"day": date(2026, 1, 10), "total_cost": 0.1, "calls": 1}]
+            if "from tool_calls tc" in ql and "tool_task_cost" in ql.replace("\n", " "):
+                return [
+                    {
+                        "tool_name": "x",
+                        "uses": 1,
+                        "unique_tasks": 1,
+                        "total_task_cost": 0.1,
+                    },
+                ]
+            if "group by coalesce(model_used" in ql or (
+                "from tasks" in ql and "group by" in ql and "model" in ql
+            ):
+                return [
+                    {
+                        "model": "x/y",
+                        "tasks": 4,
+                        "successful": 2,
+                        "avg_execution_time": 1.5,
+                        "avg_cost": 0.001,
+                        "total_cost": 0.004,
+                    }
+                ]
+            if "from decisions" in ql:
+                return [
+                    {
+                        "decision_point": "tool_selection",
+                        "chosen": "x",
+                        "times_chosen": 2,
+                        "avg_confidence": 0.7,
+                        "successes": 1,
+                        "failures": 0,
+                    }
+                ]
+            if "from error_patterns" in ql:
+                return [
+                    {
+                        "error_type": "timeout",
+                        "recovery_strategy": "retry",
+                        "model_used": "m",
+                        "occurrences": 3,
+                        "recovered": 1,
+                    }
+                ]
+    
+            raise AssertionError(f"unhandled analytics query: {ql[:100]}")
+    
+        monkeypatch.setattr("app.routes.analytics.fetchval", AsyncMock(side_effect=fv))
+        monkeypatch.setattr(
+            "app.routes.analytics.fetch",
+            AsyncMock(side_effect=lambda q, *a, **k: _dispatch_sql(q)),
+        )
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.get(path + "?days=7", headers=AUTH)
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:144: AssertionError
+____________ test_analytics_tools_schema_error_returns_empty_tools _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b89594686d0>
+
+    async def test_analytics_tools_schema_error_returns_empty_tools(monkeypatch):
+        monkeypatch.setattr("app.routes.analytics.fetchval", AsyncMock(return_value=50.0))
+    
+        calls = []
+    
+        async def flaky_fetch(query: str, *_a, **_k):
+            ql = query.lower()
+            calls.append(True)
+            if "tool_calls" in ql.replace("\n", " "):
+                raise ValueError("no such table tool_calls")
+            if "budget_alerts" in ql:
+                return []
+            if "generate_series" in ql:
+                return [{"day": date.today(), "total_cost": 1.0, "calls": 1}]
+            if "decisions" in ql:
+                return []
+            if "error_patterns" in ql:
+                return []
+            raise AssertionError("unexpected")
+    
+        monkeypatch.setattr(
+            "app.routes.analytics.fetch", AsyncMock(side_effect=flaky_fetch)
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.get("/analytics/tools?days=5", headers=AUTH)
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:174: AssertionError
+_______________________ test_analytics_alerts_risk_high ________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b89594d9a90>
+
+    async def test_analytics_alerts_risk_high(monkeypatch):
+        monkeypatch.setattr("app.routes.analytics.fetchval", AsyncMock(return_value=999.0))
+    
+        async def fx(query: str, *_a, **_k):
+            if "budget_alerts" in query.lower():
+                return []
+            raise AssertionError("unexpected fetch in alerts")
+    
+        monkeypatch.setattr("app.routes.analytics.fetch", AsyncMock(side_effect=fx))
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.get("/analytics/alerts?days=7", headers=AUTH)
+        body = r.json()
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:204: AssertionError
+_______________________ test_analytics_skills_delegates ________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b8959474310>
+
+    async def test_analytics_skills_delegates(monkeypatch):
+        monkeypatch.setattr(
+            "app.routes.analytics.get_agent_profile",
+            AsyncMock(return_value={"skills": [], "growth_areas": []}),
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.get("/analytics/skills", headers=AUTH)
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:216: AssertionError
+_____________________ test_analytics_cost_efficiency_empty _____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b8959443b90>
+
+    async def test_analytics_cost_efficiency_empty(monkeypatch):
+        monkeypatch.setattr("app.routes.analytics.get_efficiency_scores", lambda: {})
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.get("/analytics/cost-efficiency", headers=AUTH)
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:224: AssertionError
+____________________ test_analytics_cost_efficiency_ranked _____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895970ee90>
+
+    async def test_analytics_cost_efficiency_ranked(monkeypatch):
+        t = datetime.utcnow()
+        scores = {
+            "a": EfficiencyScore(
+                model="a",
+                avg_cost=0.01,
+                thumbs_up_rate=0.9,
+                efficiency=90,
+                sample_count=9,
+                last_updated=t,
+            ),
+            "b": EfficiencyScore(
+                model="b",
+                avg_cost=0.02,
+                thumbs_up_rate=0.5,
+                efficiency=40,
+                sample_count=8,
+                last_updated=t,
+            ),
+        }
+        monkeypatch.setattr("app.routes.analytics.get_efficiency_scores", lambda: scores)
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.get("/analytics/cost-efficiency", headers=AUTH)
+        body = r.json()
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:254: AssertionError
+_________________ test_analytics_ab_tests_empty_on_fetch_error _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b8959437d10>
+
+    async def test_analytics_ab_tests_empty_on_fetch_error(monkeypatch):
+        monkeypatch.setattr(
+            "app.routes.analytics.fetch",
+            AsyncMock(side_effect=RuntimeError("db")),
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.get("/analytics/ab-tests?limit=3", headers=AUTH)
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:266: AssertionError
+_________________________ test_analytics_ab_tests_rows _________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895949df90>
+
+    async def test_analytics_ab_tests_rows(monkeypatch):
+        monkeypatch.setattr(
+            "app.routes.analytics.fetch",
+            AsyncMock(
+                return_value=[
+                    {
+                        "task_description": "task",
+                        "approach_a": '{"model":"m"}',
+                        "approach_b": "{}",
+                        "result_a": '{"cost": 1}',
+                        "result_b": '{"cost": 2}',
+                        "winner": "a",
+                        "win_reason": "cheaper",
+                        "created_at": datetime(2026, 1, 1, 12, 0, 0),
+                    }
+                ]
+            ),
+        )
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.get("/analytics/ab-tests", headers=AUTH)
+        body = r.json()
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:293: AssertionError
+____________________ test_analytics_ab_test_run_validation _____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b8959462850>
+
+    async def test_analytics_ab_test_run_validation(monkeypatch):
+        monkeypatch.setattr(
+            "app.routes.analytics.run_ab_test",
+            AsyncMock(side_effect=AssertionError("must not call")),
+        )
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.post(
+                "/analytics/ab-tests/run",
+                headers=AUTH,
+                params={
+                    "task": " ",
+                    "model_a": "a",
+                    "model_b": "b",
+                    "system_prompt_a": "",
+                    "system_prompt_b": "",
+                },
+            )
+    
+>       assert r.status_code == 400
+E       assert 503 == 400
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:318: AssertionError
+__________________________ test_analytics_ab_test_run __________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895c6c8310>
+
+    async def test_analytics_ab_test_run(monkeypatch):
+        monkeypatch.setattr(
+            "app.routes.analytics.run_ab_test",
+            AsyncMock(return_value={"winner": "a", "win_reason": "ok", "task_id": "t1"}),
+        )
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.post(
+                "/analytics/ab-tests/run",
+                headers=AUTH,
+                params={
+                    "task": "compare",
+                    "model_a": "m1",
+                    "model_b": "m2",
+                    "system_prompt_a": "",
+                    "system_prompt_b": "",
+                },
+            )
+    
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:341: AssertionError
+__________________ test_decisions_fetch_failure_returns_empty __________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895c6caf90>
+
+    async def test_decisions_fetch_failure_returns_empty(monkeypatch):
+        monkeypatch.setattr("app.routes.analytics.fetchval", AsyncMock(return_value=30.0))
+        monkeypatch.setattr(
+            "app.routes.analytics.fetch",
+            AsyncMock(side_effect=RuntimeError("missing table")),
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.get("/analytics/decisions", headers=AUTH)
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:354: AssertionError
+___________________ test_analytics_errors_empty_on_fetch_exc ___________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b8959475b50>
+
+    async def test_analytics_errors_empty_on_fetch_exc(monkeypatch):
+        monkeypatch.setattr(
+            "app.routes.analytics.fetch",
+            AsyncMock(side_effect=RuntimeError("no table")),
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.get("/analytics/errors", headers=AUTH)
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:390: AssertionError
+______________________ test_analytics_alerts_medium_risk _______________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b8959e17d90>
+
+    async def test_analytics_alerts_medium_risk(monkeypatch):
+        async def _overview(**_kwargs):
+            return {
+                "budget": 100.0,
+                "spent_month": 70.0,
+                "spent_today": 2.0,
+                "remaining": 30.0,
+                "daily_average": 2.5,
+                "projected_total": 92.5,
+                "percent_used": 70.0,
+                "days_elapsed": 10,
+                "days_in_month": 30,
+                "is_overspend_risk": False,
+            }
+    
+        monkeypatch.setattr("app.routes.analytics.get_analytics_overview", _overview)
+        monkeypatch.setattr(
+            "app.routes.analytics.fetch",
+            AsyncMock(side_effect=RuntimeError("alerts table missing")),
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            r = await client.get("/analytics/alerts?days=7", headers=AUTH)
+        body = r.json()
+>       assert r.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_analytics_routes.py:418: AssertionError
+_________________________ test_settings_initialization _________________________
+
+    def test_settings_initialization():
+        """Test Settings initializes with defaults."""
+        settings = Settings()
+>       assert settings.ENVIRONMENT == "development"
+E       AssertionError: assert 'production' == 'development'
+E         
+E         - development
+E         + production
+
+tests/test_config.py:11: AssertionError
+_________________________ test_settings_cors_defaults __________________________
+
+    def test_settings_cors_defaults():
+        """Test CORS settings have proper defaults."""
+        settings = Settings()
+        assert len(settings.CORS_ORIGINS) > 0
+>       assert any("localhost" in origin for origin in settings.CORS_ORIGINS)
+E       assert False
+E        +  where False = any(<generator object test_settings_cors_defaults.<locals>.<genexpr> at 0x7b895948fb90>)
+
+tests/test_config.py:21: AssertionError
+____________________ test_list_conversations_returns_items _____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895947ec50>
+
+    async def test_list_conversations_returns_items(monkeypatch):
+        async def fake_list(user_id=None, limit=20):
+            return [{"id": "conv-1"}, {"id": "conv-2"}]
+    
+        monkeypatch.setattr(
+            "app.routes.conversations.conversation_manager.list_conversations", fake_list
+        )
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/conversations", headers={"Authorization": "Bearer sk-agent-local-dev"}
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_conversations_routes.py:20: AssertionError
+____________________ test_get_conversation_returns_messages ____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895946c750>
+
+    async def test_get_conversation_returns_messages(monkeypatch):
+        async def fake_load(conversation_id, max_turns=50):
+            return [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+            ]
+    
+        monkeypatch.setattr(
+            "app.routes.conversations.conversation_manager.load_messages", fake_load
+        )
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/conversations/conv-1",
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_conversations_routes.py:44: AssertionError
+_______________ test_delete_conversation_maps_success_and_error ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b89594f7b50>
+
+    async def test_delete_conversation_maps_success_and_error(monkeypatch):
+        async def fake_delete_ok(_conversation_id):
+            return True
+    
+        monkeypatch.setattr(
+            "app.routes.conversations.conversation_manager.delete_conversation",
+            fake_delete_ok,
+        )
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            ok_response = await client.delete(
+                "/conversations/conv-1",
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+            )
+    
+>       assert ok_response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_conversations_routes.py:66: AssertionError
+___________________ test_documents_upload_rejects_empty_file ___________________
+
+    async def test_documents_upload_rejects_empty_file():
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.post(
+                "/documents/upload",
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+                files={"file": ("empty.txt", b"", "text/plain")},
+            )
+    
+>       assert response.status_code == 400
+E       assert 503 == 400
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_documents_routes.py:15: AssertionError
+________________ test_documents_upload_maps_value_error_to_422 _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b8959439290>
+
+    async def test_documents_upload_maps_value_error_to_422(monkeypatch):
+        async def fake_ingest(filename: str, data: bytes, user_id=None):
+            raise ValueError("bad document")
+    
+        monkeypatch.setattr("app.routes.documents.ingest_document", fake_ingest)
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.post(
+                "/documents/upload",
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+                files={"file": ("bad.txt", b"not empty", "text/plain")},
+            )
+    
+>       assert response.status_code == 422
+E       assert 503 == 422
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_documents_routes.py:33: AssertionError
+____________ test_list_documents_returns_empty_when_db_unavailable _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895951af10>
+
+    async def test_list_documents_returns_empty_when_db_unavailable(monkeypatch):
+        monkeypatch.setattr("app.routes.documents._db.db_pool", None)
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/documents", headers={"Authorization": "Bearer sk-agent-local-dev"}
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_documents_routes.py:46: AssertionError
+________________ test_delete_document_returns_404_when_missing _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b89594f0950>
+
+    async def test_delete_document_returns_404_when_missing(monkeypatch):
+        async def fake_fetchrow(_query, _document_id):
+            return None
+    
+        monkeypatch.setattr("app.routes.documents.fetchrow", fake_fetchrow)
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.delete(
+                "/documents/doc-1", headers={"Authorization": "Bearer sk-agent-local-dev"}
+            )
+    
+>       assert response.status_code == 404
+E       assert 503 == 404
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_documents_routes.py:62: AssertionError
+_____________ test_search_documents_route_returns_wrapped_results ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895951b510>
+
+    async def test_search_documents_route_returns_wrapped_results(monkeypatch):
+        async def fake_search(query, limit=5, document_id=None, user_id=None):
+            return [{"id": "c1", "content": "hello"}]
+    
+        monkeypatch.setattr("app.routes.documents.search_documents", fake_search)
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/documents/search",
+                params={"q": "hello", "limit": 1},
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_documents_routes.py:80: AssertionError
+___________________ test_get_history_returns_tasks_and_total ___________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b8959370850>
+
+    async def test_get_history_returns_tasks_and_total(monkeypatch):
+        async def fake_fetch(_query, _limit, _offset):
+            return [
+                {
+                    "id": "t1",
+                    "query": "q1",
+                    "status": "completed",
+                    "created_at": "x",
+                    "cost": 0.1,
+                    "model_used": "m",
+                }
+            ]
+    
+        async def fake_fetchval(_query):
+            return 1
+    
+        monkeypatch.setattr("app.routes.history.fetch", fake_fetch)
+        monkeypatch.setattr("app.routes.history.fetchval", fake_fetchval)
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/history", headers={"Authorization": "Bearer sk-agent-local-dev"}
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_history_routes.py:31: AssertionError
+________________ test_get_task_detail_returns_404_when_missing _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b8959378590>
+
+    async def test_get_task_detail_returns_404_when_missing(monkeypatch):
+        async def fake_fetchrow(_query, _task_id):
+            return None
+    
+        monkeypatch.setattr("app.routes.history.fetchrow", fake_fetchrow)
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/history/missing", headers={"Authorization": "Bearer sk-agent-local-dev"}
+            )
+    
+>       assert response.status_code == 404
+E       assert 503 == 404
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_history_routes.py:49: AssertionError
+_______________________ test_delete_task_returns_deleted _______________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895943e710>
+
+    async def test_delete_task_returns_deleted(monkeypatch):
+        calls = {"count": 0}
+    
+        async def fake_execute(_query, _task_id):
+            calls["count"] += 1
+            return None
+    
+        monkeypatch.setattr("app.routes.history.execute", fake_execute)
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.delete(
+                "/history/task-1", headers={"Authorization": "Bearer sk-agent-local-dev"}
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_history_routes.py:68: AssertionError
+____________________ test_get_task_detail_returns_feedback _____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895932f750>
+
+    async def test_get_task_detail_returns_feedback(monkeypatch):
+        async def fake_fetchrow(query, task_id):
+            if "FROM tasks" in query:
+                return {"id": task_id, "query": "q1", "status": "completed"}
+            return {"signal": "up", "notes": "good structure", "created_at": "now"}
+    
+        async def fake_fetch(_query, _task_id):
+            return [{"step_number": 1, "action": "search"}]
+    
+        monkeypatch.setattr("app.routes.history.fetchrow", fake_fetchrow)
+        monkeypatch.setattr("app.routes.history.fetch", fake_fetch)
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/history/task-1", headers={"Authorization": "Bearer sk-agent-local-dev"}
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_history_routes.py:91: AssertionError
+___________ test_submit_task_feedback_persists_and_promotes_learning ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b89594e4210>
+
+    async def test_submit_task_feedback_persists_and_promotes_learning(monkeypatch):
+        inserted = {}
+    
+        async def fake_fetchrow(query, *args):
+            if "FROM tasks" in query:
+                task_id = args[0]
+                return {
+                    "id": task_id,
+                    "query": "Summarize this repo",
+                    "user_id": "default",
+                    "status": "completed",
+                }
+            if "INSERT INTO task_feedback" in query:
+                inserted["task_id"] = args[0]
+                inserted["user_id"] = args[1]
+                inserted["signal"] = args[2]
+                inserted["notes"] = args[3]
+                return {
+                    "signal": args[2],
+                    "notes": args[3],
+                    "created_at": "2026-01-01T00:00:00Z",
+                }
+            return None
+    
+        promoted = {}
+    
+        async def fake_promote(**kwargs):
+            promoted.update(kwargs)
+            return "memory-1"
+    
+        monkeypatch.setattr("app.routes.history.fetchrow", fake_fetchrow)
+        monkeypatch.setattr(
+            "app.routes.history.memory_manager.save_feedback_learning", fake_promote
+        )
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.post(
+                "/history/task-1/feedback",
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+                json={"signal": "down", "notes": "too vague"},
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_history_routes.py:140: AssertionError
+__________ test_submit_task_feedback_skips_learning_when_notes_blank ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b89594db9d0>
+
+    async def test_submit_task_feedback_skips_learning_when_notes_blank(monkeypatch):
+        async def fake_fetchrow(query, *args):
+            if "FROM tasks" in query:
+                task_id = args[0]
+                return {
+                    "id": task_id,
+                    "query": "Summarize this repo",
+                    "user_id": "default",
+                    "status": "completed",
+                }
+            if "INSERT INTO task_feedback" in query:
+                return {
+                    "signal": args[2],
+                    "notes": args[3],
+                    "created_at": "2026-01-01T00:00:00Z",
+                }
+            return None
+    
+        promoted = {"called": False}
+    
+        async def fake_promote(**kwargs):
+            promoted["called"] = True
+    
+        monkeypatch.setattr("app.routes.history.fetchrow", fake_fetchrow)
+        monkeypatch.setattr(
+            "app.routes.history.memory_manager.save_feedback_learning", fake_promote
+        )
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.post(
+                "/history/task-1/feedback",
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+                json={"signal": "up", "notes": "   "},
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_history_routes.py:186: AssertionError
+_____________ test_submit_task_feedback_rejects_non_completed_task _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895943bbd0>
+
+    async def test_submit_task_feedback_rejects_non_completed_task(monkeypatch):
+        async def fake_fetchrow(query, *args):
+            if "FROM tasks" in query:
+                task_id = args[0]
+                return {
+                    "id": task_id,
+                    "query": "Summarize this repo",
+                    "user_id": "default",
+                    "status": "running",
+                }
+            if "INSERT INTO task_feedback" in query:
+                raise AssertionError(
+                    "feedback insert should not run for non-completed task"
+                )
+            return None
+    
+        monkeypatch.setattr("app.routes.history.fetchrow", fake_fetchrow)
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.post(
+                "/history/task-1/feedback",
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+                json={"signal": "up", "notes": "nice"},
+            )
+    
+>       assert response.status_code == 409
+E       assert 503 == 409
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_history_routes.py:216: AssertionError
+______________________ test_memory_range_returns_results _______________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b8959518f90>
+
+    async def test_memory_range_returns_results(monkeypatch):
+        async def fake_range(**kwargs):
+            return [{"id": "mx", "content": "in range"}]
+    
+        monkeypatch.setattr(
+            "app.routes.memory.memory_manager.search_by_time_range", fake_range
+        )
+    
+        transport = ASGITransport(app=app)
+        start = "2026-01-01T00:00:00"
+        end = "2026-01-31T00:00:00"
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/memory/range",
+                params={"start": start, "end": end},
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_memory_routes.py:24: AssertionError
+______________________ test_memory_range_rejects_bad_iso _______________________
+
+    async def test_memory_range_rejects_bad_iso():
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/memory/range",
+                params={"start": "not-a-date", "end": "2026-01-02T00:00:00"},
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+            )
+>       assert response.status_code == 400
+E       assert 503 == 400
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_memory_routes.py:38: AssertionError
+______________________ test_list_memories_returns_recent _______________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b8959373dd0>
+
+    async def test_list_memories_returns_recent(monkeypatch):
+        async def fake_recent(user_id=None, limit=20, category=None):
+            return [{"id": "m1", "content": "remember this"}]
+    
+        monkeypatch.setattr("app.routes.memory.memory_manager.get_recent", fake_recent)
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/memory", headers={"Authorization": "Bearer sk-agent-local-dev"}
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_memory_routes.py:53: AssertionError
+_____________________ test_search_memories_returns_results _____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b89594e4050>
+
+    async def test_search_memories_returns_results(monkeypatch):
+        async def fake_search(query, user_id=None, limit=5, category=None):
+            return [{"id": "m2", "content": "search result"}]
+    
+        monkeypatch.setattr("app.routes.memory.memory_manager.search", fake_search)
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/memory/search",
+                params={"q": "result", "limit": 2},
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_memory_routes.py:73: AssertionError
+________________ test_save_memory_returns_error_when_save_fails ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b8959378150>
+
+    async def test_save_memory_returns_error_when_save_fails(monkeypatch):
+        async def fake_save(content, category="fact", user_id=None, relevance_score=1.0):
+            return None
+    
+        monkeypatch.setattr("app.routes.memory.memory_manager.save", fake_save)
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.post(
+                "/memory",
+                params={"content": "x", "category": "fact"},
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_memory_routes.py:93: AssertionError
+_________________ test_delete_memory_returns_deleted_or_error __________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b89587f3690>
+
+    async def test_delete_memory_returns_deleted_or_error(monkeypatch):
+        async def fake_delete(_memory_id):
+            return True
+    
+        monkeypatch.setattr("app.routes.memory.memory_manager.delete", fake_delete)
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.delete(
+                "/memory/m-1", headers={"Authorization": "Bearer sk-agent-local-dev"}
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_memory_routes.py:109: AssertionError
+_____________ test_get_settings_returns_defaults_when_store_empty ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895829cc90>
+
+    async def test_get_settings_returns_defaults_when_store_empty(monkeypatch):
+        monkeypatch.setattr("app.routes.settings._load", lambda: {})
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/settings", headers={"Authorization": "Bearer sk-agent-local-dev"}
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_settings_routes.py:18: AssertionError
+____________________ test_get_settings_returns_saved_values ____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b89582336d0>
+
+    async def test_get_settings_returns_saved_values(monkeypatch):
+        monkeypatch.setattr(
+            "app.routes.settings._load",
+            lambda: {
+                "preferred_model": "deepseek/deepseek-chat",
+                "max_monthly_cost": 75.0,
+                "enable_notifications": False,
+                "auto_save_results": False,
+                "timezone": "America/New_York",
+                "agent_persona_enabled": False,
+                "agent_persona_path": "backend/data/persona",
+                "metadata": {},
+            },
+        )
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/settings", headers={"Authorization": "Bearer sk-agent-local-dev"}
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_settings_routes.py:49: AssertionError
+______________ test_update_settings_persists_and_returns_updated _______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b8958258450>
+
+    async def test_update_settings_persists_and_returns_updated(monkeypatch):
+        captured = {}
+    
+        def fake_save(data):
+            captured["data"] = data
+    
+        monkeypatch.setattr("app.routes.settings._save", fake_save)
+    
+        body = {
+            "display_name": "Pat",
+            "preferred_model": "deepseek/deepseek-chat",
+            "max_monthly_cost": 45.0,
+            "enable_notifications": True,
+            "auto_save_results": True,
+            "context_window_target_percent": 0.75,
+            "default_tools": ["web_search"],
+            "timezone": "UTC",
+            "agent_persona_enabled": True,
+            "agent_persona_path": "data/persona",
+            "agent_show_thinking_while_streaming": True,
+            "metadata": {"env": "test"},
+        }
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.post(
+                "/settings",
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+                json=body,
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_settings_routes.py:86: AssertionError
+_________ test_get_persona_preview_uses_defaults_when_settings_missing _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895824c0d0>
+
+    async def test_get_persona_preview_uses_defaults_when_settings_missing(monkeypatch):
+        monkeypatch.setattr("app.routes.settings._load", lambda: {})
+        monkeypatch.setattr(
+            "app.routes.settings.build_persona_prompt", lambda data: "<soul>default</soul>"
+        )
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/settings/persona/preview",
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_settings_routes.py:108: AssertionError
+_________________ test_get_persona_preview_uses_saved_settings _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b895826ff50>
+
+    async def test_get_persona_preview_uses_saved_settings(monkeypatch):
+        monkeypatch.setattr(
+            "app.routes.settings._load",
+            lambda: {
+                "agent_persona_enabled": False,
+                "agent_persona_path": "/tmp/persona",
+            },
+        )
+        monkeypatch.setattr("app.routes.settings.build_persona_prompt", lambda data: "")
+    
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/settings/persona/preview",
+                headers={"Authorization": "Bearer sk-agent-local-dev"},
+            )
+    
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_settings_routes.py:132: AssertionError
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.11.15-final-0 _______________
+
+Name                                    Stmts   Miss  Cover
+-----------------------------------------------------------
+app/__init__.py                             0      0   100%
+app/agent/__init__.py                       0      0   100%
+app/agent/ab_testing.py                    82     67    18%
+app/agent/context_builder.py               53      3    94%
+app/agent/conversation.py                 108     20    81%
+app/agent/cost_learning.py                 60      4    93%
+app/agent/decision_tracker.py              19      0   100%
+app/agent/documents.py                    175     51    71%
+app/agent/error_classifier.py              84     27    68%
+app/agent/memory.py                       239     87    64%
+app/agent/orchestration_runtime.py        282    188    33%
+app/agent/orchestrator.py                 628    292    54%
+app/agent/prompts/__init__.py               2      0   100%
+app/agent/prompts/guardrails.py            14      1    93%
+app/agent/prompts/system_prompt.py         18      0   100%
+app/agent/quality.py                       82     82     0%
+app/agent/reflection.py                    51     31    39%
+app/agent/router.py                       150     28    81%
+app/agent/skill_registry.py                78      7    91%
+app/agent/sub_agent.py                      9      0   100%
+app/agent/tool_learning.py                 58     44    24%
+app/agent/workflows.py                     56      4    93%
+app/config.py                             151     53    65%
+app/database.py                            58      2    97%
+app/integrations/slack_discord_bot.py      28      0   100%
+app/main.py                               136     69    49%
+app/models.py                             159      0   100%
+app/routes/__init__.py                      0      0   100%
+app/routes/agent.py                       426    349    18%
+app/routes/analytics.py                   161    115    29%
+app/routes/connectors.py                   89     60    33%
+app/routes/conversations.py                17      7    59%
+app/routes/documents.py                    55     33    40%
+app/routes/history.py                      55     34    38%
+app/routes/integrations.py                 19      0   100%
+app/routes/memory.py                       42     27    36%
+app/routes/projects.py                     93     59    37%
+app/routes/schedules.py                    70     31    56%
+app/routes/settings.py                     26      8    69%
+app/tools/__init__.py                       0      0   100%
+app/tools/connectors/__init__.py            0      0   100%
+app/tools/connectors/github.py            138    138     0%
+app/tools/mcp_client.py                    36      0   100%
+app/tools/mcp_hub.py                      295    198    33%
+app/tools/tool_registry.py                422    131    69%
+app/utils/__init__.py                       0      0   100%
+app/utils/alerts.py                        53      0   100%
+app/utils/auth.py                          75      6    92%
+app/utils/http_headers.py                  12      0   100%
+app/utils/limiter.py                        3      0   100%
+app/utils/persona_loader.py                71      7    90%
+app/utils/pillar_loader.py                 29      2    93%
+app/utils/settings_store.py                26      7    73%
+app/utils/streaming.py                     41      4    90%
+app/utils/truncate.py                      52      1    98%
+app/utils/url_safety.py                    64      4    94%
+-----------------------------------------------------------
+TOTAL                                    5150   2281    56%
+FAIL Required test coverage of 65% not reached. Total coverage: 55.71%
+=========================== short test summary info ============================
+FAILED tests/test_agent_routes.py::test_run_agent_returns_completed_response
+FAILED tests/test_agent_routes.py::test_run_agent_returns_402_when_estimate_exceeds_remaining_budget
+FAILED tests/test_agent_routes.py::test_stream_agent_emits_budget_error_when_over_budget
+FAILED tests/test_agent_routes.py::test_stream_agent_cleans_cost_tracker_call_info_on_completion
+FAILED tests/test_agent_routes.py::test_stream_agent_times_out_cleanly - asse...
+FAILED tests/test_agent_routes.py::test_stop_agent_returns_stopped_for_known_task
+FAILED tests/test_agent_routes.py::test_stop_agent_returns_404_for_unknown_task
+FAILED tests/test_agent_routes.py::test_stop_agent_rejects_invalid_task_id_format
+FAILED tests/test_agent_routes.py::test_stop_agent_rejects_non_uuid_36_char_value
+FAILED tests/test_agent_routes.py::test_run_agent_returns_503_when_orchestrator_missing
+FAILED tests/test_agent_routes.py::test_run_agent_returns_503_when_cost_tracker_missing
+FAILED tests/test_agent_routes.py::test_list_tools_returns_available_tools - ...
+FAILED tests/test_agent_routes.py::test_list_models_returns_routing_info - as...
+FAILED tests/test_agent_routes.py::test_enqueue_agent_task_queues_payload - a...
+FAILED tests/test_agent_routes.py::test_enqueue_agent_task_rejects_when_budget_exceeded
+FAILED tests/test_agent_routes.py::test_replay_dead_letter_task_queues_retry
+FAILED tests/test_agent_routes.py::test_list_dead_letter_tasks_handles_db_unavailable
+FAILED tests/test_agent_routes.py::test_list_dead_letter_tasks_returns_rows
+FAILED tests/test_agent_routes.py::test_run_agent_returns_422_for_invalid_reasoning_effort
+FAILED tests/test_analytics_routes.py::test_analytics_overview - assert 503 =...
+FAILED tests/test_analytics_routes.py::test_analytics_list_routes[/analytics/daily-<lambda>]
+FAILED tests/test_analytics_routes.py::test_analytics_list_routes[/analytics/models-<lambda>]
+FAILED tests/test_analytics_routes.py::test_analytics_list_routes[/analytics/tools-<lambda>]
+FAILED tests/test_analytics_routes.py::test_analytics_list_routes[/analytics/decisions-<lambda>]
+FAILED tests/test_analytics_routes.py::test_analytics_list_routes[/analytics/errors-<lambda>]
+FAILED tests/test_analytics_routes.py::test_analytics_tools_schema_error_returns_empty_tools
+FAILED tests/test_analytics_routes.py::test_analytics_alerts_risk_high - asse...
+FAILED tests/test_analytics_routes.py::test_analytics_skills_delegates - asse...
+FAILED tests/test_analytics_routes.py::test_analytics_cost_efficiency_empty
+FAILED tests/test_analytics_routes.py::test_analytics_cost_efficiency_ranked
+FAILED tests/test_analytics_routes.py::test_analytics_ab_tests_empty_on_fetch_error
+FAILED tests/test_analytics_routes.py::test_analytics_ab_tests_rows - assert ...
+FAILED tests/test_analytics_routes.py::test_analytics_ab_test_run_validation
+FAILED tests/test_analytics_routes.py::test_analytics_ab_test_run - assert 50...
+FAILED tests/test_analytics_routes.py::test_decisions_fetch_failure_returns_empty
+FAILED tests/test_analytics_routes.py::test_analytics_errors_empty_on_fetch_exc
+FAILED tests/test_analytics_routes.py::test_analytics_alerts_medium_risk - as...
+FAILED tests/test_config.py::test_settings_initialization - AssertionError: a...
+FAILED tests/test_config.py::test_settings_cors_defaults - assert False
+FAILED tests/test_conversations_routes.py::test_list_conversations_returns_items
+FAILED tests/test_conversations_routes.py::test_get_conversation_returns_messages
+FAILED tests/test_conversations_routes.py::test_delete_conversation_maps_success_and_error
+FAILED tests/test_documents_routes.py::test_documents_upload_rejects_empty_file
+FAILED tests/test_documents_routes.py::test_documents_upload_maps_value_error_to_422
+FAILED tests/test_documents_routes.py::test_list_documents_returns_empty_when_db_unavailable
+FAILED tests/test_documents_routes.py::test_delete_document_returns_404_when_missing
+FAILED tests/test_documents_routes.py::test_search_documents_route_returns_wrapped_results
+FAILED tests/test_history_routes.py::test_get_history_returns_tasks_and_total
+FAILED tests/test_history_routes.py::test_get_task_detail_returns_404_when_missing
+FAILED tests/test_history_routes.py::test_delete_task_returns_deleted - asser...
+FAILED tests/test_history_routes.py::test_get_task_detail_returns_feedback - ...
+FAILED tests/test_history_routes.py::test_submit_task_feedback_persists_and_promotes_learning
+FAILED tests/test_history_routes.py::test_submit_task_feedback_skips_learning_when_notes_blank
+FAILED tests/test_history_routes.py::test_submit_task_feedback_rejects_non_completed_task
+FAILED tests/test_memory_routes.py::test_memory_range_returns_results - asser...
+FAILED tests/test_memory_routes.py::test_memory_range_rejects_bad_iso - asser...
+FAILED tests/test_memory_routes.py::test_list_memories_returns_recent - asser...
+FAILED tests/test_memory_routes.py::test_search_memories_returns_results - as...
+FAILED tests/test_memory_routes.py::test_save_memory_returns_error_when_save_fails
+FAILED tests/test_memory_routes.py::test_delete_memory_returns_deleted_or_error
+FAILED tests/test_settings_routes.py::test_get_settings_returns_defaults_when_store_empty
+FAILED tests/test_settings_routes.py::test_get_settings_returns_saved_values
+FAILED tests/test_settings_routes.py::test_update_settings_persists_and_returns_updated
+FAILED tests/test_settings_routes.py::test_get_persona_preview_uses_defaults_when_settings_missing
+FAILED tests/test_settings_routes.py::test_get_persona_preview_uses_saved_settings

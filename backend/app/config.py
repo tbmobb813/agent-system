@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # If true, non-master API keys require a working database even when ENVIRONMENT is not production.
     REQUIRE_DATABASE_API_KEY: bool = Field(default=False)
 
+    # Connectors
+    GITHUB_TOKEN: str = Field(
+        default=""
+    )  # Personal Access Token — https://github.com/settings/tokens
+
     # Tools
     SEARXNG_URL: str = Field(
         default="http://localhost:8888"
@@ -76,22 +81,23 @@ class Settings(BaseSettings):
         default=""
     )  # Optional webhook (Slack, Discord, etc.)
 
-    # Model routing
-    # Free tier — rate-limited but $0, good for casual/simple queries
-    DEFAULT_MODEL_FREE: str = Field(default="meta-llama/llama-3.1-8b-instruct:free")
-    # Simple/balanced — DeepSeek is excellent quality at $0.14/M input
+    # Model routing — override any of these in .env to swap models without code changes
+    # Free tier — $0, rate-limited; Llama 3.3 70B is the best free model on OpenRouter
+    DEFAULT_MODEL_FREE: str = Field(default="meta-llama/llama-3.3-70b-instruct:free")
+    # Simple — cheap, fast; short factual questions and quick summaries
     DEFAULT_MODEL_SIMPLE: str = Field(default="deepseek/deepseek-chat")
+    # Balanced — default for unclassified queries; strong general model
     DEFAULT_MODEL_BALANCED: str = Field(default="deepseek/deepseek-chat")
-    # Coding — DeepSeek is one of the best coding models at any price
+    # Coding — DeepSeek V3 is top-tier for code at $0.14/M; beats many expensive models
     DEFAULT_MODEL_CODING: str = Field(default="deepseek/deepseek-chat")
-    # Advanced — Haiku for quality tasks; swap to claude-sonnet-4 only when needed
-    DEFAULT_MODEL_ADVANCED: str = Field(default="anthropic/claude-3.5-haiku")
-    # Premium — best quality, used only for explicit high-effort requests
-    DEFAULT_MODEL_PREMIUM: str = Field(default="anthropic/claude-sonnet-4")
-    # Research — long context, detailed analysis (Gemini Flash is very cheap)
-    DEFAULT_MODEL_RESEARCH: str = Field(default="google/gemini-2.5-flash-preview-04-17")
-    # Agent — must reliably support function calling; Haiku is the sweet spot
-    DEFAULT_MODEL_AGENT: str = Field(default="anthropic/claude-3.5-haiku")
+    # Research — Gemini 2.5 Flash: 1M context window, cheap, fast; ideal for long docs
+    DEFAULT_MODEL_RESEARCH: str = Field(default="google/gemini-2.5-flash")
+    # Advanced — Haiku 4.5: newest Haiku, stronger reasoning than 3.5 at similar price
+    DEFAULT_MODEL_ADVANCED: str = Field(default="anthropic/claude-haiku-4.5")
+    # Premium — Sonnet 4.6: latest and best Sonnet; use for high-stakes requests
+    DEFAULT_MODEL_PREMIUM: str = Field(default="anthropic/claude-sonnet-4.6")
+    # Agent — primary ReAct/tool-use model; Haiku 4.5 has best-in-class function calling
+    DEFAULT_MODEL_AGENT: str = Field(default="anthropic/claude-haiku-4.5")
 
     # Execution limits
     MAX_STREAM_SECONDS: int = Field(default=300)  # Wall-clock timeout for SSE runs
@@ -111,6 +117,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,
+        extra="ignore",
     )
 
 
@@ -124,28 +131,36 @@ class CostTracker:
     All costs are tracked in real-time against the $30/month budget.
     """
 
-    # Model pricing (in USD per million tokens, updated April 2026)
+    # Model pricing (in USD per million tokens, updated May 2026)
+    # IDs verified against OpenRouter /api/v1/models — use dot notation (not dashes).
     MODEL_PRICING = {
-        # ── Free tier (OpenRouter free tier — rate limited) ───────────────────
-        "meta-llama/llama-3.1-8b-instruct:free": {"input": 0.0, "output": 0.0},
-        "mistralai/mistral-7b-instruct:free": {"input": 0.0, "output": 0.0},
-        "qwen/qwen-2-7b-instruct:free": {"input": 0.0, "output": 0.0},
+        # ── Free tier ─────────────────────────────────────────────────────────
+        "meta-llama/llama-3.3-70b-instruct:free": {"input": 0.0, "output": 0.0},
+        "mistralai/mistral-7b-instruct:free":      {"input": 0.0, "output": 0.0},
+        "qwen/qwen-2-7b-instruct:free":            {"input": 0.0, "output": 0.0},
         # ── Cheap tier ────────────────────────────────────────────────────────
-        # DeepSeek — best value, excellent at coding and general tasks
+        # DeepSeek V3 — best value; top-tier coding at $0.14/M input
         "deepseek/deepseek-chat": {"input": 0.14, "output": 0.28},
-        # GPT-4o Mini — reliable OpenAI option if needed
-        "openai/gpt-4o-mini": {"input": 0.15, "output": 0.60},
+        # DeepSeek R1 — reasoning model; best for hard algorithmic problems
+        "deepseek/deepseek-r1":   {"input": 0.55, "output": 2.19},
+        # GPT-4o Mini — solid OpenAI option
+        "openai/gpt-4o-mini":     {"input": 0.15, "output": 0.60},
         # ── Mid tier ──────────────────────────────────────────────────────────
-        # Gemini Flash — best for long context and research
-        "google/gemini-2.5-flash": {"input": 0.075, "output": 0.30},
-        "google/gemini-2.5-flash-preview-04-17": {"input": 0.075, "output": 0.30},
-        # Claude Haiku — reliable tool use, quality responses
-        "anthropic/claude-3.5-haiku": {"input": 1.00, "output": 5.00},
+        # Gemini 2.5 Flash — 1M context, best for research at this price
+        "google/gemini-2.5-flash":      {"input": 0.075, "output": 0.30},
+        # Claude Haiku 4.5 — newest Haiku; best-in-class function calling
+        "anthropic/claude-haiku-4.5":   {"input": 0.80,  "output": 4.00},
+        # Claude 3.5 Haiku — previous Haiku (kept for fallback compatibility)
+        "anthropic/claude-3.5-haiku":   {"input": 1.00,  "output": 5.00},
         # ── Premium tier ──────────────────────────────────────────────────────
-        # Claude Sonnet 4 — best quality, use sparingly
-        "anthropic/claude-sonnet-4": {"input": 3.00, "output": 15.00},
-        # Gemini Pro — Google's premium option
-        "google/gemini-2.5-pro": {"input": 1.50, "output": 6.00},
+        # Claude Sonnet 4.6 — latest Sonnet, best overall quality
+        "anthropic/claude-sonnet-4.6":  {"input": 3.00,  "output": 15.00},
+        # Claude Sonnet 4.5 — previous Sonnet
+        "anthropic/claude-sonnet-4.5":  {"input": 3.00,  "output": 15.00},
+        # Claude Sonnet 4 — older Sonnet (kept for cost tracking of past runs)
+        "anthropic/claude-sonnet-4":    {"input": 3.00,  "output": 15.00},
+        # Gemini 2.5 Pro — Google's premium, strong reasoning + long context
+        "google/gemini-2.5-pro":        {"input": 1.50,  "output": 6.00},
     }
 
     def __init__(self):

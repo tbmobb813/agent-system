@@ -1,6 +1,6 @@
 """Schedules API with DB mocked."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -21,7 +21,7 @@ _NICE_CRON = "0 9 * * *"
 async def test_schedules_require_db(monkeypatch):
     monkeypatch.setattr("app.routes.schedules._db.db_pool", None)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get(SCHED_PREFIX, headers=AUTH)
     assert r.status_code == 503
 
@@ -30,7 +30,7 @@ async def test_schedules_require_db(monkeypatch):
 async def test_schedules_create_and_list_and_delete(monkeypatch):
     monkeypatch.setattr("app.routes.schedules._db.db_pool", object())
     sid = uuid4()
-    next_at = datetime.utcnow()
+    next_at = datetime.now(UTC)
     row_single = {
         "id": sid,
         "next_run_at": next_at,
@@ -64,7 +64,7 @@ async def test_schedules_create_and_list_and_delete(monkeypatch):
     monkeypatch.setattr("app.routes.schedules.fetch", AsyncMock(side_effect=fetch))
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         c = await client.post(
             SCHED_PREFIX,
             headers=AUTH,
@@ -95,7 +95,7 @@ async def test_schedules_invalid_cron(monkeypatch):
     monkeypatch.setattr("app.routes.schedules._db.db_pool", object())
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.post(
             SCHED_PREFIX,
             headers=AUTH,
@@ -114,7 +114,7 @@ async def test_schedule_delete_missing(monkeypatch):
     monkeypatch.setattr("app.routes.schedules.fetchrow", AsyncMock(return_value=None))
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.delete(
             f"{SCHED_PREFIX}/{uuid4()}",
             headers=AUTH,

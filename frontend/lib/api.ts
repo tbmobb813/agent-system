@@ -80,9 +80,65 @@ export async function getAnalyticsAlerts(days = 30) {
   return res.json()
 }
 
+export async function getAnalyticsDecisions(days = 30) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/decisions?days=${days}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch analytics decisions (${res.status})`)
+  return res.json()
+}
+
+export async function getAnalyticsCostEfficiency() {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/cost-efficiency`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch cost efficiency (${res.status})`)
+  return res.json()
+}
+
+export async function getAnalyticsErrors(days = 30) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/errors?days=${days}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch error analytics (${res.status})`)
+  return res.json()
+}
+
+export async function getAnalyticsAbTests(limit = 10) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/ab-tests?limit=${limit}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch A/B tests (${res.status})`)
+  return res.json()
+}
+
 export async function getAnalyticsSkills() {
   const res = await fetchWithTimeout(`${API_URL}/analytics/skills`, { headers: headers() })
   if (!res.ok) throw new Error(`Failed to fetch analytics skills (${res.status})`)
+  return res.json()
+}
+
+export async function upsertAnalyticsSkill(data: {
+  task_type: string
+  skill_name: string
+  success_rate?: number
+  total_uses?: number
+  proficiency_level?: string
+  required_tools?: string[]
+}) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/skills`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to upsert skill (${res.status})` }))
+    throw new Error(String(err.detail ?? `Failed to upsert skill (${res.status})`))
+  }
+  return res.json()
+}
+
+export async function deleteAnalyticsSkill(taskType: string) {
+  const res = await fetchWithTimeout(`${API_URL}/analytics/skills/${encodeURIComponent(taskType)}`, {
+    method: 'DELETE',
+    headers: headers(),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to delete skill (${res.status})` }))
+    throw new Error(String(err.detail ?? `Failed to delete skill (${res.status})`))
+  }
   return res.json()
 }
 
@@ -244,6 +300,88 @@ export async function getAgentModels() {
   return res.json()
 }
 
+export interface SkillChainStep {
+  tool: string
+  description: string
+  hint?: string
+}
+
+export interface SkillChain {
+  id: string
+  name: string
+  description: string
+  task_type: string
+  steps: SkillChainStep[]
+  trigger_keywords: string[]
+  success_rate: number | null
+  total_runs: number
+  created_at: string | null
+  updated_at: string | null
+}
+
+export async function getSkillChains(): Promise<{ chains: SkillChain[] }> {
+  const res = await fetchWithTimeout(`${API_URL}/agent/skill-chains`, { headers: headers() })
+  if (!res.ok) return { chains: [] }
+  return res.json()
+}
+
+export async function createSkillChain(data: {
+  name: string
+  task_type: string
+  steps: SkillChainStep[]
+  description?: string
+  trigger_keywords?: string[]
+}): Promise<SkillChain> {
+  const res = await fetchWithTimeout(`${API_URL}/agent/skill-chains`, {
+    method: 'POST', headers: headers(), body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed (${res.status})` }))
+    throw new Error(String((err as Record<string, unknown>).detail ?? `Failed (${res.status})`))
+  }
+  return res.json()
+}
+
+export async function deleteSkillChain(chainId: string): Promise<void> {
+  const res = await fetchWithTimeout(`${API_URL}/agent/skill-chains/${chainId}`, {
+    method: 'DELETE', headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Failed to delete skill chain (${res.status})`)
+}
+
+export async function autoGenerateSkillChains(minOccurrences = 5): Promise<{ created: SkillChain[]; count: number }> {
+  const res = await fetchWithTimeout(`${API_URL}/agent/skill-chains/auto-generate`, {
+    method: 'POST', headers: headers(), body: JSON.stringify({ min_occurrences: minOccurrences }),
+  })
+  if (!res.ok) return { created: [], count: 0 }
+  return res.json()
+}
+
+export async function getWorkflowSuggestions(minOccurrences = 3): Promise<{
+  suggestions: Array<{
+    task_type: string
+    tools: string[]
+    occurrences: number
+    success_rate: number
+    updated_at: string | null
+    suggested_name: string
+    suggested_query: string
+  }>
+}> {
+  const res = await fetchWithTimeout(
+    `${API_URL}/agent/workflow-suggestions?min_occurrences=${minOccurrences}`,
+    { headers: headers() },
+  )
+  if (!res.ok) return { suggestions: [] }
+  return res.json()
+}
+
+export async function getTaskSuggestions(taskId: string): Promise<{ suggestions: string[]; ready: boolean }> {
+  const res = await fetchWithTimeout(`${API_URL}/agent/suggestions/${taskId}`, { headers: headers() }, 5000)
+  if (!res.ok) return { suggestions: [], ready: false }
+  return res.json()
+}
+
 export async function stopAgent(taskId: string) {
   const res = await fetchWithTimeout(`${API_URL}/agent/stop?task_id=${taskId}`, {
     method: 'POST',
@@ -305,6 +443,17 @@ export async function uploadDocument(file: File) {
   return res.json()
 }
 
+export async function getDocumentContent(documentId: string): Promise<{
+  document_id: string; filename: string; file_type: string
+  content: string; chunk_count: number
+}> {
+  const res = await fetchWithTimeout(`${API_URL}/documents/${documentId}/content`, {
+    headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Failed to fetch document content (${res.status})`)
+  return res.json()
+}
+
 export async function deleteDocument(documentId: string) {
   const res = await fetchWithTimeout(`${API_URL}/documents/${documentId}`, {
     method: 'DELETE',
@@ -312,6 +461,113 @@ export async function deleteDocument(documentId: string) {
   })
   if (!res.ok) throw new Error(`Failed to delete document (${res.status})`)
   return res.json()
+}
+
+// ── Connectors ───────────────────────────────────────────────────────────────
+
+export interface ConnectorStatus {
+  id: string
+  name: string
+  description: string
+  token_label: string
+  token_help: string
+  actions: string[]
+  configured: boolean
+  enabled: boolean
+  token_preview: string
+}
+
+export async function listConnectors(): Promise<ConnectorStatus[]> {
+  const res = await fetchWithTimeout(`${API_URL}/connectors`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch connectors (${res.status})`)
+  return res.json()
+}
+
+export async function saveConnector(id: string, data: { token?: string; enabled: boolean }): Promise<ConnectorStatus> {
+  const res = await fetchWithTimeout(`${API_URL}/connectors/${id}`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Failed to save connector (${res.status})` }))
+    throw new Error(String(err.detail ?? err))
+  }
+  return res.json()
+}
+
+export async function clearConnectorToken(id: string): Promise<ConnectorStatus> {
+  const res = await fetchWithTimeout(`${API_URL}/connectors/${id}/token`, {
+    method: 'DELETE',
+    headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Failed to clear token (${res.status})`)
+  return res.json()
+}
+
+export async function testConnector(id: string): Promise<{ ok: boolean; detail: string }> {
+  const res = await fetchWithTimeout(`${API_URL}/connectors/${id}/test`, { headers: headers() }, 12000)
+  if (!res.ok) throw new Error(`Test request failed (${res.status})`)
+  return res.json()
+}
+
+// ── Projects ──────────────────────────────────────────────────────────────────
+
+export interface Project {
+  id: string
+  name: string
+  description: string | null
+  color: string
+  task_count: number
+  created_at: string
+  updated_at: string
+}
+
+export async function listProjects(): Promise<{ projects: Project[] }> {
+  const res = await fetchWithTimeout(`${API_URL}/projects`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch projects (${res.status})`)
+  return res.json()
+}
+
+export async function createProject(data: { name: string; description?: string; color?: string }): Promise<Project> {
+  const res = await fetchWithTimeout(`${API_URL}/projects`, {
+    method: 'POST', headers: headers(), body: JSON.stringify(data),
+  })
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(String((e as Record<string,unknown>).detail ?? `Failed (${res.status})`)) }
+  return res.json()
+}
+
+export async function updateProject(id: string, data: { name?: string; description?: string; color?: string }): Promise<Project> {
+  const res = await fetchWithTimeout(`${API_URL}/projects/${id}`, {
+    method: 'PATCH', headers: headers(), body: JSON.stringify(data),
+  })
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(String((e as Record<string,unknown>).detail ?? `Failed (${res.status})`)) }
+  return res.json()
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  const res = await fetchWithTimeout(`${API_URL}/projects/${id}`, { method: 'DELETE', headers: headers() })
+  if (!res.ok) throw new Error(`Failed to delete project (${res.status})`)
+}
+
+export async function getProjectTasks(id: string, limit = 50, offset = 0) {
+  const res = await fetchWithTimeout(`${API_URL}/projects/${id}/tasks?limit=${limit}&offset=${offset}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch project tasks (${res.status})`)
+  return res.json()
+}
+
+export async function assignTaskToProject(projectId: string, taskId: string): Promise<void> {
+  const res = await fetchWithTimeout(`${API_URL}/projects/${projectId}/tasks/${taskId}`, {
+    method: 'POST', headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Failed to assign task (${res.status})`)
+}
+
+export async function removeTaskFromProject(projectId: string, taskId: string): Promise<void> {
+  const res = await fetchWithTimeout(`${API_URL}/projects/${projectId}/tasks/${taskId}`, {
+    method: 'DELETE', headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Failed to remove task (${res.status})`)
 }
 
 export async function runAgent(query: string, context?: string, tools?: string[]) {

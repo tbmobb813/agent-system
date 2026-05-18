@@ -56,7 +56,22 @@ async def _reconnect() -> bool:
 
 
 async def run_migrations():
-    """Run database migrations (placeholder)."""
+    """Run database migrations."""
+    global db_pool
+    if not db_pool:
+        logger.info("Database migrations checked")
+        return
+    try:
+        async with db_pool.acquire() as conn:
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS task_suggestions (
+                    task_id text PRIMARY KEY,
+                    suggestions jsonb NOT NULL DEFAULT '[]',
+                    created_at timestamptz DEFAULT NOW()
+                )
+            """)
+    except Exception as e:
+        logger.warning("Migration failed (non-critical): %s", e)
     logger.info("Database migrations checked")
 
 

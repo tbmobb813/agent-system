@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 from app.agent.memory import MemoryManager, _classify_insight
@@ -307,8 +307,8 @@ async def test_search_by_time_range_returns_rows(monkeypatch):
 
     mgr = MemoryManager()
     rows = await mgr.search_by_time_range(
-        start_time=datetime.utcnow() - timedelta(days=7),
-        end_time=datetime.utcnow(),
+        start_time=datetime.now(UTC) - timedelta(days=7),
+        end_time=datetime.now(UTC),
         user_id="u1",
         query="context",
         limit=5,

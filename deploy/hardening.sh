@@ -113,6 +113,8 @@ fi
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOGROTATE_SRC="$REPO_DIR/deploy/logrotate-agent-system.conf"
 LOGROTATE_DST="/etc/logrotate.d/agent-system"
+JOURNALD_SRC="$REPO_DIR/deploy/journald-limits.conf"
+JOURNALD_DST="/etc/systemd/journald.conf.d/limits.conf"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -139,7 +141,7 @@ sudo ufw --force enable
 sudo ufw status verbose
 
 
-echo "==> [3/4] Installing log rotation policy"
+echo "==> [3/5] Installing log rotation policy"
 if [[ ! -f "$LOGROTATE_SRC" ]]; then
   echo "Missing logrotate source file: $LOGROTATE_SRC" >&2
   exit 1
@@ -148,7 +150,13 @@ sudo cp "$LOGROTATE_SRC" "$LOGROTATE_DST"
 sudo chmod 644 "$LOGROTATE_DST"
 sudo logrotate -d "$LOGROTATE_DST" >/dev/null
 
-echo "==> [4/4] SSL certificate setup (certbot)"
+echo "==> [4/5] Installing journald retention limits"
+sudo mkdir -p /etc/systemd/journald.conf.d
+sudo cp "$JOURNALD_SRC" "$JOURNALD_DST"
+sudo chmod 644 "$JOURNALD_DST"
+sudo systemctl restart systemd-journald
+
+echo "==> [5/5] SSL certificate setup (certbot)"
 if [[ "$NO_CERTBOT" -eq 1 ]]; then
   echo "Skipping certbot as requested (--no-certbot)."
 else

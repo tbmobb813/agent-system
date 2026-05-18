@@ -11,7 +11,7 @@ to avoid blowing the context window.
 
 import uuid
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 
 from app import database as _db
@@ -46,7 +46,7 @@ class ConversationManager:
 
         # Create new
         new_id = str(uuid.uuid4())
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         try:
             async with _db.db_pool.acquire() as conn:
                 await conn.execute(
@@ -121,7 +121,7 @@ class ConversationManager:
         """Save one user+assistant turn and update the conversation timestamp."""
         if not _db.db_pool:
             return
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         try:
             async with _db.db_pool.acquire() as conn:
                 await conn.executemany(
@@ -229,7 +229,7 @@ class ConversationManager:
         if not _db.db_pool:
             return
         keep_messages = keep_recent * 2  # user + assistant per turn
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         try:
             async with _db.db_pool.acquire() as conn:
                 # Find the cutoff: IDs of messages to keep

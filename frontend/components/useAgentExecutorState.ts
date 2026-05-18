@@ -9,7 +9,13 @@ import {
   getHistory,
   getMcpServers,
   getSettings,
+  getSkillChains,
+  getTaskSuggestions,
   getTools,
+  getWorkflowSuggestions,
+  listConnectors,
+  saveConnector,
+  type ConnectorStatus,
 } from '@/lib/api'
 import { OpsPanel } from './AgentExecutorUI'
 
@@ -26,6 +32,9 @@ const INITIAL_OPS_MODAL_STATE: OpsModalState = {
   mcp: 'loading',
   stats: 'loading',
   history: 'loading',
+  connectors: 'loading',
+  workflows: 'loading',
+  skill_chains: 'loading',
 }
 
 function errMessage(e: unknown): string {
@@ -118,6 +127,31 @@ export function useAgentExecutorState() {
 
   const completedRuns = useMemo(() => merged.filter(ev => ev.type === 'done').length, [merged])
   const dismissFeedbackNudge = useCallback(() => { lastFeedbackNudgeDismissedAt.current = completedRuns; setShowFeedbackNudge(false) }, [completedRuns])
+
+  // ── Follow-up suggestions (Feature #1) ──────────────────────────────────
+  const [suggestions, setSuggestions] = useState<string[]>([])
+
+  // Clear suggestions when a new run starts
+  useEffect(() => { if (isRunning) setSuggestions([]) }, [isRunning])
+
+  // After each completed run, wait briefly for the background generator then fetch
+  useEffect(() => {
+    if (completedRuns === 0) return
+    const doneEvent = [...merged].reverse().find(ev => ev.type === 'done')
+    const tid = doneEvent?.task_id
+    if (!tid) return
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      try {
+        const data = await getTaskSuggestions(tid)
+        if (!cancelled && data.ready && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
+          setSuggestions(data.suggestions)
+        }
+      } catch { /* non-critical */ }
+    }, 1800)
+    return () => { cancelled = true; clearTimeout(timer) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completedRuns])
 
   useEffect(() => {
     if (prevConversationId.current !== conversationId) {
@@ -221,6 +255,12 @@ export function useAgentExecutorState() {
           }))
         })
         .catch((e: unknown) => setOpsModalState((prev) => ({ ...prev, history: { err: errMessage(e) } })))
+    } else if (panel === 'connectors') {
+      listConnectors()
+        .then((data: ConnectorStatus[]) => {
+          setOpsModalState((prev) => ({ ...prev, connectors: { ok: { connectors: data } } }))
+        })
+        .catch((e: unknown) => setOpsModalState((prev) => ({ ...prev, connectors: { err: errMessage(e) } })))
     } else if (panel === 'mcp') {
       Promise.all([getAgentToolsHealth(), getMcpServers()])
         .then(([h, sv]) => {
@@ -240,6 +280,24 @@ export function useAgentExecutorState() {
           }))
         })
         .catch((e: unknown) => setOpsModalState((prev) => ({ ...prev, mcp: { err: errMessage(e) } })))
+    } else if (panel === 'workflows') {
+      getWorkflowSuggestions()
+        .then((d) => {
+          setOpsModalState((prev) => ({
+            ...prev,
+            workflows: { ok: { suggestions: Array.isArray(d.suggestions) ? d.suggestions : [] } },
+          }))
+        })
+        .catch((e: unknown) => setOpsModalState((prev) => ({ ...prev, workflows: { err: errMessage(e) } })))
+    } else if (panel === 'skill_chains') {
+      getSkillChains()
+        .then((d) => {
+          setOpsModalState((prev) => ({
+            ...prev,
+            skill_chains: { ok: { chains: Array.isArray(d.chains) ? d.chains : [] } },
+          }))
+        })
+        .catch((e: unknown) => setOpsModalState((prev) => ({ ...prev, skill_chains: { err: errMessage(e) } })))
     }
   }, [])
 
@@ -254,6 +312,7 @@ export function useAgentExecutorState() {
     modelsModalOpen, setModelsModalOpen, modelsModalState, opsModalOpen, setOpsModalOpen, opsPanel, opsModalState,
     mcpDeleteBusyName, setMcpDeleteBusyName, quickActionsRef, quickActionsButtonRef,
     events, merged, isRunning, error, conversationId, run, reset, stop, newConversation,
-    latestRunCost, lastUserMessage, openOpsPanel, loadModelsForModal, skipReasoningModalSig
+    latestRunCost, lastUserMessage, openOpsPanel, loadModelsForModal, skipReasoningModalSig,
+    suggestions,
   }
 }

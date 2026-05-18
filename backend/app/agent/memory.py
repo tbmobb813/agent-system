@@ -12,7 +12,7 @@ Auto-save: after each agent run, the query+response is stored as a
 import hashlib
 import logging
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 
 from openai import AsyncOpenAI
@@ -212,7 +212,7 @@ class MemoryManager:
         user_id = user_id or DEFAULT_USER
         content = content[:MAX_MEMORY_CONTENT]
         memory_id = str(uuid.uuid4())
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         # Generate embedding (may be None if no OPENAI_API_KEY)
         embedding = await _embed(content)

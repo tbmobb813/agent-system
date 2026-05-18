@@ -20,7 +20,7 @@ export default function PageHeader({ eyebrow, title, description, className = ''
       ) : null}
       <h1 className="section-title text-2xl md:text-3xl font-bold">{title}</h1>
       {description ? (
-        <div className="text-muted text-sm max-w-2xl leading-relaxed">{description}</div>
+        <div className="text-muted text-sm leading-relaxed">{description}</div>
       ) : null}
     </header>
   )

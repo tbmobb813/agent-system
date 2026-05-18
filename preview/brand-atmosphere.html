@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" data-theme="neon-command" data-density="comfortable" data-motion="cinematic">
+<head>
+<meta charset="utf-8">
+<title>brand-atmosphere</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="./styles.css">
+<style>
+  html, body { margin: 0; padding: 0; }
+  body.atmosphere { padding: 18px 22px; min-height: 160px; box-sizing: border-box; }
+  .row { display: flex; align-items: center; gap: 14px; }
+  .col { display: flex; flex-direction: column; gap: 6px; }
+  .grid { display: grid; gap: 10px; }
+</style>
+</head>
+<body class="atmosphere">
+<div class="col pr-gap-6">
+  <div style="position: relative; border-radius: 12px; overflow: hidden; height: 110px;
+       background:
+         radial-gradient(circle at 12% 8%, rgba(43,227,198,0.18), transparent 30%),
+         radial-gradient(circle at 84% 0%, color-mix(in oklab, #59a7ff, transparent 78%), transparent 34%),
+         linear-gradient(180deg, #060b12 0%, color-mix(in oklab, #060b12, black 12%) 100%);">
+    <div style="position: absolute; inset: 0; background-image:
+       linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+       linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+       background-size: 24px 24px; opacity: 0.5;
+       -webkit-mask-image: radial-gradient(circle at center, black, transparent 76%);
+              mask-image: radial-gradient(circle at center, black, transparent 76%);"></div>
+  </div>
+  <div class="pr-font-body-11">2 radial accent washes · 36 px masked grid · vertical fade · <code class="pr-font-mono">background-attachment: fixed</code></div>
+</div>
+</body></html>

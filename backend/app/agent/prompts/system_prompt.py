@@ -7,7 +7,7 @@ from typing import Optional
 from . import guardrails
 
 # Bump when changing base prompt or guardrail fragments (correlate with decisions.reasoning).
-PROMPT_VERSION = "2026-05-07-1"
+PROMPT_VERSION = "2026-05-12-2"
 
 BASE_SYSTEM_PROMPT = """You are a capable personal AI assistant with access to tools.
 
@@ -26,12 +26,17 @@ def build_system_prompt(
     *,
     budget_remaining: Optional[float] = None,
     monthly_budget_usd: Optional[float] = None,
+    tool_names: Optional[list[str]] = None,
 ) -> str:
-    """Build the static + injected system prompt (same structure as legacy orchestrator)."""
+    """Build the static + injected system prompt."""
     system = BASE_SYSTEM_PROMPT
     refusal = guardrails.refusal_criteria()
     if refusal:
         system += refusal
+
+    # Capabilities block — injected early so every model tier can answer
+    # "what can you do?" accurately, including the free/Telegram tier.
+    system += guardrails.capabilities_section(tool_names or [])
 
     system += guardrails.assistant_profile_section(persona_prompt or "")
 

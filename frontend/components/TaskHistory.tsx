@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, useCallback, type KeyboardEvent } from 'react'
 import dynamic from 'next/dynamic'
 import { useHistory } from '@/lib/hooks'
-import { deleteTask, getTaskDetail, submitTaskFeedback } from '@/lib/api'
+import { deleteTask, getTaskDetail, submitTaskFeedback, listProjects, assignTaskToProject, removeTaskFromProject, type Project } from '@/lib/api'
 import { formatCost, formatDate } from '@/lib/utils'
 import { exportElementToPdf } from '@/lib/pdf'
 
@@ -59,6 +59,75 @@ function FeedbackHint({ signal }: { signal: string }) {
     >
       {up ? 'Helpful' : 'Needs work'}
     </span>
+  )
+}
+
+function ProjectPicker({
+  taskId,
+  projects,
+  currentProjectId,
+  onAssigned,
+  onClose,
+}: {
+  taskId: string
+  projects: Project[]
+  currentProjectId: string | null
+  onAssigned: (projectId: string | null) => void
+  onClose: () => void
+}) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  const handlePick = async (projectId: string) => {
+    setBusy(projectId)
+    try {
+      if (currentProjectId === projectId) {
+        await removeTaskFromProject(projectId, taskId)
+        onAssigned(null)
+      } else {
+        await assignTaskToProject(projectId, taskId)
+        onAssigned(projectId)
+      }
+      onClose()
+    } catch { /* silently fail */ }
+    finally { setBusy(null) }
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="absolute right-6 top-full mt-1 z-50 w-52 rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] shadow-2xl overflow-hidden"
+      onClick={e => e.stopPropagation()}
+    >
+      <div className="px-3 py-2 text-[10px] uppercase tracking-widest text-muted border-b border-[color:var(--border)]/60">
+        Add to project
+      </div>
+      {projects.length === 0 && (
+        <p className="px-3 py-2 text-xs text-muted">No projects yet.</p>
+      )}
+      {projects.map(p => (
+        <button
+          key={p.id}
+          type="button"
+          disabled={busy === p.id}
+          onClick={() => void handlePick(p.id)}
+          className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-[color:var(--surface-soft)] transition-colors disabled:opacity-50 ${currentProjectId === p.id ? 'text-[color:var(--accent)]' : 'text-[color:var(--text)]'}`}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: p.color, flexShrink: 0, display: 'inline-block' }} />
+          <span className="flex-1 truncate">{p.name}</span>
+          {currentProjectId === p.id && <span className="text-xs text-muted shrink-0">✓</span>}
+          {busy === p.id && <span className="text-xs text-muted shrink-0">…</span>}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -175,7 +244,12 @@ function TaskDetailPanel({ taskId, onClose, onFeedbackSaved }: { taskId: string;
   return (
     <div className="mt-3 border-t border-[color:var(--border)] pt-3 space-y-3">
       {loading && <p className="text-muted text-xs">Loading…</p>}
-      {loadError && <p className="text-[color:var(--danger)] text-xs">{loadError}</p>}
+      {loadError && (
+        <div className="flex items-center gap-3">
+          <p className="text-[color:var(--danger)] text-xs">{loadError}</p>
+          <button type="button" onClick={() => { setLoadError(null); setLoading(true); getTaskDetail(taskId).then(p => { setDetail(p); if (p.feedback) { setFeedbackSignal(p.feedback.signal); setFeedbackNotes(p.feedback.notes ?? '') } }).catch(e => setLoadError(e instanceof Error ? e.message : String(e))).finally(() => setLoading(false)) }} className="btn-ghost px-2 py-1 rounded text-xs">Retry</button>
+        </div>
+      )}
       {detail && (
         <>
           <div className="panel panel-soft rounded-lg p-3 space-y-3">
@@ -278,18 +352,18 @@ function TaskDetailPanel({ taskId, onClose, onFeedbackSaved }: { taskId: string;
               </div>
             </>
           ) : (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={onClose}
-                className="btn-ghost px-2 py-1 rounded text-xs text-muted"
-              >
-                Collapse
-              </button>
+            <div className="space-y-2">
+              <p className="text-muted text-xs italic">No result stored for this task.</p>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="btn-ghost px-2 py-1 rounded text-xs text-muted"
+                >
+                  Collapse
+                </button>
+              </div>
             </div>
-          )}
-          {!detail.task.result && (
-            <p className="text-muted text-xs italic">No result stored for this task.</p>
           )}
         </>
       )}
@@ -297,18 +371,27 @@ function TaskDetailPanel({ taskId, onClose, onFeedbackSaved }: { taskId: string;
   )
 }
 
-const PAGE_SIZE = 20
+const PAGE_SIZE = 15
 
 export default function TaskHistory() {
   const { data, loading, error, refresh } = useHistory()
-  const [deleting, setDeleting] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState<string | null>(null)
   const [offset, setOffset] = useState(0)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [activeSearch, setActiveSearch] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [projects, setProjects] = useState<Project[]>([])
+  const [pickerOpen, setPickerOpen] = useState<string | null>(null)
+  // track which project each task belongs to (populated lazily from picker interactions)
+  const [taskProjects, setTaskProjects] = useState<Record<string, string | null>>({})
 
-  // Debounce search input — fire after 350ms of no typing
+  const loadProjects = useCallback(async () => {
+    try { const d = await listProjects(); setProjects(d.projects) } catch { /* silently fail */ }
+  }, [])
+
+  useEffect(() => { void loadProjects() }, [loadProjects])
+
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
@@ -321,7 +404,7 @@ export default function TaskHistory() {
 
   useEffect(() => {
     refresh(PAGE_SIZE, offset, activeSearch || undefined)
-  }, [offset, activeSearch]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [offset, activeSearch, refresh])
 
   async function handleDelete(id: string) {
     if (!window.confirm('Delete this task and its stored result from history?')) return
@@ -348,125 +431,135 @@ export default function TaskHistory() {
 
   return (
     <div className="space-y-4">
-      {/* Search bar */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm select-none">⌕</span>
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search queries and results…"
-            className="w-full bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:border-[color:var(--accent)] placeholder:text-muted"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-[color:var(--text)] text-xs"
-            >
-              ✕
-            </button>
-          )}
-        </div>
+      <div className="dr-history-controls">
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Filter by query…"
+          className="dr-history-filter-input"
+          aria-label="Filter tasks by query"
+        />
         <button
+          type="button"
           onClick={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)}
-          className="text-sm text-[color:var(--accent-2)] hover:opacity-90 transition-opacity shrink-0"
+          className="dr-dashboard-link"
+          aria-label="Refresh task history"
         >
           Refresh
         </button>
       </div>
 
-      {/* Status line */}
+      {loading && <p className="dr-history-summary">Loading...</p>}
+      {error && <p className="dr-history-summary text-error">Error: {error}</p>}
+
       {!loading && data && (
-        <p className="text-sm text-muted">
-          {activeSearch
-            ? `${data.total} result${data.total !== 1 ? 's' : ''} for "${activeSearch}"`
-            : `${data.total} total task${data.total !== 1 ? 's' : ''}`}
-          {data.total > PAGE_SIZE && ` — showing ${offset + 1}–${Math.min(offset + PAGE_SIZE, data.total)}`}
-        </p>
-      )}
+        <>
+          <p className="dr-history-summary">
+            {activeSearch
+              ? `${data.total} result${data.total !== 1 ? 's' : ''} for "${activeSearch}"`
+              : `${data.total} runs`}
+            {data.total > PAGE_SIZE && ` · showing ${offset + 1}–${Math.min(offset + PAGE_SIZE, data.total)}`}
+          </p>
 
-      {loading && <p className="text-muted text-sm">Loading…</p>}
-      {error && <p className="text-[color:var(--danger)] text-sm">Error: {error}</p>}
+          <div>
+            <div className="dr-history-head-row">
+              <span>Status</span>
+              <span>Query</span>
+              <span>Model</span>
+              <span className="dr-align-right">Time</span>
+              <span className="dr-align-right">Cost</span>
+            </div>
 
-      {!loading && data && data.tasks.length === 0 && (
-        <p className="text-muted text-sm">
-          {activeSearch ? `No tasks match "${activeSearch}".` : 'No tasks yet. Run your first agent query!'}
-        </p>
-      )}
-
-      {(data?.tasks as Task[] ?? []).map((task) => (
-        <div key={task.id} className="panel p-4">
-          <div
-            role="button"
-            tabIndex={0}
-            aria-expanded={expanded === task.id}
-            aria-label={expanded === task.id ? `Collapse task: ${task.query}` : `Expand task: ${task.query}`}
-            className="flex items-start justify-between gap-4 cursor-pointer select-none rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]"
-            onClick={() => toggleExpand(task.id)}
-            onKeyDown={e => rowKeyToggle(e, task.id)}
-          >
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium">{task.query}</p>
-              <div className="flex flex-wrap gap-3 mt-1 text-xs text-muted">
-                <span>{formatDate(task.created_at)}</span>
-                {task.model_used && (
-                  <span className="font-mono truncate max-w-[180px]" title={task.model_used}>
-                    {task.model_used.split('/').pop()}
-                  </span>
-                )}
-                <span>{formatCost(task.cost)}</span>
+            {(Array.isArray(data.tasks) ? data.tasks : []).length === 0 && (
+              <div className="dr-history-empty">
+                {activeSearch ? `No runs match "${activeSearch}".` : 'No runs yet.'}
               </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {task.feedback_signal && (
-                <FeedbackHint signal={task.feedback_signal} />
-              )}
-              <StatusBadge status={task.status} />
-              <span className="text-muted text-xs" aria-hidden>{expanded === task.id ? '▲' : '▼'}</span>
-              <button
-                type="button"
-                onClick={e => { e.stopPropagation(); handleDelete(task.id) }}
-                onKeyDown={e => e.stopPropagation()}
-                disabled={deleting === task.id}
-                className="text-xs text-muted hover:text-[color:var(--danger)] transition-colors disabled:opacity-50"
-                aria-label="Delete task"
-              >
-                {deleting === task.id ? '…' : '✕'}
-              </button>
-            </div>
+            )}
+
+            {(Array.isArray(data.tasks) ? data.tasks as Task[] : []).map((task) => (
+              <div key={task.id}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-label={expanded === task.id ? `Collapse task: ${task.query}` : `Expand task: ${task.query}`}
+                  className="dr-history-data-row"
+                  onClick={() => toggleExpand(task.id)}
+                  onKeyDown={e => rowKeyToggle(e, task.id)}
+                >
+                  <span className="dr-inline-status">
+                    <StatusBadge status={task.status} />
+                    {task.feedback_signal && <FeedbackHint signal={task.feedback_signal} />}
+                  </span>
+                  <span className="dr-row-query" title={task.query}>{task.query}</span>
+                  <code className="dr-code dr-code-start" title={task.model_used ?? ''}>{(task.model_used ?? 'unknown').split('/').pop()}</code>
+                  <span className="dr-row-time">{formatDate(task.created_at)}</span>
+                  <span className="dr-row-cost">{formatCost(task.cost)}</span>
+                  <div className="relative flex items-center gap-1.5" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={() => { setPickerOpen(p => p === task.id ? null : task.id) }}
+                      className="text-xs text-muted hover:text-[color:var(--accent)] transition-colors"
+                      aria-label="Add to project"
+                      title="Add to project"
+                    >
+                      📁
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(task.id)}
+                      disabled={deleting === task.id}
+                      className="text-xs text-muted hover:text-[color:var(--danger)] transition-colors disabled:opacity-50"
+                      aria-label="Delete task"
+                      title="Delete task"
+                    >
+                      {deleting === task.id ? '…' : '✕'}
+                    </button>
+                    {pickerOpen === task.id && (
+                      <ProjectPicker
+                        taskId={task.id}
+                        projects={projects}
+                        currentProjectId={taskProjects[task.id] ?? null}
+                        onAssigned={pid => setTaskProjects(prev => ({ ...prev, [task.id]: pid }))}
+                        onClose={() => setPickerOpen(null)}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {expanded === task.id && (
+                  <TaskDetailPanel
+                    taskId={task.id}
+                    onClose={() => setExpanded(null)}
+                    onFeedbackSaved={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)}
+                  />
+                )}
+              </div>
+            ))}
           </div>
 
-          {expanded === task.id && (
-            <TaskDetailPanel
-              taskId={task.id}
-              onClose={() => setExpanded(null)}
-              onFeedbackSaved={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)}
-            />
+          {data.total > PAGE_SIZE && (
+            <div className="flex items-center justify-between pt-2">
+              <button
+                onClick={() => { setOffset(o => Math.max(0, o - PAGE_SIZE)); setExpanded(null) }}
+                disabled={offset === 0}
+                className="btn-ghost px-3 py-1.5 rounded-lg text-sm disabled:opacity-40"
+              >
+                ← Newer
+              </button>
+              <span className="text-xs text-muted">
+                Page {Math.floor(offset / PAGE_SIZE) + 1} of {Math.ceil(data.total / PAGE_SIZE)}
+              </span>
+              <button
+                onClick={() => { setOffset(o => o + PAGE_SIZE); setExpanded(null) }}
+                disabled={offset + PAGE_SIZE >= data.total}
+                className="btn-ghost px-3 py-1.5 rounded-lg text-sm disabled:opacity-40"
+              >
+                Older →
+              </button>
+            </div>
           )}
-        </div>
-      ))}
-
-      {data && data.total > PAGE_SIZE && (
-        <div className="flex items-center justify-between pt-2">
-          <button
-            onClick={() => { setOffset(o => Math.max(0, o - PAGE_SIZE)); setExpanded(null) }}
-            disabled={offset === 0}
-            className="btn-ghost px-3 py-1.5 rounded-lg text-sm disabled:opacity-40"
-          >
-            ← Newer
-          </button>
-          <span className="text-xs text-muted">
-            Page {Math.floor(offset / PAGE_SIZE) + 1} of {Math.ceil(data.total / PAGE_SIZE)}
-          </span>
-          <button
-            onClick={() => { setOffset(o => o + PAGE_SIZE); setExpanded(null) }}
-            disabled={offset + PAGE_SIZE >= data.total}
-            className="btn-ghost px-3 py-1.5 rounded-lg text-sm disabled:opacity-40"
-          >
-            Older →
-          </button>
-        </div>
+        </>
       )}
     </div>
   )

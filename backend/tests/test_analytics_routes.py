@@ -1,6 +1,6 @@
 """Analytics API routes — DB calls mocked."""
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -28,7 +28,7 @@ async def test_analytics_overview(monkeypatch):
     )
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get("/analytics/overview", headers=AUTH)
     assert r.status_code == 200
     body = r.json()
@@ -43,7 +43,7 @@ async def test_analytics_overview_503_when_db_raises(monkeypatch):
         AsyncMock(side_effect=RuntimeError("no pool")),
     )
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get("/analytics/overview", headers=AUTH)
     assert r.status_code == 503
 
@@ -139,7 +139,7 @@ async def test_analytics_list_routes(monkeypatch, path, checker):
     )
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get(path + "?days=7", headers=AUTH)
     assert r.status_code == 200
     assert checker(r.json())
@@ -169,7 +169,7 @@ async def test_analytics_tools_schema_error_returns_empty_tools(monkeypatch):
         "app.routes.analytics.fetch", AsyncMock(side_effect=flaky_fetch)
     )
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get("/analytics/tools?days=5", headers=AUTH)
     assert r.status_code == 200
     assert r.json()["tools"] == []
@@ -181,7 +181,7 @@ async def test_analytics_tools_runtime_error_returns_503(monkeypatch):
 
     monkeypatch.setattr("app.routes.analytics.fetch", AsyncMock(side_effect=boom))
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get("/analytics/tools?days=5", headers=AUTH)
 
     assert r.status_code == 503
@@ -198,7 +198,7 @@ async def test_analytics_alerts_risk_high(monkeypatch):
     monkeypatch.setattr("app.routes.analytics.fetch", AsyncMock(side_effect=fx))
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get("/analytics/alerts?days=7", headers=AUTH)
     body = r.json()
     assert r.status_code == 200
@@ -211,7 +211,7 @@ async def test_analytics_skills_delegates(monkeypatch):
         AsyncMock(return_value={"skills": [], "growth_areas": []}),
     )
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get("/analytics/skills", headers=AUTH)
     assert r.status_code == 200
 
@@ -219,14 +219,14 @@ async def test_analytics_skills_delegates(monkeypatch):
 async def test_analytics_cost_efficiency_empty(monkeypatch):
     monkeypatch.setattr("app.routes.analytics.get_efficiency_scores", lambda: {})
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get("/analytics/cost-efficiency", headers=AUTH)
     assert r.status_code == 200
     assert r.json()["models"] == []
 
 
 async def test_analytics_cost_efficiency_ranked(monkeypatch):
-    t = datetime.utcnow()
+    t = datetime.now(UTC)
     scores = {
         "a": EfficiencyScore(
             model="a",
@@ -248,7 +248,7 @@ async def test_analytics_cost_efficiency_ranked(monkeypatch):
     monkeypatch.setattr("app.routes.analytics.get_efficiency_scores", lambda: scores)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get("/analytics/cost-efficiency", headers=AUTH)
     body = r.json()
     assert r.status_code == 200
@@ -261,7 +261,7 @@ async def test_analytics_ab_tests_empty_on_fetch_error(monkeypatch):
         AsyncMock(side_effect=RuntimeError("db")),
     )
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get("/analytics/ab-tests?limit=3", headers=AUTH)
     assert r.status_code == 200
     assert r.json()["tests"] == []
@@ -287,7 +287,7 @@ async def test_analytics_ab_tests_rows(monkeypatch):
     )
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get("/analytics/ab-tests", headers=AUTH)
     body = r.json()
     assert r.status_code == 200
@@ -302,7 +302,7 @@ async def test_analytics_ab_test_run_validation(monkeypatch):
     )
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.post(
             "/analytics/ab-tests/run",
             headers=AUTH,
@@ -325,7 +325,7 @@ async def test_analytics_ab_test_run(monkeypatch):
     )
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.post(
             "/analytics/ab-tests/run",
             headers=AUTH,
@@ -349,7 +349,7 @@ async def test_decisions_fetch_failure_returns_empty(monkeypatch):
         AsyncMock(side_effect=RuntimeError("missing table")),
     )
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get("/analytics/decisions", headers=AUTH)
     assert r.status_code == 200
     assert r.json()["decisions"] == []
@@ -362,7 +362,7 @@ async def test_analytics_daily_503(monkeypatch):
         AsyncMock(side_effect=RuntimeError("db down")),
     )
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get("/analytics/daily?days=7", headers=AUTH)
     assert r.status_code == 503
 
@@ -374,7 +374,7 @@ async def test_analytics_models_503(monkeypatch):
         AsyncMock(side_effect=RuntimeError("db down")),
     )
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get("/analytics/models?days=14", headers=AUTH)
     assert r.status_code == 503
 
@@ -385,7 +385,7 @@ async def test_analytics_errors_empty_on_fetch_exc(monkeypatch):
         AsyncMock(side_effect=RuntimeError("no table")),
     )
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get("/analytics/errors", headers=AUTH)
     assert r.status_code == 200
     assert r.json()["patterns"] == []
@@ -412,7 +412,7 @@ async def test_analytics_alerts_medium_risk(monkeypatch):
         AsyncMock(side_effect=RuntimeError("alerts table missing")),
     )
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         r = await client.get("/analytics/alerts?days=7", headers=AUTH)
     body = r.json()
     assert r.status_code == 200

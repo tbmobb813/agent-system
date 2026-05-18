@@ -23,7 +23,7 @@ async def test_get_history_returns_tasks_and_total(monkeypatch):
     monkeypatch.setattr("app.routes.history.fetchval", fake_fetchval)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/history", headers={"Authorization": "Bearer sk-agent-local-dev"}
         )
@@ -41,7 +41,7 @@ async def test_get_task_detail_returns_404_when_missing(monkeypatch):
     monkeypatch.setattr("app.routes.history.fetchrow", fake_fetchrow)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/history/missing", headers={"Authorization": "Bearer sk-agent-local-dev"}
         )
@@ -60,7 +60,7 @@ async def test_delete_task_returns_deleted(monkeypatch):
     monkeypatch.setattr("app.routes.history.execute", fake_execute)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.delete(
             "/history/task-1", headers={"Authorization": "Bearer sk-agent-local-dev"}
         )
@@ -83,7 +83,7 @@ async def test_get_task_detail_returns_feedback(monkeypatch):
     monkeypatch.setattr("app.routes.history.fetch", fake_fetch)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get(
             "/history/task-1", headers={"Authorization": "Bearer sk-agent-local-dev"}
         )
@@ -130,7 +130,7 @@ async def test_submit_task_feedback_persists_and_promotes_learning(monkeypatch):
     )
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.post(
             "/history/task-1/feedback",
             headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -176,7 +176,7 @@ async def test_submit_task_feedback_skips_learning_when_notes_blank(monkeypatch)
     )
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.post(
             "/history/task-1/feedback",
             headers={"Authorization": "Bearer sk-agent-local-dev"},
@@ -206,7 +206,7 @@ async def test_submit_task_feedback_rejects_non_completed_task(monkeypatch):
     monkeypatch.setattr("app.routes.history.fetchrow", fake_fetchrow)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.post(
             "/history/task-1/feedback",
             headers={"Authorization": "Bearer sk-agent-local-dev"},

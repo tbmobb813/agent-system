@@ -13,10 +13,10 @@ const navCards = [
   { href: '/analytics', title: 'Analytics',            description: 'Review trends, model performance, and tool usage.', icon: 'DATA' },
   { href: '/documents', title: 'Documents',            description: 'Upload files for the agent to search and use.',  icon: 'DOCS' },
   { href: '/settings',  title: 'Settings',             description: 'Configure models, tools, and preferences.',      icon: 'CONF' },
-  { href: '/commands',  title: 'Commands & Reference', description: 'CLI shortcuts, Telegram commands, API routes.',  icon: 'CMD' },
+  { href: '/commands',  title: 'Commands',             description: 'CLI shortcuts, Telegram commands, API routes.',  icon: 'CMD' },
 ]
 
-type Task = { id: string; query: string; status: string; cost: number; created_at: string }
+type Task = { id: string; query: string; status: string; cost: number; created_at: string; model?: string }
 type ModelBreakdown = Record<string, { cost: number; calls: number }>
 
 type Stats = {
@@ -31,6 +31,14 @@ const STATUS_COLOR: Record<string, string> = {
   failed:    'text-[color:var(--danger)]',
   stopped:   'text-[color:var(--warn)]',
   running:   'text-[color:var(--accent-2)]',
+}
+
+function statusTone(status: string) {
+  if (status === 'completed') return 'ok'
+  if (status === 'running') return 'running'
+  if (status === 'failed') return 'danger'
+  if (status === 'stopped') return 'warn'
+  return 'muted'
 }
 
 function shortModel(model: string) {
@@ -53,7 +61,6 @@ type GreetContext = { displayName: string | null; timezone: string }
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats>({ agentReady: false, budget: null, recentTasks: null, modelBreakdown: null })
   const [loading, setLoading] = useState(true)
-  const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [greetContext, setGreetContext] = useState<GreetContext>({ displayName: null, timezone: 'UTC' })
   const [, setMinutePulse] = useState(0)
 
@@ -96,7 +103,6 @@ export default function DashboardPage() {
     }
 
     setLoading(false)
-    setLastRefresh(new Date())
   }, [])
 
   // Initial load + 30-second auto-refresh
@@ -114,172 +120,135 @@ export default function DashboardPage() {
 
   const welcomeLine = dashboardWelcomeLine(greetContext.displayName, greetContext.timezone)
 
-  const budgetTextColor =
-    !stats.budget       ? 'text-muted' :
-    stats.budget.percent >= 90 ? 'text-[color:var(--danger)]' :
-    stats.budget.percent >= 70 ? 'text-[color:var(--warn)]' :
-    'text-[color:var(--success)]'
+  const completedToday = stats.recentTasks?.items.filter(t => t.status === 'completed').length ?? 0
+  const failedCount = stats.recentTasks?.items.filter(t => t.status === 'failed').length ?? 0
+  const recentCost = stats.recentTasks?.items.reduce((sum, t) => sum + (t.cost || 0), 0) ?? 0
+  const breakdownEntries = Object.entries(stats.modelBreakdown ?? {}).sort((a, b) => b[1].cost - a[1].cost)
+  const totalModelCost = breakdownEntries.reduce((sum, [, v]) => sum + v.cost, 0)
 
   return (
-    <div className="space-y-8">
-
-      {/* Header */}
-      <div className="panel panel-soft fade-up p-6 md:p-7 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.22em] text-muted mb-2">Command Center</p>
-          <h1 className="section-title text-3xl md:text-4xl font-bold mb-2">{welcomeLine}</h1>
-          <p className="text-muted max-w-xl">
-            Telemetry, budget, and execution history in one live operations deck.
-            {!greetContext.displayName && (
-              <span className="block mt-2 text-xs">
-                Tip: add a display name in{' '}
-                <Link href="/settings" className="text-[color:var(--accent-2)] hover:underline">Settings</Link>
-                {' '}to personalize this line.
-              </span>
-            )}
-          </p>
+    <div className="dr-dashboard-stack">
+      <section>
+        <p className="eyebrow">Command Center</p>
+        <h1 className="section-title dr-dashboard-hero-title">{greetContext.displayName ? welcomeLine : 'Welcome back, operator.'}</h1>
+        <p className="dr-dashboard-hero-copy">
+          Five-tier router, four agents, and a live budget. Pick a model or let the cost
+          router pick one for you — every run streams here.
+        </p>
+        <div className="dr-dashboard-pill-row">
+          <span className="dr-pill-stat">
+            <span className="dr-pill-stat-dot dr-pill-tone-ok" />
+            <span className="dr-pill-stat-label">Agent Online</span>
+            <span className="dr-pill-stat-value">· {stats.recentTasks?.total ?? 0} total</span>
+          </span>
+          <span className="dr-pill-stat">
+            <span className="dr-pill-stat-dot dr-pill-tone-running" />
+            <span className="dr-pill-stat-label">Completed today</span>
+            <span className="dr-pill-stat-value">· {completedToday}</span>
+          </span>
+          <span className="dr-pill-stat">
+            <span className={`dr-pill-stat-dot ${failedCount > 0 ? 'dr-pill-tone-danger' : 'dr-pill-tone-muted'}`} />
+            <span className="dr-pill-stat-label">Failed</span>
+            <span className="dr-pill-stat-value">· {failedCount}</span>
+          </span>
+          <span className="dr-pill-stat">
+            <span className="dr-pill-stat-dot dr-pill-tone-accent" />
+            <span className="dr-pill-stat-label">Cost (recent)</span>
+            <span className="dr-pill-stat-value">· {formatCost(recentCost)}</span>
+          </span>
         </div>
-        <div className="flex items-center gap-3">
-          {lastRefresh && (
-            <span className="text-xs text-muted">
-              updated {timeAgo(lastRefresh.toISOString())}
-            </span>
-          )}
-          <button
-            onClick={load}
-            className="btn-ghost rounded-lg px-3 py-2 text-xs"
-          >
-            Refresh
-          </button>
-          <Link href="/agent" className="btn-accent rounded-lg px-3 py-2 text-xs">
-            Launch Agent
-          </Link>
+        <div className="dr-dashboard-actions">
+          <Link href="/agent" className="btn-accent dr-btn-accent dr-btn-accent-lg">Launch Agent</Link>
+          <Link href="/history" className="btn-ghost dr-btn-ghost">View History</Link>
+          <button type="button" onClick={load} className="btn-ghost dr-btn-ghost">Refresh</button>
         </div>
-      </div>
+      </section>
 
-      {/* Status + budget row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 fade-up-delay">
-
-        {/* Agent status */}
-        <div className="panel p-5 flex items-center gap-4">
-          <span className={`w-3 h-3 rounded-full shrink-0 ${loading ? 'bg-[color:var(--muted)]' : stats.agentReady ? 'bg-[color:var(--success)]' : 'bg-[color:var(--danger)]'}`} />
-          <div>
-            <p className="text-sm font-medium">
-              Agent {loading ? '…' : stats.agentReady ? 'Online' : 'Offline'}
-            </p>
-            <p className="text-xs text-muted mt-0.5">
-              {stats.recentTasks ? `${stats.recentTasks.total} total tasks` : 'loading…'}
-            </p>
-          </div>
-        </div>
-
-        {/* Budget card */}
+      <section className="dr-dashboard-top-grid">
         <div className="panel p-5">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-muted">Monthly budget</span>
-            <span className={`text-sm font-semibold ${budgetTextColor}`}>
-              {loading ? '…' : stats.budget ? `${stats.budget.percent.toFixed(1)}%` : 'N/A'}
+          <p className="eyebrow">Monthly budget</p>
+          <div className="dr-dashboard-budget-head">
+            <h2 className="section-title dr-title-22">
+              {loading || !stats.budget ? '—' : formatCost(stats.budget.spent_month)}{' '}
+              <span className="dr-dashboard-budget-total">/ {loading || !stats.budget ? '—' : formatCost(stats.budget.remaining + stats.budget.spent_month)}</span>
+            </h2>
+            <span className={stats.budget && stats.budget.percent >= 90 ? 'status-danger dr-dashboard-budget-pct' : stats.budget && stats.budget.percent >= 70 ? 'status-warn dr-dashboard-budget-pct' : 'status-ok dr-dashboard-budget-pct'}>
+              {loading || !stats.budget ? '—' : `${stats.budget.percent.toFixed(1)}%`}
             </span>
           </div>
-          <progress
-            className="budget-progress mb-3"
-            max={100}
-            value={loading || !stats.budget ? 0 : Math.min(stats.budget.percent, 100)}
-          />
-          <div className="flex justify-between text-xs text-muted">
-            <span>spent today: <span className="text-[color:var(--text)]">{loading || !stats.budget ? '…' : formatCost(stats.budget.spent_today)}</span></span>
-            <span>remaining: <span className="text-[color:var(--text)]">{loading || !stats.budget ? '…' : formatCost(stats.budget.remaining)}</span></span>
+          <progress className="budget-progress" max={100} value={loading || !stats.budget ? 0 : Math.min(stats.budget.percent, 100)} />
+          <div className="dr-dashboard-budget-meta">
+            <span>spent today: <span className="dr-dashboard-emph">{loading || !stats.budget ? '—' : formatCost(stats.budget.spent_today)}</span></span>
+            <span>remaining: <span className="dr-dashboard-emph">{loading || !stats.budget ? '—' : formatCost(stats.budget.remaining)}</span></span>
           </div>
         </div>
-      </div>
 
-      {/* Recent tasks + model breakdown */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-        {/* Recent tasks */}
-        <div className="panel overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-[color:var(--border)]">
-            <h2 className="text-sm font-semibold">Recent Tasks</h2>
-            <Link href="/history" className="text-xs text-[color:var(--accent-2)] hover:opacity-90 transition-opacity">
-              View all →
-            </Link>
+        <div className="panel p-5">
+          <div className="dr-dashboard-model-head">
+            <p className="eyebrow dr-eyebrow-inline">Model split (30 days)</p>
+            <span className="dr-dashboard-model-calls">{breakdownEntries.reduce((sum, [, v]) => sum + v.calls, 0)} calls</span>
           </div>
-          {loading ? (
-            <div className="px-5 py-8 text-center text-muted text-sm">Loading…</div>
-          ) : !stats.recentTasks?.items.length ? (
-            <div className="px-5 py-8 text-center text-muted text-sm">No tasks yet</div>
-          ) : (
-            <ul>
-              {stats.recentTasks.items.map((task, i) => (
-                <li
-                  key={task.id}
-                  className={`px-5 py-3 flex items-center gap-3 ${i < stats.recentTasks!.items.length - 1 ? 'border-b border-[color:var(--border)]' : ''}`}
-                >
-                  <span className={`text-xs font-medium shrink-0 w-16 ${STATUS_COLOR[task.status] ?? 'text-muted'}`}>
-                    {task.status}
+          <div className="dr-dashboard-model-list">
+            {(loading ? [] : breakdownEntries).map(([model, info]) => {
+              const pct = totalModelCost > 0 ? (info.cost / totalModelCost) * 100 : 0
+              return (
+                <div key={model} className="dr-dashboard-model-row">
+                  <div className="dr-dashboard-model-main">
+                    <code className="dr-code">{shortModel(model)}</code>
+                    <progress className="dr-dashboard-model-progress budget-progress" max={100} value={pct} />
+                  </div>
+                  <span className="dr-dashboard-model-calls-cell">{info.calls} calls</span>
+                  <span className="dr-dashboard-model-cost-cell">{formatCost(info.cost)}</span>
+                </div>
+              )
+            })}
+            {!loading && breakdownEntries.length === 0 && <span className="text-muted text-sm">No usage this month</span>}
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div className="dr-dashboard-section-head">
+          <h2 className="section-title">Recent Tasks</h2>
+          <Link href="/history" className="dr-dashboard-link">View all →</Link>
+        </div>
+        <div className="panel p-5">
+          <div className="dr-dashboard-tasks-list">
+            {(loading ? [] : stats.recentTasks?.items.slice(0, 5) ?? []).map((task, i, arr) => {
+              const tone = statusTone(task.status)
+              return (
+                <div key={task.id} className={`dr-dashboard-task-row ${i < arr.length - 1 ? 'with-divider' : ''}`}>
+                  <span className="dr-inline-status">
+                    <span className={`dr-status-dot dr-status-dot-${tone}`} />
+                    <span className={`dr-status-text ${STATUS_COLOR[task.status] ?? 'text-muted'}`}>{task.status}</span>
                   </span>
-                  <span className="text-sm truncate flex-1">{task.query}</span>
-                  <span className="text-xs text-muted shrink-0">{timeAgo(task.created_at)}</span>
-                  {task.cost > 0 && (
-                    <span className="text-xs text-muted shrink-0">{formatCost(task.cost)}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {/* Model breakdown */}
-        <div className="panel overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-[color:var(--border)]">
-            <h2 className="text-sm font-semibold">This Month by Model</h2>
-            <Link href="/costs" className="text-xs text-[color:var(--accent-2)] hover:opacity-90 transition-opacity">
-              Details →
-            </Link>
+                  <span className="dr-row-query">{task.query}</span>
+                  <code className="dr-code dr-code-start">{shortModel(task.model ?? 'unknown')}</code>
+                  <span className="dr-row-time">{timeAgo(task.created_at)}</span>
+                  <span className="dr-row-cost">{formatCost(task.cost || 0)}</span>
+                </div>
+              )
+            })}
+            {!loading && !(stats.recentTasks?.items.length) && <span className="text-muted text-sm">No tasks yet</span>}
           </div>
-          {loading ? (
-            <div className="px-5 py-8 text-center text-muted text-sm">Loading…</div>
-          ) : !stats.modelBreakdown || Object.keys(stats.modelBreakdown).length === 0 ? (
-            <div className="px-5 py-8 text-center text-muted text-sm">No usage this month</div>
-          ) : (
-            <ul>
-              {Object.entries(stats.modelBreakdown)
-                .sort((a, b) => b[1].cost - a[1].cost)
-                .map(([model, info], i, arr) => (
-                  <li
-                    key={model}
-                    className={`px-5 py-3 flex items-center gap-3 ${i < arr.length - 1 ? 'border-b border-[color:var(--border)]' : ''}`}
-                  >
-                    <span className="text-xs truncate flex-1 font-mono">
-                      {shortModel(model)}
-                    </span>
-                    <span className="text-xs text-muted shrink-0">{info.calls} call{info.calls !== 1 ? 's' : ''}</span>
-                    <span className="text-xs shrink-0 w-16 text-right">{formatCost(info.cost)}</span>
-                  </li>
-                ))}
-            </ul>
-          )}
         </div>
-      </div>
+      </section>
 
-      {/* Nav cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {navCards.map(s => (
-          <Link
-            key={s.href}
-            href={s.href}
-            className={`panel block p-6 transition-all hover:-translate-y-0.5 ${
-              s.primary
-                ? 'ring-1 ring-[color:var(--accent)]/50'
-                : 'hover:border-[color:var(--accent-2)]'
-            }`}
-          >
-            <div className="inline-flex items-center rounded-md border border-[color:var(--border)] bg-[color:var(--surface-soft)] px-2 py-1 text-[10px] tracking-[0.2em] uppercase text-muted mb-3">{s.icon}</div>
-            <h2 className={`text-lg font-semibold mb-1 ${s.primary ? 'text-[color:var(--accent)]' : ''}`}>{s.title}</h2>
-            <p className="text-sm text-muted">{s.description}</p>
-          </Link>
-        ))}
-      </div>
+      <section>
+        <h2 className="section-title dr-mb-14">Quick Actions</h2>
+        <div className="dr-dashboard-cards-grid">
+          {navCards.map(card => (
+            <Link key={card.href} href={card.href} className="dr-dashboard-card-link">
+              <div className={`panel p-5 dr-panel dr-panel-hover dr-dashboard-card ${card.primary ? 'is-primary' : ''}`}>
+                <span className="dr-chip">{card.icon}</span>
+                <h3 className="section-title dr-title-16">{card.title}</h3>
+                <p className="dr-dashboard-card-copy">{card.description}</p>
+                <span className="dr-dashboard-card-cta">Open →</span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
     </div>
   )
 }

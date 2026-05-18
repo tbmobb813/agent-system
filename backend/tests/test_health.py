@@ -5,7 +5,7 @@ from app.main import app
 
 async def test_health_endpoint_returns_ok():
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get("/health")
 
     assert response.status_code == 200
@@ -18,7 +18,7 @@ async def test_health_endpoint_returns_ok():
 
 async def test_docs_info_endpoint_returns_links():
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.get("/docs-info")
 
     assert response.status_code == 200

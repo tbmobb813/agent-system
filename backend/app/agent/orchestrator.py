@@ -14,7 +14,7 @@ import re
 import uuid
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, AsyncIterator, Optional
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
@@ -37,6 +37,29 @@ from app.agent import skill_registry
 from app.agent.tool_learning import get_tool_hint, learn_tool_chains
 from app.agent.cost_learning import refresh_efficiency_cache
 from app.agent.prompts.system_prompt import PROMPT_VERSION, build_system_prompt
+from app.agent import tool_preferences as _tool_prefs
+from app.agent import skill_composer as _skill_composer
+
+
+def _score_tool_result(name: str, result: str, err: Optional[str]) -> float:
+    """
+    Heuristic quality score 0.0–1.0 for a single tool result.
+    Used to detect low-signal streaks and trigger a replanning nudge.
+    """
+    if err:
+        return 0.0
+    text = (result or "").strip()
+    if len(text) < 20:
+        return 0.1
+    lower = text.lower()
+    _FAILURE_PHRASES = (
+        "no results", "not found", "0 results", "nothing found",
+        "error:", "failed:", "could not", "unable to", "no matches",
+        "no data", "empty response", "no information",
+    )
+    if any(p in lower for p in _FAILURE_PHRASES):
+        return 0.25
+    return min(0.25 + len(text) / 500, 1.0)
 
 
 def _openrouter_client() -> AsyncOpenAI:
@@ -224,6 +247,7 @@ class ExecutionState(BaseModel):
     working_memory: list[dict[str, Any]] = Field(default_factory=list)
     goal: Optional[str] = None
     done_when: Optional[str] = None
+    goal_alignment_scores: list[float] = Field(default_factory=list)
     start_time: datetime
     last_update: datetime
 
@@ -244,12 +268,12 @@ class AgentOrchestrator:
     def _is_circuit_open(self) -> bool:
         if self._circuit_open_until is None:
             return False
-        return datetime.utcnow() < self._circuit_open_until
+        return datetime.now(UTC) < self._circuit_open_until
 
     def _record_circuit_failure(self) -> None:
         self._circuit_failures += 1
         if self._circuit_failures >= self._circuit_failure_threshold:
-            self._circuit_open_until = datetime.utcnow() + timedelta(
+            self._circuit_open_until = datetime.now(UTC) + timedelta(
                 seconds=self._circuit_recovery_seconds
             )
 
@@ -311,14 +335,12 @@ class AgentOrchestrator:
             current_step=0,
             total_steps=max_iterations,
             goal=query,
-            start_time=datetime.utcnow(),
-            last_update=datetime.utcnow(),
+            start_time=datetime.now(UTC),
+            last_update=datetime.now(UTC),
         )
         self.active_tasks[task_id] = state
 
         try:
-            tool_schemas = self.tools.get_tool_schemas(tools)
-
             # ── Round 1: fully independent startup work in parallel ───────────
             # get_spent_month, get_or_create, and context retrieval have no
             # dependencies on each other — run them concurrently to minimize
@@ -335,19 +357,45 @@ class AgentOrchestrator:
             async def _get_settings() -> dict:
                 return await asyncio.to_thread(load_settings_dict)
 
+            async def _get_bias_hint() -> str:
+                biases = await _tool_prefs.get_tool_biases(user_id)
+                return _tool_prefs.format_bias_hint(biases)
+
             (
                 budget_remaining,
                 conversation_id,
                 retrieved_context,
                 user_settings,
                 tool_hint,
+                tool_bias_hint,
+                active_skill_chain,
             ) = await asyncio.gather(
                 _get_budget(),
                 conversation_manager.get_or_create(conversation_id, user_id=user_id),
                 context_builder.build(query, user_id=user_id),
                 _get_settings(),
                 get_tool_hint(query),
+                _get_bias_hint(),
+                _skill_composer.get_applicable_chain(query),
             )
+
+            # ── #5 Tool precondition + budget filtering ───────────────────────
+            # Runs after budget_remaining is known; sync checks only (no I/O).
+            tool_schemas, removed_tools = self.tools.get_available_tools_filtered(
+                tools, budget_remaining
+            )
+            for removed_name, removed_reason in removed_tools:
+                if "budget_critical" in removed_reason:
+                    yield ExecutionEvent(
+                        type=EventType.STATUS,
+                        content=f"budget low — {removed_name} disabled to conserve funds",
+                    )
+                elif tools and removed_name in tools:
+                    # Only warn if the user explicitly requested this tool
+                    yield ExecutionEvent(
+                        type=EventType.STATUS,
+                        content=f"{removed_name} unavailable — {removed_reason.replace('precondition: ', '')}",
+                    )
 
             # Background learning jobs — all throttled internally, never block.
             asyncio.create_task(skill_registry.update_skills())
@@ -447,12 +495,23 @@ class AgentOrchestrator:
             combined_context = context or ""
             if tool_hint:
                 combined_context = (combined_context + "\n\n" + tool_hint).strip()
+            if tool_bias_hint:
+                combined_context = (combined_context + "\n\n" + tool_bias_hint).strip()
+            if active_skill_chain:
+                chain_hint = _skill_composer.format_chain_hint(active_skill_chain)
+                if chain_hint:
+                    combined_context = (combined_context + "\n\n" + chain_hint).strip()
+                    yield ExecutionEvent(
+                        type=EventType.STATUS,
+                        content=f"applying skill plan: {active_skill_chain['name']}",
+                    )
             system_base = build_system_prompt(
                 retrieved_context,
                 combined_context or None,
                 persona_prompt,
                 budget_remaining=budget_remaining,
                 monthly_budget_usd=float(settings.OPENROUTER_BUDGET_MONTHLY),
+                tool_names=self.tools.list_tools(),
             )
 
             # ── Plan-then-execute for qualifying multi-step queries ───
@@ -504,13 +563,39 @@ class AgentOrchestrator:
                         )
                     )
 
-            # System + history + new user message (with plan prepended if available)
-            messages = [
-                {
-                    "role": "system",
-                    "content": _compose_system_with_progress(system_base, state),
-                }
-            ]
+                # ── #3 Confidence-based model upgrade ────────────────────────
+                upgraded = self.router.select_for_confidence(
+                    plan_result.plan_confidence, agent_model, budget_remaining
+                )
+                if upgraded != agent_model:
+                    yield ExecutionEvent(
+                        type=EventType.STATUS,
+                        content=(
+                            f"plan confidence {plan_result.plan_confidence:.0%} — "
+                            f"upgrading to stronger model for reliability"
+                        ),
+                    )
+                    asyncio.create_task(
+                        decision_tracker.log_decision(
+                            task_id=task_id,
+                            decision_point="confidence_model_upgrade",
+                            chosen=upgraded,
+                            reasoning=(
+                                f"plan_confidence={plan_result.plan_confidence:.0%} below threshold; "
+                                f"upgrading from {agent_model}"
+                            ),
+                            confidence=plan_result.plan_confidence,
+                            user_id=user_id,
+                        )
+                    )
+                    agent_model = upgraded
+
+            # System message is FROZEN after this point — never mutated so the
+            # LLM prefix cache stays valid for the whole run.  Dynamic context
+            # (progress checkpoints, warnings) is collected in _dynamic_context
+            # and injected as an ephemeral trailing message before each LLM call.
+            messages = [{"role": "system", "content": system_base}]
+            _dynamic_context: list[str] = []  # warnings accumulate here
             messages.extend(history)
             user_text = (
                 f"[Plan]\n{plan_prefix}\n\n[Task]\n{query}" if plan_prefix else query
@@ -533,6 +618,53 @@ class AgentOrchestrator:
 
             yield ExecutionEvent(type=EventType.STATUS, content="thinking...")
 
+            def _llm_messages() -> list[dict]:
+                """
+                Build the message list for the next LLM call.
+                messages[0] (system) is never mutated — prefix cache stays valid.
+                Progress checkpoint and warnings are injected as an ephemeral
+                trailing user message that does NOT become part of the stored history.
+                """
+                progress = _format_progress_checkpoint(state)
+                parts = list(_dynamic_context)
+                if progress:
+                    parts.append(
+                        f"<progress_checkpoint>\n{progress}\n</progress_checkpoint>"
+                    )
+                if not parts:
+                    return messages
+                return messages + [{"role": "user", "content": "\n\n".join(parts)}]
+
+            # Tools permanently removed mid-run due to infrastructure failures.
+            _permanently_disabled_tools: set[str] = set()
+
+            # Patterns that signal a non-recoverable infrastructure failure
+            # (missing binary, unconfigured API key, etc.) — not transient errors.
+            _PERM_FAIL_SIGNALS = (
+                "executable doesn't exist",
+                "playwright install",
+                "browsertype.launch",
+                "not installed",
+                "api_key not set",
+                "e2b_api_key",
+            )
+
+            def _is_permanent_failure(result: str) -> bool:
+                lower = result.lower()
+                return any(sig in lower for sig in _PERM_FAIL_SIGNALS)
+
+            def _active_tool_schemas() -> list[dict]:
+                """Return tool schemas minus any permanently disabled tools."""
+                if not _permanently_disabled_tools:
+                    return tool_schemas
+                return [
+                    s for s in tool_schemas
+                    if s.get("function", {}).get("name") not in _permanently_disabled_tools
+                ]
+
+            # ── #4 Tool quality tracking — consecutive low-score counter per tool ─
+            _tool_low_quality_streak: dict[str, int] = {}
+
             for iteration in range(max_iterations):
                 # Check for stop request before each LLM call
                 if task_id in self._cancelled_tasks:
@@ -543,7 +675,7 @@ class AgentOrchestrator:
                     )
 
                 state.current_step = iteration + 1
-                state.last_update = datetime.utcnow()
+                state.last_update = datetime.now(UTC)
 
                 # ── Ask the LLM with classifier-based error recovery ──────────
                 # Use the run-level client on the first call; error/timeout paths
@@ -559,14 +691,15 @@ class AgentOrchestrator:
                         sampling = self.router.sampling_params_for_model(current_model)
                         create_kwargs: dict[str, Any] = {
                             "model": current_model,
-                            "messages": messages,
+                            "messages": _llm_messages(),
                             "stream": True,
                             "stream_options": {"include_usage": True},
                             "temperature": sampling["temperature"],
                             "top_p": sampling["top_p"],
                         }
-                        if tool_schemas:
-                            create_kwargs["tools"] = tool_schemas
+                        active_schemas = _active_tool_schemas()
+                        if active_schemas:
+                            create_kwargs["tools"] = active_schemas
                             create_kwargs["tool_choice"] = "auto"
                         reasoning_extra = _openrouter_reasoning_extra_body(
                             reasoning_effort
@@ -939,6 +1072,12 @@ class AgentOrchestrator:
                     asyncio.create_task(
                         decision_tracker.mark_outcome(task_id, "success")
                     )
+                    if active_skill_chain:
+                        asyncio.create_task(
+                            _skill_composer.record_chain_outcome(
+                                active_skill_chain["id"], success=True
+                            )
+                        )
 
                     break  # Done
 
@@ -1077,6 +1216,22 @@ class AgentOrchestrator:
                             tool_name=name,
                             tool_result=result_str,
                         )
+
+                    # ── Permanent failure detection ───────────────────────────────
+                    # If a tool returns an infrastructure error (missing binary,
+                    # unconfigured key, etc.) it won't recover this session — remove
+                    # it from tool_schemas immediately so the LLM stops retrying it.
+                    if name not in _permanently_disabled_tools and _is_permanent_failure(result_str):
+                        _permanently_disabled_tools.add(name)
+                        logger.warning("Tool '%s' permanently disabled this run: %s", name, result_str[:120])
+                        _dynamic_context.append(
+                            f"<tool_disabled tool=\"{name}\">"
+                            f"{name} has encountered a non-recoverable infrastructure error "
+                            f"and has been disabled for this session. "
+                            f"Do NOT call it again. Use an alternative tool to complete the task."
+                            f"</tool_disabled>"
+                        )
+
                     messages.append(
                         {
                             "role": "tool",
@@ -1084,10 +1239,69 @@ class AgentOrchestrator:
                             "content": result_str,
                         }
                     )
+                    # ── #4 Track low-quality streaks ─────────────────────────────
+                    quality = _score_tool_result(name, result_str, err)
+                    if quality < 0.3:
+                        _tool_low_quality_streak[name] = (
+                            _tool_low_quality_streak.get(name, 0) + 1
+                        )
+                    else:
+                        _tool_low_quality_streak[name] = 0
 
-                messages[0]["content"] = _compose_system_with_progress(
-                    system_base, state
-                )
+                # ── #4 Inject replanning nudge when a tool keeps returning poor results ─
+                _LOW_QUALITY_THRESHOLD = 2
+                poor_tools = [
+                    t for t, streak in _tool_low_quality_streak.items()
+                    if streak >= _LOW_QUALITY_THRESHOLD
+                ]
+                if poor_tools:
+                    tools_str = ", ".join(poor_tools)
+                    _dynamic_context.append(
+                        f"<tool_quality_warning>"
+                        f"The following tool(s) have returned low-quality results "
+                        f"{_LOW_QUALITY_THRESHOLD} times in a row: {tools_str}. "
+                        f"Consider switching to a different tool, rephrasing your query, "
+                        f"or answering from your own knowledge if you have enough context."
+                        f"</tool_quality_warning>"
+                    )
+
+                # ── #6 Goal-state alignment check every 3 tool rounds ────────
+                _GOAL_CHECK_INTERVAL = 3
+                if (
+                    state.done_when
+                    and (iteration + 1) % _GOAL_CHECK_INTERVAL == 0
+                ):
+                    alignment, assessment = await self._check_goal_alignment(
+                        state, run_client
+                    )
+                    state.goal_alignment_scores.append(alignment)
+                    if assessment:
+                        yield ExecutionEvent(
+                            type=EventType.THINKING,
+                            content=(
+                                f"Goal check (round {iteration + 1}): "
+                                f"{assessment} [{alignment:.0%} aligned]"
+                            ),
+                        )
+                    asyncio.create_task(
+                        decision_tracker.log_decision(
+                            task_id=task_id,
+                            decision_point="goal_alignment_check",
+                            chosen=f"{alignment:.0%}",
+                            reasoning=assessment or f"alignment={alignment:.0%}",
+                            confidence=alignment,
+                            user_id=user_id,
+                        )
+                    )
+                    if alignment < 0.30:
+                        _dynamic_context.append(
+                            f"<goal_alignment_warning>"
+                            f"Goal alignment is LOW ({alignment:.0%}). "
+                            f"Assessment: {assessment} "
+                            f"Reconsider your approach — try a different tool, ask "
+                            f"a clarifying question, or state clearly what is blocking you."
+                            f"</goal_alignment_warning>"
+                        )
 
                 yield ExecutionEvent(
                     type=EventType.STATUS,
@@ -1122,6 +1336,12 @@ class AgentOrchestrator:
             state.errors.append(str(e))
             logger.error(f"Agent execution failed: {e}", exc_info=True)
             asyncio.create_task(decision_tracker.mark_outcome(task_id, "failure"))
+            if active_skill_chain:
+                asyncio.create_task(
+                    _skill_composer.record_chain_outcome(
+                        active_skill_chain["id"], success=False
+                    )
+                )
             yield ExecutionEvent(type=EventType.ERROR, error=f"Execution failed: {e}")
 
         finally:
@@ -1134,6 +1354,49 @@ class AgentOrchestrator:
                 and self._active_conversations.get(conversation_id) == task_id
             ):
                 del self._active_conversations[conversation_id]
+
+    async def _check_goal_alignment(
+        self,
+        state: ExecutionState,
+        client: AsyncOpenAI,
+    ) -> tuple[float, str]:
+        """
+        Ask the cheap model to score progress toward the goal (0–100).
+        Returns (score as 0.0–1.0, one-sentence assessment).
+        Uses DEFAULT_MODEL_SIMPLE — cheap, fast, no tool use needed.
+        """
+        recent = []
+        for entry in state.working_memory[-6:]:
+            if entry.get("type") == "tool_result":
+                recent.append(f"- {entry['tool']}: {entry.get('result_preview', '')[:200]}")
+            elif entry.get("type") == "tool_error":
+                recent.append(f"- {entry['tool']} FAILED: {entry.get('error', '')}")
+        results_text = "\n".join(recent) if recent else "No tool results yet."
+
+        prompt = (
+            f"Goal: {state.goal}\n"
+            f"Success criterion: {state.done_when or 'Task completed successfully'}\n"
+            f"Tool results so far:\n{results_text}\n\n"
+            "Rate progress 0-100 (0=blocked/off-track, 50=partial, 100=achieved). "
+            'Reply ONLY with JSON: {"score": <number>, "assessment": "<one sentence>"}'
+        )
+        try:
+            resp = await client.chat.completions.create(
+                model=settings.DEFAULT_MODEL_SIMPLE,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=80,
+                temperature=0,
+            )
+            raw = (resp.choices[0].message.content or "").strip()
+            # Strip markdown fences if present
+            raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.DOTALL).strip()
+            data = json.loads(raw)
+            score = max(0.0, min(1.0, float(data.get("score", 50)) / 100.0))
+            assessment = str(data.get("assessment", "")).strip()
+            return score, assessment
+        except Exception as e:
+            logger.debug(f"Goal alignment check failed: {e}")
+            return 0.5, ""
 
     async def _make_plan(
         self,

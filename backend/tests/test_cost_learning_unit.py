@@ -1,6 +1,6 @@
 """Cost-efficiency cache helpers."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -26,7 +26,7 @@ async def test_refresh_skips_without_db(monkeypatch):
 @pytest.mark.asyncio
 async def test_refresh_throttled(monkeypatch):
     monkeypatch.setattr(cl._db, "db_pool", object())
-    cl._last_refresh = datetime.utcnow()
+    cl._last_refresh = datetime.now(UTC)
     called = []
 
     async def _fetch(*_a, **_k):
@@ -42,7 +42,7 @@ async def test_refresh_throttled(monkeypatch):
 async def test_refresh_populates_cache(monkeypatch):
     monkeypatch.setattr(cl._db, "db_pool", object())
     cl._cache.clear()
-    cl._last_refresh = datetime.utcnow() - timedelta(hours=2)
+    cl._last_refresh = datetime.now(UTC) - timedelta(hours=2)
 
     async def _fetch(*_a, **_k):
         return [

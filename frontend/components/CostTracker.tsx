@@ -40,7 +40,12 @@ export default function CostTracker() {
   }, [])
 
   if (loading) return <p className="text-muted">Loading cost data…</p>
-  if (error)   return <p className="text-[color:var(--danger)]">Error: {error}</p>
+  if (error) return (
+    <div className="flex items-center gap-3">
+      <p className="text-[color:var(--danger)]">Error: {error}</p>
+      <button onClick={() => { refresh(); getCostBreakdown().then(d => setBreakdown(d.breakdown)).catch(() => {}) }} className="btn-ghost px-3 py-1.5 text-sm rounded-lg">Retry</button>
+    </div>
+  )
   if (!data)   return null
 
   const d = data as CostData
@@ -120,7 +125,7 @@ export default function CostTracker() {
           refresh()
           getCostBreakdown().then(d => setBreakdown(d.breakdown)).catch(() => {})
         }}
-        className="text-sm text-[color:var(--accent-2)] hover:opacity-90 transition-opacity"
+        className="btn-ghost px-3 py-1.5 text-sm rounded-lg"
       >
         Refresh
       </button>

@@ -1,7 +1,23 @@
 'use client'
 
-import { useMemo, useCallback, useRef } from 'react'
+import { useMemo, useCallback, useEffect, useRef, useState } from 'react'
 import type { StreamEvent } from '@/lib/hooks'
+import {
+  addMcpServer,
+  deleteMcpServer,
+  deleteAnalyticsSkill,
+  getSettings,
+  updateSettings,
+  uploadDocument,
+  upsertAnalyticsSkill,
+  saveConnector,
+  testConnector,
+  createSkillChain,
+  deleteSkillChain,
+  autoGenerateSkillChains,
+  type ConnectorStatus,
+  type SkillChain,
+} from '@/lib/api'
 import {
   EventLine,
   TurnDoneFooter,
@@ -17,7 +33,6 @@ import {
   IconStop,
 } from './Icons'
 import {
-  AgentActivityStrip,
   QuickActionsMenu,
 } from './AgentExecutorUI'
 import { useAgentExecutorState } from './useAgentExecutorState'
@@ -29,18 +44,100 @@ import {
   type SuggestRow,
 } from './AgentExecutorSuggestions'
 
+const STARTER_PROMPTS = [
+  'Summarize my recent task history',
+  'Search the web for the latest AI news',
+  'What tools do you have available?',
+  'Help me write a Python script',
+]
+
+function ChatEmptyState({ onPrompt }: { onPrompt: (p: string) => void }) {
+  return (
+    <div className="dr-chat-empty">
+      <div className="dr-chat-empty-inner">
+        <div className="dr-chat-empty-glyph">✦</div>
+        <h2 className="dr-chat-empty-title">What can I help with?</h2>
+        <div className="dr-chat-starter-grid">
+          {STARTER_PROMPTS.map(p => (
+            <button key={p} type="button" onClick={() => onPrompt(p)} className="dr-chat-starter-chip">
+              {p}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ConnectorOpsRow({
+  connector,
+  onToggle,
+  onTest,
+}: {
+  connector: ConnectorStatus
+  onToggle: (enabled: boolean) => Promise<void>
+  onTest: () => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const act = async (fn: () => Promise<void>) => { setBusy(true); try { await fn() } finally { setBusy(false) } }
+
+  return (
+    <div className="panel panel-soft p-3 rounded-lg flex items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium">{connector.name}</p>
+        <p className="text-xs text-muted mt-0.5">
+          {connector.configured
+            ? connector.token_preview
+            : 'Not configured — add a token in Connectors settings'}
+        </p>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        {connector.configured && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => act(() => onTest())}
+            className="dr-btn-ghost px-2 py-1 rounded text-xs disabled:opacity-50"
+          >
+            Test
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={busy || !connector.configured}
+          onClick={() => act(() => onToggle(!connector.enabled))}
+          title={connector.enabled ? 'Disable' : 'Enable'}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-colors disabled:opacity-40 ${
+            connector.enabled
+              ? 'bg-[color:var(--accent)] border-[color:var(--accent)]'
+              : 'bg-[color:var(--surface-soft)] border-[color:var(--border)]'
+          }`}
+        >
+          <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${connector.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function AgentExecutor() {
+  useEffect(() => {
+    document.documentElement.setAttribute('data-page', 'agent')
+    return () => document.documentElement.removeAttribute('data-page')
+  }, [])
+
   const {
     query, setQuery, context, setContext, attachedImages, setAttachedImages,
     editLastOpen, setEditLastOpen, showThinkingLive,
     reasoningPhaseOpenByTurn, reasoningEffortForRequest, setReasoningEffortForRequest,
-    dismissFeedbackNudge, feedbackDetailsRef, contextPanelRef, queryInputRef,
+    dismissFeedbackNudge, feedbackDetailsRef, queryInputRef,
     toolNames, queryCursor, setQueryCursor, suggestDismissed, setSuggestDismissed, suggestHighlight, setSuggestHighlight,
     quickActionsOpen, setQuickActionsOpen, reasoningArgModal, setReasoningArgModal, helpModalOpen, setHelpModalOpen,
-    modelsModalOpen, setModelsModalOpen, modelsModalState, opsModalOpen, setOpsModalOpen, opsPanel,
+    modelsModalOpen, setModelsModalOpen, modelsModalState, opsModalOpen, setOpsModalOpen, opsPanel, opsModalState,
     quickActionsRef, quickActionsButtonRef,
     events, merged, isRunning, error, conversationId, run, stop, reset, newConversation,
-    latestRunCost, lastUserMessage, openOpsPanel, loadModelsForModal, skipReasoningModalSig
+    latestRunCost, lastUserMessage, openOpsPanel, loadModelsForModal, skipReasoningModalSig,
+    suggestions,
   } = useAgentExecutorState()
 
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -158,6 +255,212 @@ export default function AgentExecutor() {
     }
   }
 
+  const handlePickFiles = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  const handleAttachFiles = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (files.length === 0) return
+
+    const queue = files.map(file => ({
+      id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
+      filename: file.name,
+      status: 'uploading' as const,
+    }))
+
+    setAttachments(prev => [...queue, ...prev])
+
+    await Promise.all(queue.map(async (item, idx) => {
+      try {
+        await uploadDocument(files[idx])
+        setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, status: 'ready' } : a))
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Upload failed'
+        setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, status: 'error', error: msg } : a))
+      }
+    }))
+
+    // Allow selecting the same file again later.
+    e.currentTarget.value = ''
+  }, [])
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments(prev => prev.filter(a => a.id !== id))
+  }, [])
+
+  useEffect(() => {
+    streamEndRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' })
+  }, [merged])
+
+  useEffect(() => {
+    if (editLastOpen && lastUserMessage) {
+      setEditText(lastUserMessage)
+      queueMicrotask(() => {
+        const el = editInputRef.current
+        if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length) }
+      })
+    }
+  }, [editLastOpen, lastUserMessage])
+
+  const refreshOpsPanel = useCallback(() => {
+    openOpsPanel(opsPanel)
+  }, [openOpsPanel, opsPanel])
+
+  const toggleDefaultTool = useCallback(async (toolName: string, enable: boolean) => {
+    setOpsBusy(`tool:${toolName}`)
+    setOpsNotice(null)
+    try {
+      const current = await getSettings() as { default_tools?: string[] | null }
+      const nextSet = new Set(Array.isArray(current.default_tools) ? current.default_tools : [])
+      if (enable) nextSet.add(toolName)
+      else nextSet.delete(toolName)
+      await updateSettings({ ...current, default_tools: Array.from(nextSet) })
+      setOpsNotice(`Tool ${enable ? 'enabled' : 'disabled'}: ${toolName}`)
+      openOpsPanel('tools')
+    } catch (err) {
+      setOpsNotice(err instanceof Error ? err.message : 'Tool update failed')
+    } finally {
+      setOpsBusy(null)
+    }
+  }, [openOpsPanel])
+
+  const createMcpServer = useCallback(async () => {
+    const name = mcpForm.name.trim()
+    const transport = mcpForm.transport as 'http_json' | 'sse' | 'stdio'
+    if (!name) {
+      setOpsNotice('MCP name is required')
+      return
+    }
+
+    setOpsBusy('mcp:add')
+    setOpsNotice(null)
+    try {
+      if (transport === 'stdio') {
+        await addMcpServer({
+          name,
+          transport,
+          command: mcpForm.command.trim(),
+          args: mcpForm.args.split(',').map(s => s.trim()).filter(Boolean),
+        })
+      } else {
+        await addMcpServer({
+          name,
+          transport,
+          url: mcpForm.url.trim(),
+        })
+      }
+      setOpsNotice(`MCP server added: ${name}`)
+      setMcpForm({ name: '', transport: 'http_json', url: '', command: '', args: '' })
+      openOpsPanel('mcp')
+    } catch (err) {
+      setOpsNotice(err instanceof Error ? err.message : 'Could not add MCP server')
+    } finally {
+      setOpsBusy(null)
+    }
+  }, [mcpForm, openOpsPanel])
+
+  const removeMcpServer = useCallback(async (name: string) => {
+    setOpsBusy(`mcp:del:${name}`)
+    setOpsNotice(null)
+    try {
+      await deleteMcpServer(name)
+      setOpsNotice(`MCP server deleted: ${name}`)
+      openOpsPanel('mcp')
+    } catch (err) {
+      setOpsNotice(err instanceof Error ? err.message : 'Could not delete MCP server')
+    } finally {
+      setOpsBusy(null)
+    }
+  }, [openOpsPanel])
+
+  const addSkill = useCallback(async () => {
+    const taskType = skillForm.task_type.trim()
+    const skillName = skillForm.skill_name.trim()
+    if (!taskType || !skillName) {
+      setOpsNotice('Skill task type and name are required')
+      return
+    }
+    setOpsBusy('skill:add')
+    setOpsNotice(null)
+    try {
+      await upsertAnalyticsSkill({
+        task_type: taskType,
+        skill_name: skillName,
+        required_tools: skillForm.required_tools.split(',').map(s => s.trim()).filter(Boolean),
+      })
+      setOpsNotice(`Skill saved: ${taskType}`)
+      setSkillForm({ task_type: '', skill_name: '', required_tools: '' })
+      openOpsPanel('skills')
+    } catch (err) {
+      setOpsNotice(err instanceof Error ? err.message : 'Could not save skill')
+    } finally {
+      setOpsBusy(null)
+    }
+  }, [skillForm, openOpsPanel])
+
+  const removeSkill = useCallback(async (taskType: string) => {
+    setOpsBusy(`skill:del:${taskType}`)
+    setOpsNotice(null)
+    try {
+      await deleteAnalyticsSkill(taskType)
+      setOpsNotice(`Skill deleted: ${taskType}`)
+      openOpsPanel('skills')
+    } catch (err) {
+      setOpsNotice(err instanceof Error ? err.message : 'Could not delete skill')
+    } finally {
+      setOpsBusy(null)
+    }
+  }, [openOpsPanel])
+
+  const createChain = useCallback(async () => {
+    if (!chainForm.name.trim() || !chainForm.steps.trim()) {
+      setOpsNotice('Name and at least one step (tool name) are required')
+      return
+    }
+    setOpsBusy('chain:add')
+    setOpsNotice(null)
+    try {
+      const steps = chainForm.steps.split(',').map(s => s.trim()).filter(Boolean).map(tool => ({ tool, description: '' }))
+      await createSkillChain({ name: chainForm.name.trim(), task_type: chainForm.task_type, steps, description: chainForm.description.trim() })
+      setChainForm({ name: '', task_type: 'research', description: '', steps: '' })
+      setOpsNotice('Skill chain created')
+      openOpsPanel('skill_chains')
+    } catch (err) {
+      setOpsNotice(err instanceof Error ? err.message : 'Could not create chain')
+    } finally {
+      setOpsBusy(null)
+    }
+  }, [chainForm, openOpsPanel])
+
+  const removeChain = useCallback(async (chainId: string) => {
+    setOpsBusy(`chain:del:${chainId}`)
+    setOpsNotice(null)
+    try {
+      await deleteSkillChain(chainId)
+      setOpsNotice('Chain deleted')
+      openOpsPanel('skill_chains')
+    } catch (err) {
+      setOpsNotice(err instanceof Error ? err.message : 'Could not delete chain')
+    } finally {
+      setOpsBusy(null)
+    }
+  }, [openOpsPanel])
+
+  const autoGenerateChains = useCallback(async () => {
+    setOpsBusy('chain:auto')
+    setOpsNotice(null)
+    try {
+      const result = await autoGenerateSkillChains()
+      setOpsNotice(result.count > 0 ? `Generated ${result.count} chain${result.count !== 1 ? 's' : ''}` : 'No new patterns to promote yet')
+      openOpsPanel('skill_chains')
+    } catch (err) {
+      setOpsNotice(err instanceof Error ? err.message : 'Auto-generate failed')
+    } finally {
+      setOpsBusy(null)
+    }
+  }, [openOpsPanel])
+
   const turnItems = useMemo(() => {
     type TurnItem = { kind: 'turn'; id: number; user?: StreamEvent; events: StreamEvent[] }
     type DividerItem = { kind: 'divider'; event: StreamEvent }
@@ -175,59 +478,455 @@ export default function AgentExecutor() {
     return items
   }, [merged])
 
-  return (
-    <div className="flex flex-col h-full gap-2 min-h-0">
-      <div className="flex-1 min-h-0 flex flex-col">
-        {merged.length > 0 ? (
-          <div className="flex-1 min-h-0 flex flex-col rounded-xl border border-[color:var(--border)] bg-[color:var(--bg-elev)] overflow-hidden font-mono text-sm">
-            <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 relative">
-              <div className="space-y-2">
-                {turnItems.map((item, i) => {
-                  if (item.kind === 'divider') return <EventLine key={`divider-${i}`} event={item.event} />
-                  const chatEvents = visibleChatEvents(item.events)
-                  const { phase, rest } = splitLeadingPhaseEvents(chatEvents)
-                  const turnHasDone = item.events.some(ev => ev.type === 'done')
-                  const phaseDetailsOpen = (showThinkingLive && !turnHasDone) || reasoningPhaseOpenByTurn[item.id] === true
-                  return (
-                    <div key={`turn-${item.id}`} className="space-y-2">
-                      {item.user && <EventLine event={item.user} />}
-                      {showThinkingLive && phase.length > 0 && (
-                        <div className="flex justify-start">
-                          <details className="max-w-[min(92%,42rem)] w-full rounded-2xl rounded-bl-md border border-[color:var(--border)] bg-[color:var(--surface-soft)] px-3 py-2 text-sm" open={phaseDetailsOpen}>
-                            <summary className="text-muted text-sm cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-start gap-2">
-                              <span className="shrink-0 opacity-70">▸</span><span className="truncate min-w-0">{phaseSummaryPreview(phase)}</span>
-                            </summary>
-                            <div className="mt-2 max-h-48 space-y-1 overflow-y-auto border-t border-[color:var(--border)]/50 pt-2">
-                              {phase.map((ev, idx) => <EventLine key={`turn-${item.id}-phase-${idx}`} event={ev} />)}
-                            </div>
-                          </details>
-                        </div>
-                      )}
-                      {(showThinkingLive && phase.length > 0 ? rest : chatEvents).filter(ev => ev.type !== 'done').map((ev, idx) => <EventLine key={`turn-${item.id}-event-${idx}`} event={ev} />)}
-                      {turnHasDone && (
-                        <TurnDoneFooter
-                          turnId={item.id}
-                          events={item.events}
-                          isRunning={isRunning}
-                          dismissFeedbackNudge={dismissFeedbackNudge}
-                          registerFeedbackRef={(el) => {
-                            feedbackDetailsRef.current = el
-                          }}
-                          showThreadDownload={true}
-                          threadExportEmpty={false}
-                          onDownloadThread={handleDownloadThread}
-                          omitDoneCost={false}
-                        />
-                      )}
-                    </div>
-                  )
-                })}
+  const opsPanelContent = useMemo(() => {
+    const state = opsModalState[opsPanel]
+    if (state === 'loading') {
+      return <p className="text-sm text-muted">Loading {opsPanel}…</p>
+    }
+    if ('err' in state) {
+      return <p className="text-sm text-[color:var(--danger)]">{state.err}</p>
+    }
+
+    const data = state.ok as Record<string, unknown>
+
+    if (opsPanel === 'tools') {
+      const tools = Array.isArray(data.tools) ? data.tools as Array<{ name?: string; description?: string }> : []
+      const enabledSet = data.enabledSet instanceof Set ? data.enabledSet as Set<string> : new Set<string>()
+      return (
+        <div className="space-y-3">
+          <div className="text-xs text-muted">{tools.length} available · {enabledSet.size} enabled by default</div>
+          {tools.length === 0 ? <p className="text-sm text-muted">No tools available.</p> : null}
+          {tools.map((tool, i) => (
+            <div key={`${tool.name ?? 'tool'}-${i}`} className="panel panel-soft p-3 rounded-lg flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">{tool.name ?? 'Unnamed tool'}</p>
+                {tool.description ? <p className="text-xs text-muted mt-1 leading-relaxed">{tool.description}</p> : null}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className={`text-[10px] uppercase tracking-[0.14em] px-2 py-1 rounded border ${enabledSet.has(tool.name ?? '') ? 'border-[color:var(--success)] text-[color:var(--success)]' : 'border-[color:var(--border)] text-muted'}`}>
+                  {enabledSet.has(tool.name ?? '') ? 'enabled' : 'optional'}
+                </span>
+                <button
+                  type="button"
+                  disabled={!tool.name || opsBusy === `tool:${tool.name}`}
+                  onClick={() => {
+                    if (!tool.name) return
+                    void toggleDefaultTool(tool.name, !enabledSet.has(tool.name))
+                  }}
+                  className="dr-btn-ghost px-2 py-1 rounded text-xs disabled:opacity-50"
+                >
+                  {enabledSet.has(tool.name ?? '') ? 'Disable' : 'Enable'}
+                </button>
               </div>
             </div>
-            <AgentActivityStrip reasoningEffortLabel={reasoningEffortLabel} liveActivitySummary={liveActivitySummary} isRunning={isRunning} streamEvents={events} latestRunCost={latestRunCost} className="shrink-0" />
+          ))}
+        </div>
+      )
+    }
+
+    if (opsPanel === 'skills') {
+      const skills = Array.isArray(data.skills) ? data.skills : []
+      const growthAreas = Array.isArray(data.growthAreas) ? data.growthAreas : []
+      const allSkills = [...skills, ...growthAreas] as Array<Record<string, unknown>>
+      return (
+        <div className="space-y-3">
+          <div className="panel panel-soft p-3 rounded-lg space-y-2">
+            <p className="text-xs uppercase tracking-[0.14em] text-muted">Add or update skill</p>
+            <div className="grid sm:grid-cols-2 gap-2">
+              <input value={skillForm.task_type} onChange={(e) => setSkillForm(prev => ({ ...prev, task_type: e.target.value }))} placeholder="task type (e.g. coding)" className="dr-agent-model-select h-9" />
+              <input value={skillForm.skill_name} onChange={(e) => setSkillForm(prev => ({ ...prev, skill_name: e.target.value }))} placeholder="skill name" className="dr-agent-model-select h-9" />
+            </div>
+            <input value={skillForm.required_tools} onChange={(e) => setSkillForm(prev => ({ ...prev, required_tools: e.target.value }))} placeholder="required tools (comma separated)" className="dr-agent-model-select h-9 w-full" />
+            <button type="button" onClick={() => void addSkill()} disabled={opsBusy === 'skill:add'} className="dr-btn-accent px-3 py-1.5 rounded text-xs disabled:opacity-50">{opsBusy === 'skill:add' ? 'Saving…' : 'Save Skill'}</button>
           </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="panel panel-soft p-3 rounded-lg">
+              <p className="text-xs uppercase tracking-[0.14em] text-muted">Tracked skills</p>
+              <p className="text-lg font-semibold mt-1">{skills.length}</p>
+            </div>
+            <div className="panel panel-soft p-3 rounded-lg">
+              <p className="text-xs uppercase tracking-[0.14em] text-muted">Growth areas</p>
+              <p className="text-lg font-semibold mt-1">{growthAreas.length}</p>
+            </div>
+          </div>
+          {skills.length === 0 ? <p className="text-sm text-muted">No skill analytics found yet.</p> : null}
+          {skills.length > 0 ? (
+            <div className="panel panel-soft rounded-lg overflow-hidden">
+              <div className="grid grid-cols-[1.5fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-muted border-b border-[color:var(--border)]">
+                <span>Skill</span>
+                <span className="text-right">Success</span>
+                <span className="text-right">Uses</span>
+              </div>
+              {skills.map((skill, i) => {
+                const row = skill as Record<string, unknown>
+                const name = String(row.skill ?? row.name ?? `Skill ${i + 1}`)
+                const taskType = String(row.task_type ?? row.taskType ?? name)
+                const success = row.success_rate ?? row.success ?? row.win_rate
+                const uses = row.count ?? row.uses ?? row.total ?? '—'
+                return (
+                  <div key={`skill-row-${i}`} className="grid grid-cols-[1.5fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-sm border-b last:border-b-0 border-[color:var(--border)]/50">
+                    <div className="min-w-0 flex items-center gap-2">
+                      <span className="truncate" title={name}>{name}</span>
+                      <button type="button" onClick={() => void removeSkill(taskType)} disabled={opsBusy === `skill:del:${taskType}`} className="dr-btn-ghost px-2 py-0.5 rounded text-[10px] disabled:opacity-50">Delete</button>
+                    </div>
+                    <span className="text-right text-muted">{success == null ? '—' : String(success)}</span>
+                    <span className="text-right text-muted">{String(uses)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
+          {growthAreas.length > 0 ? (
+            <div className="panel panel-soft p-3 rounded-lg">
+              <p className="text-xs uppercase tracking-[0.14em] text-muted mb-2">Top growth areas</p>
+              <div className="flex flex-wrap gap-2">
+                {growthAreas.map((area, i) => (
+                  <span key={`growth-${i}`} className="text-xs px-2 py-1 rounded border border-[color:var(--border)] bg-[color:var(--surface-soft)]">{String(area)}</span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {allSkills.length === 0 ? <p className="text-xs text-muted">Skills can be learned automatically or added manually above.</p> : null}
+        </div>
+      )
+    }
+
+    if (opsPanel === 'stats') {
+      const budget = (data.budget ?? {}) as Record<string, unknown>
+      const latency = Array.isArray(data.latency) ? data.latency : []
+
+      const percentUsed = typeof budget.percentUsed === 'number' ? budget.percentUsed : Number(budget.percentUsed ?? 0)
+      const safePercent = Number.isFinite(percentUsed) ? Math.max(0, Math.min(100, percentUsed)) : 0
+
+      return (
+        <div className="space-y-3">
+          <div className="panel panel-soft p-3 rounded-lg space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted">Budget usage</span>
+              <span className="font-semibold">{safePercent.toFixed(1)}%</span>
+            </div>
+            <progress className="budget-progress" max={100} value={safePercent} />
+            <div className="grid sm:grid-cols-2 gap-2 text-sm">
+              <p>Spent today: <span className="text-[color:var(--text)]">{String(budget.spentToday ?? '—')}</span></p>
+              <p>Spent month: <span className="text-[color:var(--text)]">{String(budget.spentMonth ?? '—')}</span></p>
+              <p>Remaining: <span className="text-[color:var(--text)]">{String(budget.remaining ?? '—')}</span></p>
+              <p>Status: <span className="text-[color:var(--text)]">{String(budget.status ?? '—')}</span></p>
+            </div>
+          </div>
+          <div className="panel panel-soft rounded-lg overflow-hidden">
+            <div className="grid grid-cols-[1.4fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-muted border-b border-[color:var(--border)]">
+              <span>Endpoint</span>
+              <span className="text-right">P50</span>
+              <span className="text-right">P95</span>
+            </div>
+            {latency.length === 0 ? <p className="px-3 py-3 text-sm text-muted">No latency stats yet.</p> : null}
+            {latency.map((entry, i) => {
+              const row = entry as Record<string, unknown>
+              return (
+                <div key={`latency-${i}`} className="grid grid-cols-[1.4fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-sm border-b last:border-b-0 border-[color:var(--border)]/50">
+                  <span className="truncate" title={String(row.endpoint ?? row.path ?? 'endpoint')}>{String(row.endpoint ?? row.path ?? 'endpoint')}</span>
+                  <span className="text-right text-muted">{String(row.p50_ms ?? row.p50 ?? '—')}</span>
+                  <span className="text-right text-muted">{String(row.p95_ms ?? row.p95 ?? '—')}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )
+    }
+
+    if (opsPanel === 'connectors') {
+      const connectors = Array.isArray(data.connectors) ? data.connectors as ConnectorStatus[] : []
+      return (
+        <div className="space-y-3">
+          {connectors.length === 0 && <p className="text-sm text-muted">No connectors available.</p>}
+          {connectors.map((c) => (
+            <ConnectorOpsRow
+              key={c.id}
+              connector={c}
+              onToggle={async (enabled) => {
+                try {
+                  await saveConnector(c.id, { enabled })
+                  openOpsPanel('connectors')
+                } catch (e) {
+                  setOpsNotice(e instanceof Error ? e.message : 'Toggle failed')
+                }
+              }}
+              onTest={async () => {
+                setOpsNotice('Testing…')
+                try {
+                  const r = await testConnector(c.id)
+                  setOpsNotice(r.ok ? `✓ ${r.detail}` : `✗ ${r.detail}`)
+                } catch (e) {
+                  setOpsNotice(e instanceof Error ? e.message : 'Test failed')
+                }
+              }}
+            />
+          ))}
+          <a href="/settings?tab=connectors" className="block text-xs text-[color:var(--accent-2)] hover:underline pt-1">
+            Manage tokens &amp; add connectors →
+          </a>
+        </div>
+      )
+    }
+
+    if (opsPanel === 'history') {
+      const tasks = Array.isArray(data.tasks) ? data.tasks as Array<Record<string, unknown>> : []
+      return (
+        <div className="space-y-3">
+          <div className="text-xs text-muted">Showing {tasks.length} recent tasks</div>
+          {tasks.length === 0 ? <p className="text-sm text-muted">No task history available.</p> : null}
+          {tasks.map((task, i) => (
+            <div key={`hist-${i}`} className="panel panel-soft p-3 rounded-lg text-sm space-y-1">
+              <div className="flex items-start justify-between gap-3">
+                <p className="font-medium truncate">{String(task.query ?? 'No query')}</p>
+                <span className="text-[10px] uppercase tracking-[0.14em] px-2 py-1 rounded border border-[color:var(--border)] text-muted shrink-0">{String(task.status ?? 'unknown')}</span>
+              </div>
+              <p className="text-xs text-muted">{String(task.created_at ?? '')}</p>
+            </div>
+          ))}
+        </div>
+      )
+    }
+
+    if (opsPanel === 'mcp') {
+      const checks = Array.isArray(data.checks) ? data.checks : []
+      const servers = Array.isArray(data.servers) ? data.servers : []
+      const healthyCount = typeof data.healthyCount === 'number' ? data.healthyCount : 0
+      const total = typeof data.total === 'number' ? data.total : 0
+      return (
+        <div className="space-y-3">
+          <div className="panel panel-soft p-3 rounded-lg space-y-2">
+            <p className="text-xs uppercase tracking-[0.14em] text-muted">Add MCP server</p>
+            <div className="grid sm:grid-cols-2 gap-2">
+              <input value={mcpForm.name} onChange={(e) => setMcpForm(prev => ({ ...prev, name: e.target.value }))} placeholder="server name" className="dr-agent-model-select h-9" />
+              <select aria-label="MCP transport" title="MCP transport" value={mcpForm.transport} onChange={(e) => setMcpForm(prev => ({ ...prev, transport: e.target.value }))} className="dr-agent-model-select h-9">
+                <option value="http_json">http_json</option>
+                <option value="sse">sse</option>
+                <option value="stdio">stdio</option>
+              </select>
+            </div>
+            {mcpForm.transport === 'stdio' ? (
+              <div className="grid sm:grid-cols-2 gap-2">
+                <input value={mcpForm.command} onChange={(e) => setMcpForm(prev => ({ ...prev, command: e.target.value }))} placeholder="command (e.g. npx)" className="dr-agent-model-select h-9" />
+                <input value={mcpForm.args} onChange={(e) => setMcpForm(prev => ({ ...prev, args: e.target.value }))} placeholder="args comma-separated" className="dr-agent-model-select h-9" />
+              </div>
+            ) : (
+              <input value={mcpForm.url} onChange={(e) => setMcpForm(prev => ({ ...prev, url: e.target.value }))} placeholder="server URL" className="dr-agent-model-select h-9 w-full" />
+            )}
+            <button type="button" onClick={() => void createMcpServer()} disabled={opsBusy === 'mcp:add'} className="dr-btn-accent px-3 py-1.5 rounded text-xs disabled:opacity-50">{opsBusy === 'mcp:add' ? 'Adding…' : 'Add MCP Server'}</button>
+          </div>
+          <div className="grid sm:grid-cols-3 gap-3">
+            <div className="panel panel-soft p-3 rounded-lg">
+              <p className="text-xs uppercase tracking-[0.14em] text-muted">Healthy</p>
+              <p className="text-lg font-semibold mt-1">{healthyCount}</p>
+            </div>
+            <div className="panel panel-soft p-3 rounded-lg">
+              <p className="text-xs uppercase tracking-[0.14em] text-muted">Total checks</p>
+              <p className="text-lg font-semibold mt-1">{total || checks.length}</p>
+            </div>
+            <div className="panel panel-soft p-3 rounded-lg">
+              <p className="text-xs uppercase tracking-[0.14em] text-muted">Servers</p>
+              <p className="text-lg font-semibold mt-1">{servers.length}</p>
+            </div>
+          </div>
+          <div className="panel panel-soft rounded-lg overflow-hidden">
+            <div className="grid grid-cols-[1.2fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-muted border-b border-[color:var(--border)]">
+              <span>Name</span>
+              <span>Status</span>
+              <span>Transport</span>
+            </div>
+            {servers.length === 0 ? <p className="px-3 py-3 text-sm text-muted">No MCP servers configured.</p> : null}
+            {servers.map((sv, i) => {
+              const row = sv as Record<string, unknown>
+              const status = String(row.status ?? 'unknown')
+              const name = String(row.name ?? `server-${i + 1}`)
+              return (
+                <div key={`mcp-${i}`} className="grid grid-cols-[1.2fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-sm border-b last:border-b-0 border-[color:var(--border)]/50">
+                  <div className="min-w-0 flex items-center gap-2">
+                    <span className="truncate" title={name}>{name}</span>
+                    <button type="button" onClick={() => void removeMcpServer(name)} disabled={opsBusy === `mcp:del:${name}`} className="dr-btn-ghost px-2 py-0.5 rounded text-[10px] disabled:opacity-50">Delete</button>
+                  </div>
+                  <span className={status === 'healthy' ? 'text-[color:var(--success)]' : 'text-muted'}>{status}</span>
+                  <span className="text-muted">{String(row.transport ?? '—')}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )
+    }
+
+    if (opsPanel === 'workflows') {
+      type WfSuggestion = { task_type: string; tools: string[]; occurrences: number; success_rate: number; suggested_name: string; suggested_query: string }
+      const suggestions = Array.isArray(data.suggestions) ? data.suggestions as WfSuggestion[] : []
+      return (
+        <div className="space-y-3">
+          <p className="text-xs text-muted">
+            These task patterns appear frequently enough to automate. Run them via{' '}
+            <code className="text-[10px] bg-[color:var(--surface-soft)] px-1 py-0.5 rounded">
+              POST /agent/workflows/&#123;name&#125;/run
+            </code>
+            {' '}or use as a template.
+          </p>
+          {suggestions.length === 0 ? (
+            <p className="text-sm text-muted">
+              No recurring patterns detected yet — run more tasks to build history.
+            </p>
+          ) : null}
+          {suggestions.map((s, i) => (
+            <div key={`wf-${i}`} className="panel panel-soft p-3 rounded-lg space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium capitalize">{s.task_type.replace(/_/g, ' ')} tasks</p>
+                  <p className="text-xs text-muted mt-0.5">
+                    {s.occurrences} runs · {Math.round(s.success_rate * 100)}% success
+                  </p>
+                </div>
+                <code className="text-[10px] bg-[color:var(--surface-soft)] px-2 py-1 rounded shrink-0 text-muted">
+                  {s.suggested_name}
+                </code>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {s.tools.map(t => (
+                  <span key={t} className="text-[10px] px-2 py-0.5 rounded border border-[color:var(--border)] bg-[color:var(--surface-soft)] text-muted">
+                    {t}
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-muted italic">{s.suggested_query}</p>
+            </div>
+          ))}
+        </div>
+      )
+    }
+
+    if (opsPanel === 'skill_chains') {
+      const chains = Array.isArray(data.chains) ? data.chains as SkillChain[] : []
+      const TASK_TYPES = ['research', 'coding', 'writing', 'analysis', 'data', 'planning', 'automation', 'general']
+      return (
+        <div className="space-y-3">
+          <div className="panel panel-soft p-3 rounded-lg space-y-2">
+            <p className="text-xs uppercase tracking-[0.14em] text-muted">Define a skill chain</p>
+            <div className="grid sm:grid-cols-2 gap-2">
+              <input value={chainForm.name} onChange={e => setChainForm(p => ({ ...p, name: e.target.value }))} placeholder="chain name (e.g. web_research)" className="dr-agent-model-select h-9" />
+              <select aria-label="Task type" value={chainForm.task_type} onChange={e => setChainForm(p => ({ ...p, task_type: e.target.value }))} className="dr-agent-model-select h-9">
+                {TASK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <input value={chainForm.steps} onChange={e => setChainForm(p => ({ ...p, steps: e.target.value }))} placeholder="tools comma-separated (e.g. mcp_brave_search_brave_web_search,file_operations)" className="dr-agent-model-select h-9 w-full" />
+            <input value={chainForm.description} onChange={e => setChainForm(p => ({ ...p, description: e.target.value }))} placeholder="description (optional)" className="dr-agent-model-select h-9 w-full" />
+            <div className="flex gap-2 flex-wrap">
+              <button type="button" onClick={() => void createChain()} disabled={opsBusy === 'chain:add'} className="dr-btn-accent px-3 py-1.5 rounded text-xs disabled:opacity-50">{opsBusy === 'chain:add' ? 'Creating…' : 'Create Chain'}</button>
+              <button type="button" onClick={() => void autoGenerateChains()} disabled={opsBusy === 'chain:auto'} className="dr-btn-ghost px-3 py-1.5 rounded text-xs disabled:opacity-50">{opsBusy === 'chain:auto' ? 'Generating…' : 'Auto-generate from patterns'}</button>
+            </div>
+          </div>
+          {chains.length === 0 ? <p className="text-sm text-muted">No skill chains yet. Create one above or auto-generate from your task history.</p> : null}
+          {chains.map((chain) => (
+            <div key={chain.id} className="panel panel-soft p-3 rounded-lg space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{chain.name}</p>
+                  <p className="text-xs text-muted mt-0.5">
+                    {chain.task_type}
+                    {chain.success_rate != null ? ` · ${Math.round(chain.success_rate * 100)}% success` : ''}
+                    {chain.total_runs > 0 ? ` · ${chain.total_runs} run${chain.total_runs !== 1 ? 's' : ''}` : ''}
+                  </p>
+                  {chain.description ? <p className="text-xs text-muted mt-0.5 italic">{chain.description}</p> : null}
+                </div>
+                <button type="button" onClick={() => void removeChain(chain.id)} disabled={opsBusy === `chain:del:${chain.id}`} className="dr-btn-ghost px-2 py-0.5 rounded text-[10px] text-[color:var(--danger)] disabled:opacity-50 shrink-0">Delete</button>
+              </div>
+              <ol className="space-y-1">
+                {chain.steps.map((step, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs">
+                    <span className="text-muted shrink-0 w-4 text-right">{i + 1}.</span>
+                    <span className="font-mono bg-[color:var(--surface-soft)] px-1.5 py-0.5 rounded shrink-0">{step.tool}</span>
+                    {step.description ? <span className="text-muted">{step.description}</span> : null}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
+        </div>
+      )
+    }
+
+    return (
+      <div className="panel panel-soft p-3 rounded-lg text-xs font-mono overflow-x-auto">
+        {JSON.stringify(data, null, 2)}
+      </div>
+    )
+  }, [
+    addSkill,
+    autoGenerateChains,
+    chainForm,
+    createChain,
+    createMcpServer,
+    mcpForm,
+    opsBusy,
+    opsModalState,
+    opsPanel,
+    openOpsPanel,
+    removeChain,
+    removeMcpServer,
+    removeSkill,
+    setOpsNotice,
+    skillForm,
+    toggleDefaultTool,
+  ])
+
+  return (
+    <div className="dr-chat-layout">
+
+      {/* ── Messages ─────────────────────────────── */}
+      <div className="dr-chat-scroll-area">
+        {merged.length === 0 ? (
+          <ChatEmptyState onPrompt={(p) => {
+            setQuery(p)
+            queueMicrotask(() => queryInputRef.current?.focus())
+          }} />
         ) : (
-          <div className="flex-1 min-h-0 flex items-center justify-center text-muted text-sm text-center px-6">Start chatting to see responses here.</div>
+          <div className="dr-chat-thread">
+            {turnItems.map((item, i) => {
+              if (item.kind === 'divider') return <EventLine key={`divider-${i}`} event={item.event} />
+              const chatEvents = visibleChatEvents(item.events)
+              const { phase, rest } = splitLeadingPhaseEvents(chatEvents)
+              const turnHasDone = item.events.some(ev => ev.type === 'done')
+              const phaseDetailsOpen = (showThinkingLive && !turnHasDone) || reasoningPhaseOpenByTurn[item.id] === true
+              return (
+                <div key={`turn-${item.id}`} className="space-y-3">
+                  {item.user && <EventLine event={item.user} />}
+                  {showThinkingLive && phase.length > 0 && (
+                    <div className="flex justify-start">
+                      <details className="max-w-[min(90%,42rem)] w-full rounded-2xl rounded-bl-md border border-[color:var(--border)] bg-[color:var(--surface-soft)] px-3 py-2 text-sm" open={phaseDetailsOpen}>
+                        <summary className="text-muted text-sm cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-start gap-2">
+                          <span className="shrink-0 opacity-70">▸</span><span className="truncate min-w-0">{phaseSummaryPreview(phase)}</span>
+                        </summary>
+                        <div className="mt-2 max-h-48 space-y-1 overflow-y-auto border-t border-[color:var(--border)]/50 pt-2">
+                          {phase.map((ev, idx) => <EventLine key={`turn-${item.id}-phase-${idx}`} event={ev} />)}
+                        </div>
+                      </details>
+                    </div>
+                  )}
+                  {(showThinkingLive && phase.length > 0 ? rest : chatEvents).filter(ev => ev.type !== 'done').map((ev, idx) => <EventLine key={`turn-${item.id}-event-${idx}`} event={ev} />)}
+                  {turnHasDone && (
+                    <TurnDoneFooter
+                      turnId={item.id}
+                      events={item.events}
+                      isRunning={isRunning}
+                      dismissFeedbackNudge={dismissFeedbackNudge}
+                      registerFeedbackRef={(el) => { feedbackDetailsRef.current = el }}
+                      showThreadDownload={true}
+                      threadExportEmpty={false}
+                      onDownloadThread={handleDownloadThread}
+                      omitDoneCost={false}
+                    />
+                  )}
+                </div>
+              )
+            })}
+            <div ref={streamEndRef} aria-hidden="true" />
+          </div>
         )}
       </div>
 
@@ -294,18 +993,88 @@ export default function AgentExecutor() {
                   }} className="btn-accent px-3 py-1.5 rounded-lg text-sm"><IconSend /></button>
               }
             </div>
-          </div>
-          <details ref={contextPanelRef} className="group rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-soft)]/40 px-3 py-2">
-            <summary className="text-xs text-muted cursor-pointer">Optional context</summary>
-            <textarea value={context} onChange={e => setContext(e.target.value)} rows={2} className="mt-2 w-full bg-[color:var(--bg-elev)] rounded-lg px-3 py-2 text-sm border border-[color:var(--border)] focus:outline-none resize-none" />
-          </details>
-        </form>
+          </form>
+          {!isRunning && suggestions.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', padding: '0.5rem 1rem 0.25rem', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted, #8899aa)', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
+                Follow up:
+              </span>
+              {suggestions.map((s, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => { setQuery(s); queryInputRef.current?.focus() }}
+                  style={{
+                    padding: '0.3rem 0.75rem',
+                    background: 'var(--surface)',
+                    border: '1px solid color-mix(in oklab, var(--accent), transparent 65%)',
+                    borderRadius: '999px',
+                    color: 'var(--accent)',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                    transition: 'background 0.15s',
+                    maxWidth: '320px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={s}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="dr-chat-disclaimer">Agent can make mistakes. Verify important information.</p>
+        </div>
       </div>
 
-      {helpModalOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-lg w-full"><h3>Help</h3><button onClick={() => setHelpModalOpen(false)}>Close</button></div></div>}
-      {modelsModalOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-lg w-full"><h3>Models</h3><pre className="text-xs">{JSON.stringify(modelsModalState, null, 2)}</pre><button onClick={() => setModelsModalOpen(false)}>Close</button></div></div>}
-      {opsModalOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-3xl w-full"><h3>Ops: {opsPanel}</h3><button onClick={() => setOpsModalOpen(false)}>Close</button></div></div>}
-      {reasoningArgModal && <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-lg w-full"><h3>Reasoning</h3><div className="grid grid-cols-2 gap-2">{REASONING_SUB_KEYS.map(opt => <button key={opt} onClick={() => commitReasoningArg(opt, reasoningArgModal)} className="p-2 border rounded">{opt}</button>)}</div><button onClick={() => setReasoningArgModal(null)}>Cancel</button></div></div>}
+      {/* ── Modals ───────────────────────────────── */}
+      {helpModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-lg w-full">
+            <h3>Help</h3>
+            <button onClick={() => setHelpModalOpen(false)}>Close</button>
+          </div>
+        </div>
+      )}
+      {modelsModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-lg w-full">
+            <h3>Models</h3>
+            <pre className="text-xs">{JSON.stringify(modelsModalState, null, 2)}</pre>
+            <button onClick={() => setModelsModalOpen(false)}>Close</button>
+          </div>
+        </div>
+      )}
+      {opsModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-y-auto space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="section-title dr-title-16">Ops: {opsPanel}</h3>
+              <div className="flex items-center gap-2">
+                <button className="dr-btn-ghost px-3 py-1.5 rounded-lg text-sm" onClick={refreshOpsPanel}>Refresh</button>
+                <button className="dr-btn-ghost px-3 py-1.5 rounded-lg text-sm" onClick={() => setOpsModalOpen(false)}>Close</button>
+              </div>
+            </div>
+            {opsNotice ? <p className="text-xs text-muted">{opsNotice}</p> : null}
+            {opsPanelContent}
+          </div>
+        </div>
+      )}
+      {reasoningArgModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="bg-[color:var(--bg)] p-6 rounded-xl border border-[color:var(--border)] shadow-2xl max-w-lg w-full">
+            <h3>Reasoning</h3>
+            <div className="grid grid-cols-2 gap-2">
+              {REASONING_SUB_KEYS.map(opt => (
+                <button key={opt} onClick={() => commitReasoningArg(opt, reasoningArgModal)} className="p-2 border rounded">{opt}</button>
+              ))}
+            </div>
+            <button onClick={() => setReasoningArgModal(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

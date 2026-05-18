@@ -14,7 +14,7 @@ import asyncio
 import uuid
 import time
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 import yaml
 
 from fastapi import APIRouter, HTTPException, Depends, Request, Query
@@ -95,6 +95,31 @@ async def _record_latency_metric(
     except Exception as e:
         # Keep request paths resilient even if metrics table is missing.
         logger.debug(f"Could not persist latency metric: {e}")
+
+
+def _schedule_followup_suggestions(
+    *,
+    query: str,
+    result: str,
+    task_id: str | None,
+    user_id: str | None,
+) -> None:
+    """Fire-and-forget follow-up suggestion generation for completed tasks."""
+    if not task_id:
+        return
+    try:
+        from app.agent.followup import generate_followup_suggestions
+
+        asyncio.create_task(
+            generate_followup_suggestions(
+                task_id=task_id,
+                query=query,
+                result=result,
+                user_id=user_id,
+            )
+        )
+    except Exception as e:
+        logger.debug(f"Could not schedule followup suggestions: {e}")
 
 
 def _schedule_quality_scoring(
@@ -209,7 +234,7 @@ async def stream_agent(
 
     task_id = str(uuid.uuid4())
     user_id = body.user_id
-    started_at = datetime.utcnow()
+    started_at = datetime.now(UTC)
 
     async def _persist_terminal_status(status: str):
         if not _db.db_pool:
@@ -218,7 +243,7 @@ async def stream_agent(
             await execute(
                 "UPDATE tasks SET status = $1, completed_at = $2 WHERE id = $3",
                 status,
-                datetime.utcnow(),
+                datetime.now(UTC),
                 task_id,
             )
         except Exception as e:
@@ -337,7 +362,7 @@ async def stream_agent(
                     # Persist completed task
                     if _db.db_pool:
                         try:
-                            elapsed = (datetime.utcnow() - started_at).total_seconds()
+                            elapsed = (datetime.now(UTC) - started_at).total_seconds()
                             await execute(
                                 """
                                 UPDATE tasks
@@ -349,7 +374,7 @@ async def stream_agent(
                                 status,
                                 "".join(result_parts)[:10000],
                                 final_cost,
-                                datetime.utcnow(),
+                                datetime.now(UTC),
                                 elapsed,
                                 model_used,
                                 task_id,
@@ -362,6 +387,12 @@ async def stream_agent(
                         task_id=task_id,
                         user_id=user_id,
                         model_used=model_used,
+                    )
+                    _schedule_followup_suggestions(
+                        query=body.query,
+                        result="".join(result_parts),
+                        task_id=task_id,
+                        user_id=user_id,
                     )
                 yield format_sse_event(data)
 
@@ -395,7 +426,7 @@ async def stream_agent(
                 {"type": "error", "error": error_code, "task_id": task_id}
             )
         finally:
-            elapsed_ms = int((datetime.utcnow() - started_at).total_seconds() * 1000)
+            elapsed_ms = int((datetime.now(UTC) - started_at).total_seconds() * 1000)
             await _record_latency_metric(
                 endpoint="/agent/stream",
                 duration_ms=elapsed_ms,
@@ -465,7 +496,7 @@ async def enqueue_agent_task(
                 task_id,
                 body.user_id,
                 body.query,
-                datetime.utcnow(),
+                datetime.now(UTC),
             )
         except Exception as e:
             logger.warning(f"Could not pre-insert queued task: {e}")
@@ -502,6 +533,24 @@ async def stop_agent(
     if not success:
         raise HTTPException(status_code=404, detail=f"Task {task_id_str} not found")
     return {"status": "stopped", "task_id": task_id_str}
+
+
+@router.get("/suggestions/{task_id}")
+@limiter.limit("60/minute")
+async def get_task_suggestions(
+    request: Request,
+    task_id: str,
+    api_key: str = Depends(verify_api_key),
+):
+    """Retrieve follow-up suggestions for a completed task (generated asynchronously)."""
+    from app.database import fetchrow as db_fetchrow
+
+    row = await db_fetchrow(
+        "SELECT suggestions FROM task_suggestions WHERE task_id = $1", task_id
+    )
+    if not row:
+        return {"task_id": task_id, "suggestions": [], "ready": False}
+    return {"task_id": task_id, "suggestions": row["suggestions"], "ready": True}
 
 
 @router.get("/tools/health")
@@ -945,6 +994,88 @@ async def replay_dead_letter_task(
         logger.warning("dead-letter replay failed: %s", e)
         raise HTTPException(status_code=500, detail="dead_letter_replay_failed")
     return out
+
+
+@router.get("/workflow-suggestions")
+@limiter.limit("30/minute")
+async def get_workflow_suggestions(
+    request: Request,
+    min_occurrences: int = 3,
+    api_key: str = Depends(verify_api_key),
+):
+    """Return recurring task patterns that are candidates for workflow automation."""
+    from app.agent.workflow_suggestions import get_workflow_suggestions as _get_suggestions
+
+    return {"suggestions": await _get_suggestions(min_occurrences=min_occurrences)}
+
+
+@router.get("/skill-chains")
+@limiter.limit("60/minute")
+async def list_skill_chains(
+    request: Request,
+    api_key: str = Depends(verify_api_key),
+):
+    """List all defined skill chains."""
+    from app.agent.skill_composer import list_chains
+    return {"chains": await list_chains()}
+
+
+@router.post("/skill-chains")
+@limiter.limit("30/minute")
+async def create_skill_chain(
+    request: Request,
+    api_key: str = Depends(verify_api_key),
+):
+    """Create a new skill chain."""
+    from app.agent.skill_composer import create_chain
+    body = await request.json()
+    name = str(body.get("name") or "").strip()
+    task_type = str(body.get("task_type") or "general").strip()
+    steps = body.get("steps") or []
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if not isinstance(steps, list) or not steps:
+        raise HTTPException(status_code=400, detail="steps must be a non-empty list")
+    try:
+        chain = await create_chain(
+            name=name,
+            task_type=task_type,
+            steps=steps,
+            description=str(body.get("description") or ""),
+            trigger_keywords=body.get("trigger_keywords") or [],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return chain
+
+
+@router.delete("/skill-chains/{chain_id}")
+@limiter.limit("30/minute")
+async def delete_skill_chain(
+    request: Request,
+    chain_id: str,
+    api_key: str = Depends(verify_api_key),
+):
+    """Delete a skill chain by ID."""
+    from app.agent.skill_composer import delete_chain
+    deleted = await delete_chain(chain_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Skill chain not found")
+    return {"deleted": chain_id}
+
+
+@router.post("/skill-chains/auto-generate")
+@limiter.limit("10/minute")
+async def auto_generate_skill_chains(
+    request: Request,
+    api_key: str = Depends(verify_api_key),
+):
+    """Promote top tool_recommendations into skill chains automatically."""
+    from app.agent.skill_composer import auto_generate_chains
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    min_occ = int((body or {}).get("min_occurrences") or 5)
+    created = await auto_generate_chains(min_occurrences=min_occ)
+    return {"created": created, "count": len(created)}
 
 
 @router.post("/workflows/{name}/run")

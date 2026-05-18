@@ -18,13 +18,13 @@ echo "== Backend pytest =="
 "$PYTEST" -q
 
 echo "== Frontend lint =="
-(cd "$ROOT/frontend" && NEXT_TELEMETRY_DISABLED=1 npm run lint)
+(cd "$ROOT/frontend" && NEXT_TELEMETRY_DISABLED=1 pnpm run lint)
 
 echo "== Frontend build =="
-(cd "$ROOT/frontend" && NEXT_TELEMETRY_DISABLED=1 BACKEND_URL=http://127.0.0.1:8000 npm run build)
+(cd "$ROOT/frontend" && NEXT_TELEMETRY_DISABLED=1 BACKEND_URL=http://127.0.0.1:8000 pnpm run build)
 
 echo "== Frontend Playwright (install browsers if needed) =="
-(cd "$ROOT/frontend" && npx playwright install chromium && CI=true NEXT_TELEMETRY_DISABLED=1 npm run test:e2e)
+(cd "$ROOT/frontend" && pnpm exec playwright install chromium && CI=true NEXT_TELEMETRY_DISABLED=1 pnpm run test:e2e)
 
 echo "== Telegram bot (syntax) =="
 python3 -m py_compile "$ROOT/telegram-bot/bot.py"

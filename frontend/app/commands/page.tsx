@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import PageHeader from '@/components/PageHeader'
 
 type Section = {
   title: string
@@ -124,12 +123,14 @@ export default function CommandsPage() {
     : sections
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        eyebrow="Reference"
-        title="Commands & shortcuts"
-        description="CLI entrypoints, web routes, Telegram verbs, and API paths—filter the tables when you are looking for one string."
-      />
+    <div className="dr-history-stack">
+      <header>
+        <p className="eyebrow">Cmd</p>
+        <h1 className="section-title dr-dashboard-hero-title">Commands</h1>
+        <p className="dr-history-summary">
+          CLI entrypoints, web routes, Telegram verbs, and API paths.
+        </p>
+      </header>
       <div className="panel panel-soft p-4 flex justify-end flex-wrap gap-3">
         <input
           type="text"

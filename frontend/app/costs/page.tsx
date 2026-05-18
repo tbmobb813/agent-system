@@ -1,15 +1,18 @@
 import CostTracker from '@/components/CostTracker'
-import PageHeader from '@/components/PageHeader'
 
 export default function CostsPage() {
   return (
-    <div>
-      <PageHeader
-        eyebrow="Spend guard"
-        title="Budget & costs"
-        description="Monthly ceiling, burn rate, and what you have left. Pair with Analytics when you are tuning models or tools."
-      />
-      <CostTracker />
+    <div className="dr-history-stack">
+      <header>
+        <p className="eyebrow">Cost</p>
+        <h1 className="section-title dr-dashboard-hero-title">Budget & Costs</h1>
+        <p className="dr-history-summary">
+          Monthly ceiling, burn rate, and what you have left.
+        </p>
+      </header>
+      <div className="panel p-5 md:p-6">
+        <CostTracker />
+      </div>
     </div>
   )
 }
