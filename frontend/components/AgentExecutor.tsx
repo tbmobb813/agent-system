@@ -128,6 +128,10 @@ export default function AgentExecutor() {
 
   const {
     query, setQuery, context, setContext, attachedImages, setAttachedImages,
+    attachments, setAttachments, editText, setEditText,
+    opsBusy, setOpsBusy, opsNotice, setOpsNotice,
+    mcpForm, setMcpForm, skillForm, setSkillForm, chainForm, setChainForm,
+    fileInputRef, streamEndRef, editInputRef,
     editLastOpen, setEditLastOpen, showThinkingLive,
     reasoningPhaseOpenByTurn, reasoningEffortForRequest, setReasoningEffortForRequest,
     dismissFeedbackNudge, feedbackDetailsRef, queryInputRef,
@@ -956,7 +960,7 @@ export default function AgentExecutor() {
             <div className="flex items-center gap-1 px-2 pb-2 pt-1 border-t border-[color:var(--border)]/50">
               <div className="relative" ref={quickActionsRef}>
                 <button type="button" ref={quickActionsButtonRef} onClick={() => setQuickActionsOpen(!quickActionsOpen)} className="btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm"><IconPlus /> Actions</button>
-                {quickActionsOpen && <QuickActionsMenu isRunning={isRunning} hasMessages={merged.length > 0} hasLastMessage={!!lastUserMessage} reasoningEffortLabel={reasoningEffortLabel} threadExportEmpty={false} onNewConversation={() => { newConversation(); setQuickActionsOpen(false) }} onStop={() => { void stop(); setQuickActionsOpen(false) }} onClear={() => { reset(); setQuickActionsOpen(false) }} onOpenOps={(p) => { openOpsPanel(p); setQuickActionsOpen(false) }} onOpenModels={() => { setModelsModalOpen(true); loadModelsForModal(); setQuickActionsOpen(false) }} onOpenHelp={() => { setHelpModalOpen(true); setQuickActionsOpen(false) }} onOpenReasoningPicker={() => { setSuggestDismissed(true); setReasoningArgModal({ from: -1, to: -1 }); setQuickActionsOpen(false) }} onCopyThread={() => { setQuickActionsOpen(false) }} onDownloadThread={() => { handleDownloadThread(); setQuickActionsOpen(false) }} onFeedback={() => { tryOpenFeedbackPanel(); setQuickActionsOpen(false) }} onEditResend={() => { setEditLastOpen(!editLastOpen); setQuickActionsOpen(false) }} />}
+                {quickActionsOpen && <QuickActionsMenu isRunning={isRunning} hasMessages={merged.length > 0} hasLastMessage={!!lastUserMessage} reasoningEffortLabel={reasoningEffortLabel} threadExportEmpty={false} onNewConversation={() => { newConversation(); setQuickActionsOpen(false) }} onStop={() => { void stop(); setQuickActionsOpen(false) }} onClear={() => { reset(); setQuickActionsOpen(false) }} onOpenOps={(p) => { openOpsPanel(p); setQuickActionsOpen(false) }} onOpenModels={() => { setModelsModalOpen(true); loadModelsForModal(); setQuickActionsOpen(false) }} onOpenHelp={() => { setHelpModalOpen(true); setQuickActionsOpen(false) }} onOpenReasoningPicker={() => { setSuggestDismissed(true); setReasoningArgModal({ from: -1, to: -1 }); setQuickActionsOpen(false) }} onCopyThread={() => { setQuickActionsOpen(false) }} onFeedback={() => { tryOpenFeedbackPanel(); setQuickActionsOpen(false) }} onEditResend={() => { setEditLastOpen(!editLastOpen); setQuickActionsOpen(false) }} />}
               </div>
               <input
                 ref={imageInputRef}
