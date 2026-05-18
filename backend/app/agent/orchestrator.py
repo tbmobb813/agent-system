@@ -53,9 +53,18 @@ def _score_tool_result(name: str, result: str, err: Optional[str]) -> float:
         return 0.1
     lower = text.lower()
     _FAILURE_PHRASES = (
-        "no results", "not found", "0 results", "nothing found",
-        "error:", "failed:", "could not", "unable to", "no matches",
-        "no data", "empty response", "no information",
+        "no results",
+        "not found",
+        "0 results",
+        "nothing found",
+        "error:",
+        "failed:",
+        "could not",
+        "unable to",
+        "no matches",
+        "no data",
+        "empty response",
+        "no information",
     )
     if any(p in lower for p in _FAILURE_PHRASES):
         return 0.25
@@ -658,8 +667,10 @@ class AgentOrchestrator:
                 if not _permanently_disabled_tools:
                     return tool_schemas
                 return [
-                    s for s in tool_schemas
-                    if s.get("function", {}).get("name") not in _permanently_disabled_tools
+                    s
+                    for s in tool_schemas
+                    if s.get("function", {}).get("name")
+                    not in _permanently_disabled_tools
                 ]
 
             # ── #4 Tool quality tracking — consecutive low-score counter per tool ─
@@ -1221,11 +1232,18 @@ class AgentOrchestrator:
                     # If a tool returns an infrastructure error (missing binary,
                     # unconfigured key, etc.) it won't recover this session — remove
                     # it from tool_schemas immediately so the LLM stops retrying it.
-                    if name not in _permanently_disabled_tools and _is_permanent_failure(result_str):
+                    if (
+                        name not in _permanently_disabled_tools
+                        and _is_permanent_failure(result_str)
+                    ):
                         _permanently_disabled_tools.add(name)
-                        logger.warning("Tool '%s' permanently disabled this run: %s", name, result_str[:120])
+                        logger.warning(
+                            "Tool '%s' permanently disabled this run: %s",
+                            name,
+                            result_str[:120],
+                        )
                         _dynamic_context.append(
-                            f"<tool_disabled tool=\"{name}\">"
+                            f'<tool_disabled tool="{name}">'
                             f"{name} has encountered a non-recoverable infrastructure error "
                             f"and has been disabled for this session. "
                             f"Do NOT call it again. Use an alternative tool to complete the task."
@@ -1251,7 +1269,8 @@ class AgentOrchestrator:
                 # ── #4 Inject replanning nudge when a tool keeps returning poor results ─
                 _LOW_QUALITY_THRESHOLD = 2
                 poor_tools = [
-                    t for t, streak in _tool_low_quality_streak.items()
+                    t
+                    for t, streak in _tool_low_quality_streak.items()
                     if streak >= _LOW_QUALITY_THRESHOLD
                 ]
                 if poor_tools:
@@ -1267,10 +1286,7 @@ class AgentOrchestrator:
 
                 # ── #6 Goal-state alignment check every 3 tool rounds ────────
                 _GOAL_CHECK_INTERVAL = 3
-                if (
-                    state.done_when
-                    and (iteration + 1) % _GOAL_CHECK_INTERVAL == 0
-                ):
+                if state.done_when and (iteration + 1) % _GOAL_CHECK_INTERVAL == 0:
                     alignment, assessment = await self._check_goal_alignment(
                         state, run_client
                     )
@@ -1368,7 +1384,9 @@ class AgentOrchestrator:
         recent = []
         for entry in state.working_memory[-6:]:
             if entry.get("type") == "tool_result":
-                recent.append(f"- {entry['tool']}: {entry.get('result_preview', '')[:200]}")
+                recent.append(
+                    f"- {entry['tool']}: {entry.get('result_preview', '')[:200]}"
+                )
             elif entry.get("type") == "tool_error":
                 recent.append(f"- {entry['tool']} FAILED: {entry.get('error', '')}")
         results_text = "\n".join(recent) if recent else "No tool results yet."

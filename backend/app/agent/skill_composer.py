@@ -24,14 +24,19 @@ logger = logging.getLogger(__name__)
 
 # ── Data helpers ──────────────────────────────────────────────────────────────
 
+
 def _row_to_chain(row: dict) -> dict:
     return {
         "id": str(row["id"]),
         "name": row["name"],
         "description": row["description"] or "",
         "task_type": row["task_type"],
-        "steps": json.loads(row["steps"]) if isinstance(row["steps"], str) else (row["steps"] or []),
-        "trigger_keywords": json.loads(row["trigger_keywords"]) if isinstance(row["trigger_keywords"], str) else (row["trigger_keywords"] or []),
+        "steps": json.loads(row["steps"])
+        if isinstance(row["steps"], str)
+        else (row["steps"] or []),
+        "trigger_keywords": json.loads(row["trigger_keywords"])
+        if isinstance(row["trigger_keywords"], str)
+        else (row["trigger_keywords"] or []),
         "success_rate": row["success_rate"],
         "total_runs": row["total_runs"] or 0,
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
@@ -40,6 +45,7 @@ def _row_to_chain(row: dict) -> dict:
 
 
 # ── Core API ──────────────────────────────────────────────────────────────────
+
 
 async def list_chains() -> list[dict]:
     """Return all skill chains ordered by success rate."""
@@ -111,7 +117,12 @@ async def create_chain(
         INSERT INTO skill_chains (id, name, description, task_type, steps, trigger_keywords)
         VALUES ($1, $2, $3, $4, $5, $6)
         """,
-        chain_id, name, description, task_type, steps_json, keywords_json,
+        chain_id,
+        name,
+        description,
+        task_type,
+        steps_json,
+        keywords_json,
     )
     row = await _db.fetchrow("SELECT * FROM skill_chains WHERE id = $1", chain_id)
     return _row_to_chain(row)
@@ -154,9 +165,7 @@ async def update_chain(
 
 async def delete_chain(chain_id: str) -> bool:
     """Delete a skill chain by ID. Returns True if a row was deleted."""
-    result = await _db.execute(
-        "DELETE FROM skill_chains WHERE id = $1", chain_id
-    )
+    result = await _db.execute("DELETE FROM skill_chains WHERE id = $1", chain_id)
     return "DELETE 1" in (result or "")
 
 
@@ -188,7 +197,9 @@ async def record_chain_outcome(chain_id: str, success: bool) -> None:
             SET success_rate = $1, total_runs = $2, updated_at = NOW()
             WHERE id = $3
             """,
-            round(new_rate, 4), runs, chain_id,
+            round(new_rate, 4),
+            runs,
+            chain_id,
         )
     except Exception as e:
         logger.debug("record_chain_outcome failed: %s", e)
@@ -278,6 +289,7 @@ async def auto_generate_chains(min_occurrences: int = 5) -> list[dict]:
 
 # ── Prompt formatting ─────────────────────────────────────────────────────────
 
+
 def format_chain_hint(chain: dict) -> str:
     """
     Format a skill chain as a <skill_plan> XML block for injection into
@@ -289,12 +301,13 @@ def format_chain_hint(chain: dict) -> str:
 
     lines = [
         f'<skill_plan name="{chain["name"]}">',
-        f'Proven sequence for {chain["task_type"]} tasks'
+        f"Proven sequence for {chain['task_type']} tasks"
         + (
-            f' ({round(chain["success_rate"] * 100):.0f}% success, {chain["total_runs"]} runs)'
+            f" ({round(chain['success_rate'] * 100):.0f}% success, {chain['total_runs']} runs)"
             if chain.get("success_rate") is not None and chain.get("total_runs", 0) > 0
             else ""
-        ) + ":",
+        )
+        + ":",
     ]
     for i, step in enumerate(steps, 1):
         tool = step.get("tool", "")

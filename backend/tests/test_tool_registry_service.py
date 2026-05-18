@@ -352,20 +352,29 @@ def _stub_outbound_url_checks(monkeypatch):
     import socket as _socket
 
     async def _fake_getaddrinfo(host, port, *args, **kwargs):
-        return [(_socket.AF_INET, _socket.SOCK_STREAM, 0, "", ("203.0.113.1", port or 443))]
+        return [
+            (_socket.AF_INET, _socket.SOCK_STREAM, 0, "", ("203.0.113.1", port or 443))
+        ]
 
     monkeypatch.setattr("asyncio.AbstractEventLoop.getaddrinfo", _fake_getaddrinfo)
 
 
 async def test_api_call_handles_timeout(monkeypatch):
     import asyncio
+
     registry = ToolRegistry()
     _stub_outbound_url_checks(monkeypatch)
 
     class _Pool:
-        def __init__(self, **kwargs): pass
-        async def __aenter__(self): return self
-        async def __aexit__(self, *args): return False
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
         async def request(self, *args, **kwargs):
             raise asyncio.TimeoutError()
 
@@ -378,10 +387,13 @@ async def test_api_call_handles_timeout(monkeypatch):
 
 class _RawHeaders:
     """Minimal httpcore-compatible headers mock with raw_items()."""
+
     def __init__(self, d: dict):
         self._pairs = [(k.lower().encode(), v.encode()) for k, v in d.items()]
+
     def raw_items(self):
         return self._pairs
+
     def items(self):
         return [(k.decode(), v.decode()) for k, v in self._pairs]
 
@@ -393,13 +405,22 @@ async def test_api_call_handles_non_json_response(monkeypatch):
     class _Resp:
         status = 200
         headers = _RawHeaders({"x": "y"})
-        async def aread(self): return b"plain text body"
+
+        async def aread(self):
+            return b"plain text body"
 
     class _Pool:
-        def __init__(self, **kwargs): pass
-        async def __aenter__(self): return self
-        async def __aexit__(self, *args): return False
-        async def request(self, *args, **kwargs): return _Resp()
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def request(self, *args, **kwargs):
+            return _Resp()
 
     monkeypatch.setattr("httpcore.AsyncConnectionPool", _Pool)
 
@@ -423,13 +444,22 @@ async def test_api_call_redacts_sensitive_response_headers(monkeypatch):
                 "X-Trace": "abc",
             }
         )
-        async def aread(self): return b"{}"
+
+        async def aread(self):
+            return b"{}"
 
     class _Pool:
-        def __init__(self, **kwargs): pass
-        async def __aenter__(self): return self
-        async def __aexit__(self, *args): return False
-        async def request(self, *args, **kwargs): return _Resp()
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def request(self, *args, **kwargs):
+            return _Resp()
 
     monkeypatch.setattr("httpcore.AsyncConnectionPool", _Pool)
 

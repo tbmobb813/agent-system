@@ -214,6 +214,7 @@ class StdioMcpRunner:
         # Explicitly merge the .env file so MCP servers see all declared keys.
         try:
             from dotenv import dotenv_values
+
             _env_file = Path(__file__).resolve().parents[3] / "backend" / ".env"
             if not _env_file.is_file():
                 _env_file = Path(__file__).resolve().parents[2] / ".env"

@@ -46,13 +46,19 @@ async def generate_followup_suggestions(
     try:
         from app.agent.memory import memory_manager
 
-        similar = await memory_manager.search(query, user_id=user_id, limit=4, category="context")
+        similar = await memory_manager.search(
+            query, user_id=user_id, limit=4, category="context"
+        )
         similar_lines = [
             f"- {(m.get('content') or '')[:180]}"
             for m in similar
             if (m.get("content") or "").strip()
         ]
-        similar_text = "\n".join(similar_lines) if similar_lines else "No similar past tasks found."
+        similar_text = (
+            "\n".join(similar_lines)
+            if similar_lines
+            else "No similar past tasks found."
+        )
 
         prompt = _PROMPT.format(
             query=query[:300],
@@ -71,10 +77,17 @@ async def generate_followup_suggestions(
             temperature=0.3,
         )
         raw = re.sub(
-            r"^```(?:json)?\s*|\s*```$", "", (resp.choices[0].message.content or "").strip(), flags=re.DOTALL
+            r"^```(?:json)?\s*|\s*```$",
+            "",
+            (resp.choices[0].message.content or "").strip(),
+            flags=re.DOTALL,
         ).strip()
         data = json.loads(raw)
-        suggestions = [s.strip() for s in data.get("suggestions", []) if isinstance(s, str) and s.strip()][:3]
+        suggestions = [
+            s.strip()
+            for s in data.get("suggestions", [])
+            if isinstance(s, str) and s.strip()
+        ][:3]
 
         if suggestions:
             await _db.execute(
@@ -86,6 +99,10 @@ async def generate_followup_suggestions(
                 task_id,
                 json.dumps(suggestions),
             )
-            logger.debug("Follow-up suggestions saved for task %s (%d)", task_id, len(suggestions))
+            logger.debug(
+                "Follow-up suggestions saved for task %s (%d)",
+                task_id,
+                len(suggestions),
+            )
     except Exception as e:
         logger.debug("Follow-up suggestion generation failed (non-critical): %s", e)

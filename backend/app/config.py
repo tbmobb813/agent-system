@@ -136,31 +136,31 @@ class CostTracker:
     MODEL_PRICING = {
         # ── Free tier ─────────────────────────────────────────────────────────
         "meta-llama/llama-3.3-70b-instruct:free": {"input": 0.0, "output": 0.0},
-        "mistralai/mistral-7b-instruct:free":      {"input": 0.0, "output": 0.0},
-        "qwen/qwen-2-7b-instruct:free":            {"input": 0.0, "output": 0.0},
+        "mistralai/mistral-7b-instruct:free": {"input": 0.0, "output": 0.0},
+        "qwen/qwen-2-7b-instruct:free": {"input": 0.0, "output": 0.0},
         # ── Cheap tier ────────────────────────────────────────────────────────
         # DeepSeek V3 — best value; top-tier coding at $0.14/M input
         "deepseek/deepseek-chat": {"input": 0.14, "output": 0.28},
         # DeepSeek R1 — reasoning model; best for hard algorithmic problems
-        "deepseek/deepseek-r1":   {"input": 0.55, "output": 2.19},
+        "deepseek/deepseek-r1": {"input": 0.55, "output": 2.19},
         # GPT-4o Mini — solid OpenAI option
-        "openai/gpt-4o-mini":     {"input": 0.15, "output": 0.60},
+        "openai/gpt-4o-mini": {"input": 0.15, "output": 0.60},
         # ── Mid tier ──────────────────────────────────────────────────────────
         # Gemini 2.5 Flash — 1M context, best for research at this price
-        "google/gemini-2.5-flash":      {"input": 0.075, "output": 0.30},
+        "google/gemini-2.5-flash": {"input": 0.075, "output": 0.30},
         # Claude Haiku 4.5 — newest Haiku; best-in-class function calling
-        "anthropic/claude-haiku-4.5":   {"input": 0.80,  "output": 4.00},
+        "anthropic/claude-haiku-4.5": {"input": 0.80, "output": 4.00},
         # Claude 3.5 Haiku — previous Haiku (kept for fallback compatibility)
-        "anthropic/claude-3.5-haiku":   {"input": 1.00,  "output": 5.00},
+        "anthropic/claude-3.5-haiku": {"input": 1.00, "output": 5.00},
         # ── Premium tier ──────────────────────────────────────────────────────
         # Claude Sonnet 4.6 — latest Sonnet, best overall quality
-        "anthropic/claude-sonnet-4.6":  {"input": 3.00,  "output": 15.00},
+        "anthropic/claude-sonnet-4.6": {"input": 3.00, "output": 15.00},
         # Claude Sonnet 4.5 — previous Sonnet
-        "anthropic/claude-sonnet-4.5":  {"input": 3.00,  "output": 15.00},
+        "anthropic/claude-sonnet-4.5": {"input": 3.00, "output": 15.00},
         # Claude Sonnet 4 — older Sonnet (kept for cost tracking of past runs)
-        "anthropic/claude-sonnet-4":    {"input": 3.00,  "output": 15.00},
+        "anthropic/claude-sonnet-4": {"input": 3.00, "output": 15.00},
         # Gemini 2.5 Pro — Google's premium, strong reasoning + long context
-        "google/gemini-2.5-pro":        {"input": 1.50,  "output": 6.00},
+        "google/gemini-2.5-pro": {"input": 1.50, "output": 6.00},
     }
 
     def __init__(self):

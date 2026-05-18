@@ -754,8 +754,7 @@ async def test_stream_plan_tool_then_final_updates_progress_checkpoint(monkeypat
     # so the system message (prefix cache) stays frozen across iterations.
     second_stream_msgs = completions[2]["messages"]
     assert any(
-        "<progress_checkpoint>" in (m.get("content") or "")
-        for m in second_stream_msgs
+        "<progress_checkpoint>" in (m.get("content") or "") for m in second_stream_msgs
     )
 
 

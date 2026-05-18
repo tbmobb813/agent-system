@@ -178,9 +178,8 @@ async def submit_task_feedback(
     # ── #7 Implicit preference learning: attribute outcome to tools used ──────
     import asyncio as _asyncio
     from app.agent.tool_preferences import record_tool_outcome
-    _asyncio.create_task(
-        record_tool_outcome(task_id, body.signal, task_user_id)
-    )
+
+    _asyncio.create_task(record_tool_outcome(task_id, body.signal, task_user_id))
 
     return {
         "status": "recorded",
