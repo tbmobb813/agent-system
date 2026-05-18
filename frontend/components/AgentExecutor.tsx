@@ -993,6 +993,7 @@ export default function AgentExecutor() {
                   }} className="btn-accent px-3 py-1.5 rounded-lg text-sm"><IconSend /></button>
               }
             </div>
+          </div>
           </form>
           {!isRunning && suggestions.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', padding: '0.5rem 1rem 0.25rem', alignItems: 'center' }}>
@@ -1027,7 +1028,6 @@ export default function AgentExecutor() {
           )}
           <p className="dr-chat-disclaimer">Agent can make mistakes. Verify important information.</p>
         </div>
-      </div>
 
       {/* ── Modals ───────────────────────────────── */}
       {helpModalOpen && (

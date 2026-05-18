@@ -76,7 +76,7 @@ function TextInput({ id, value, onChange, placeholder, type = 'text', className 
       id={id} type={type} value={value} placeholder={placeholder}
       min={min} max={max} step={step}
       onChange={e => onChange(e.target.value)}
-      className={`w-full bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[color:var(--accent)] ${className}`}
+      className={`w-full bg-(--bg-elev)] border border-(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-(--accent)] ${className}`}
     />
   )
 }
@@ -86,7 +86,7 @@ const INPUT_CLASS = 'w-full bg-[color:var(--bg-elev)] border border-[color:var(-
 // All IANA timezone names available in this browser (falls back gracefully).
 const TZ_OPTIONS: string[] = (() => {
   try {
-    return (Intl as any).supportedValuesOf('timeZone') as string[]
+    return (Intl as unknown as { supportedValuesOf: (key: string) => string[] }).supportedValuesOf('timeZone')
   } catch {
     return [
       'America/New_York','America/Chicago','America/Denver','America/Los_Angeles',
@@ -157,7 +157,7 @@ function ConnectorCard({ connector, onUpdate }: { connector: ConnectorStatus; on
   }
 
   return (
-    <div className={`panel p-5 space-y-4 ${connector.enabled ? 'border-[color:var(--accent)]/30' : ''}`}>
+    <div className={`panel p-5 space-y-4 ${connector.enabled ? 'border-(--accent)]/30' : ''}`}>
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
