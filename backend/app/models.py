@@ -110,6 +110,11 @@ class AgentRequest(BaseModel):
     metadata: Optional[dict] = Field(
         default_factory=dict, description="Custom metadata"
     )
+    images: Optional[list[str]] = Field(
+        default=None,
+        description="Base64 data URLs (data:image/...;base64,...) for vision input",
+        max_length=4,
+    )
     reasoning_effort: Optional[str] = Field(
         default=None,
         description=(

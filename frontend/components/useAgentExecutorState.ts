@@ -35,6 +35,7 @@ function errMessage(e: unknown): string {
 export function useAgentExecutorState() {
   const [query, setQuery] = useState('')
   const [context, setContext] = useState('')
+  const [attachedImages, setAttachedImages] = useState<string[]>([])
   const [editLastOpen, setEditLastOpen] = useState(false)
   const [showThinkingLive, setShowThinkingLive] = useState(true)
   const [reasoningPhaseOpenByTurn, setReasoningPhaseOpenByTurn] = useState<Record<number, boolean>>({})
@@ -245,7 +246,7 @@ export function useAgentExecutorState() {
   const openOpsPanel = useCallback((panel: OpsPanel) => { setOpsPanel(panel); setOpsModalOpen(true); loadOpsPanel(panel) }, [loadOpsPanel])
 
   return {
-    query, setQuery, context, setContext, editLastOpen, setEditLastOpen, showThinkingLive, setShowThinkingLive,
+    query, setQuery, context, setContext, attachedImages, setAttachedImages, editLastOpen, setEditLastOpen, showThinkingLive, setShowThinkingLive,
     reasoningPhaseOpenByTurn, setReasoningPhaseOpenByTurn, reasoningEffortForRequest, setReasoningEffortForRequest,
     showFeedbackNudge, dismissFeedbackNudge, feedbackDetailsRef, contextPanelRef, queryInputRef,
     toolNames, queryCursor, setQueryCursor, suggestDismissed, setSuggestDismissed, suggestHighlight, setSuggestHighlight,

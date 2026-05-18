@@ -266,6 +266,7 @@ class AgentOrchestrator:
         max_iterations: int = 10,
         conversation_id: Optional[str] = None,
         reasoning_effort: Optional[str] = None,
+        images: Optional[list[str]] = None,
     ) -> tuple[str, Optional[str]]:
         """Execute agent synchronously. Returns (result, conversation_id)."""
         task_id = str(uuid.uuid4())
@@ -280,6 +281,7 @@ class AgentOrchestrator:
             task_id=task_id,
             conversation_id=conversation_id,
             reasoning_effort=reasoning_effort,
+            images=images,
         ):
             if event.type == EventType.TEXT_DELTA:
                 result += event.content or ""
@@ -297,6 +299,7 @@ class AgentOrchestrator:
         task_id: Optional[str] = None,
         conversation_id: Optional[str] = None,
         reasoning_effort: Optional[str] = None,
+        images: Optional[list[str]] = None,
     ) -> AsyncIterator[ExecutionEvent]:
         """
         ReAct loop — stream events as the agent reasons and acts.
@@ -509,9 +512,17 @@ class AgentOrchestrator:
                 }
             ]
             messages.extend(history)
-            user_content = (
+            user_text = (
                 f"[Plan]\n{plan_prefix}\n\n[Task]\n{query}" if plan_prefix else query
             )
+            if images:
+                user_content: Any = [{"type": "text", "text": user_text}]
+                for img_url in images[:4]:
+                    user_content.append(
+                        {"type": "image_url", "image_url": {"url": img_url}}
+                    )
+            else:
+                user_content = user_text
             messages.append({"role": "user", "content": user_content})
 
             if history:

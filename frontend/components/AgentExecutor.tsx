@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useCallback } from 'react'
+import { useMemo, useCallback, useRef } from 'react'
 import type { StreamEvent } from '@/lib/hooks'
 import {
   EventLine,
@@ -31,7 +31,8 @@ import {
 
 export default function AgentExecutor() {
   const {
-    query, setQuery, context, setContext, editLastOpen, setEditLastOpen, showThinkingLive,
+    query, setQuery, context, setContext, attachedImages, setAttachedImages,
+    editLastOpen, setEditLastOpen, showThinkingLive,
     reasoningPhaseOpenByTurn, reasoningEffortForRequest, setReasoningEffortForRequest,
     dismissFeedbackNudge, feedbackDetailsRef, contextPanelRef, queryInputRef,
     toolNames, queryCursor, setQueryCursor, suggestDismissed, setSuggestDismissed, suggestHighlight, setSuggestHighlight,
@@ -41,6 +42,28 @@ export default function AgentExecutor() {
     events, merged, isRunning, error, conversationId, run, stop, reset, newConversation,
     latestRunCost, lastUserMessage, openOpsPanel, loadModelsForModal, skipReasoningModalSig
   } = useAgentExecutorState()
+
+  const imageInputRef = useRef<HTMLInputElement>(null)
+
+  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length) return
+    const remaining = 4 - attachedImages.length
+    const toRead = files.slice(0, remaining)
+    toRead.forEach(file => {
+      const reader = new FileReader()
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string
+        if (dataUrl) setAttachedImages(prev => [...prev, dataUrl].slice(0, 4))
+      }
+      reader.readAsDataURL(file)
+    })
+    e.target.value = ''
+  }, [attachedImages.length, setAttachedImages])
+
+  const removeImage = useCallback((idx: number) => {
+    setAttachedImages(prev => prev.filter((_, i) => i !== idx))
+  }, [setAttachedImages])
 
   const suggestionRows = useMemo(
     () => buildSuggestionRows(query, queryCursor, suggestDismissed, toolNames),
@@ -128,7 +151,10 @@ export default function AgentExecutor() {
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault(); const raw = el.value.trim(); if (!raw || isRunning) return
-      run(raw, context.trim() || undefined, conversationId, reasoningEffortForRequest); setQuery('')
+      const imgs = attachedImages.length > 0 ? [...attachedImages] : undefined
+      run(raw, context.trim() || undefined, conversationId, reasoningEffortForRequest, imgs)
+      setQuery('')
+      setAttachedImages([])
     }
   }
 
@@ -212,15 +238,61 @@ export default function AgentExecutor() {
           ) : null}
           <div className="relative rounded-xl border border-[color:var(--border)] bg-[color:var(--bg-elev)] focus-within:border-[color:var(--accent)] transition-colors">
             <textarea data-testid="agent-message-input" ref={queryInputRef} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={handleKeyDown} placeholder="Ask anything…" rows={3} disabled={isRunning} className="relative z-10 w-full bg-transparent rounded-t-xl px-4 pt-3 pb-2 text-sm focus:outline-none resize-none disabled:opacity-50" />
+            {attachedImages.length > 0 && (
+              <div className="flex gap-2 flex-wrap px-3 pb-2">
+                {attachedImages.map((src, i) => (
+                  <div key={i} className="relative group/img shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={src} alt={`Attached image ${i + 1}`} className="h-16 w-16 object-cover rounded-lg border border-[color:var(--border)]" />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(i)}
+                      aria-label="Remove image"
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[color:var(--danger)] text-white text-[10px] flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity leading-none"
+                    >✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="flex items-center gap-1 px-2 pb-2 pt-1 border-t border-[color:var(--border)]/50">
               <div className="relative" ref={quickActionsRef}>
                 <button type="button" ref={quickActionsButtonRef} onClick={() => setQuickActionsOpen(!quickActionsOpen)} className="btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm"><IconPlus /> Actions</button>
                 {quickActionsOpen && <QuickActionsMenu isRunning={isRunning} hasMessages={merged.length > 0} hasLastMessage={!!lastUserMessage} reasoningEffortLabel={reasoningEffortLabel} threadExportEmpty={false} onNewConversation={() => { newConversation(); setQuickActionsOpen(false) }} onStop={() => { void stop(); setQuickActionsOpen(false) }} onClear={() => { reset(); setQuickActionsOpen(false) }} onOpenOps={(p) => { openOpsPanel(p); setQuickActionsOpen(false) }} onOpenModels={() => { setModelsModalOpen(true); loadModelsForModal(); setQuickActionsOpen(false) }} onOpenHelp={() => { setHelpModalOpen(true); setQuickActionsOpen(false) }} onOpenReasoningPicker={() => { setSuggestDismissed(true); setReasoningArgModal({ from: -1, to: -1 }); setQuickActionsOpen(false) }} onCopyThread={() => { setQuickActionsOpen(false) }} onDownloadThread={() => { handleDownloadThread(); setQuickActionsOpen(false) }} onFeedback={() => { tryOpenFeedbackPanel(); setQuickActionsOpen(false) }} onEditResend={() => { setEditLastOpen(!editLastOpen); setQuickActionsOpen(false) }} />}
               </div>
-              <button type="button" aria-label="Toggle context panel" title="Toggle context panel" onClick={() => { if (contextPanelRef.current) contextPanelRef.current.open = !contextPanelRef.current.open }} className="btn-ghost p-1.5 rounded-lg"><IconPaperclip /></button>
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                title="Attach image"
+                className="hidden"
+                onChange={handleImageSelect}
+                disabled={isRunning}
+              />
+              <button
+                type="button"
+                aria-label="Attach image"
+                title={attachedImages.length >= 4 ? 'Max 4 images' : 'Attach image (camera or gallery)'}
+                disabled={isRunning || attachedImages.length >= 4}
+                onClick={() => imageInputRef.current?.click()}
+                className={`btn-ghost p-1.5 rounded-lg disabled:opacity-40 ${attachedImages.length > 0 ? 'text-[color:var(--accent)]' : ''}`}
+              >
+                <IconPaperclip />
+                {attachedImages.length > 0 && (
+                  <span className="ml-0.5 text-[10px] font-mono">{attachedImages.length}</span>
+                )}
+              </button>
               <div className="flex-1" />
               <button type="button" onClick={() => setReasoningArgModal({ from: -1, to: -1 })} className="btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-muted font-mono"><IconClock /> {reasoningEffortLabel}</button>
-              {isRunning ? <button type="button" aria-label="Stop" onClick={() => void stop()} className="btn-ghost text-[color:var(--danger)]"><IconStop /> Stop</button> : <button type="submit" data-testid="agent-send-button" aria-label="Send" onClick={() => { run(query, context || undefined, conversationId, reasoningEffortForRequest); setQuery('') }} className="btn-accent px-3 py-1.5 rounded-lg text-sm"><IconSend /></button>}
+              {isRunning
+                ? <button type="button" aria-label="Stop" onClick={() => void stop()} className="btn-ghost text-[color:var(--danger)]"><IconStop /> Stop</button>
+                : <button type="submit" data-testid="agent-send-button" aria-label="Send" onClick={() => {
+                    const imgs = attachedImages.length > 0 ? [...attachedImages] : undefined
+                    run(query, context || undefined, conversationId, reasoningEffortForRequest, imgs)
+                    setQuery('')
+                    setAttachedImages([])
+                  }} className="btn-accent px-3 py-1.5 rounded-lg text-sm"><IconSend /></button>
+              }
             </div>
           </div>
           <details ref={contextPanelRef} className="group rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-soft)]/40 px-3 py-2">

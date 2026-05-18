@@ -120,7 +120,15 @@ export function EventLine({ event }: { event: StreamEvent }) {
     case 'user_message':
       return (
         <div className="flex justify-end">
-          <div className="max-w-[min(92%,42rem)] bg-[color:var(--accent-2)]/15 border border-[color:var(--accent-2)]/35 rounded-2xl rounded-br-md px-3 py-2 text-sm text-[color:var(--text)]">
+          <div className="max-w-[min(92%,42rem)] bg-[color:var(--accent-2)]/15 border border-[color:var(--accent-2)]/35 rounded-2xl rounded-br-md px-3 py-2 text-sm text-[color:var(--text)] space-y-2">
+            {event.images && event.images.length > 0 && (
+              <div className="flex gap-2 flex-wrap">
+                {event.images.map((src, i) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img key={i} src={src} alt={`Attached image ${i + 1}`} className="h-24 max-w-[10rem] object-cover rounded-lg border border-[color:var(--accent-2)]/40" />
+                ))}
+              </div>
+            )}
             <MarkdownContent content={event.content ?? ''} />
           </div>
         </div>

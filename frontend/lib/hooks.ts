@@ -24,6 +24,8 @@ export type StreamEvent = {
   type: string
   message?: string
   content?: string
+  /** Base64 data URLs attached to a user_message event (rendered as image thumbnails). */
+  images?: string[]
   tool_name?: string
   tool_input?: Record<string, unknown>
   tool_result?: string
@@ -109,6 +111,7 @@ export function useAgentStream() {
     context?: string,
     convId?: string | null,
     reasoningEffort?: string,
+    images?: string[],
   ) => {
     setTaskId(null)
     setEvents(prev => {
@@ -123,6 +126,7 @@ export function useAgentStream() {
       next.push({
         type: 'user_message',
         content: query,
+        images: images && images.length > 0 ? images : undefined,
         client_ts: Date.now(),
       })
       return next
@@ -137,6 +141,7 @@ export function useAgentStream() {
         undefined,
         convId ?? undefined,
         reasoningEffort,
+        images,
       )
       if (!response.ok) {
         let detail = ''

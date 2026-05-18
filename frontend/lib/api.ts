@@ -261,6 +261,8 @@ export function streamAgent(
   conversationId?: string,
   /** When set, sent as `reasoning_effort` (e.g. `off`, `medium`). When omitted, server uses env default. */
   reasoningEffort?: string,
+  /** Base64 data URLs for vision input (max 4). */
+  images?: string[],
 ) {
   const body: Record<string, unknown> = {
     query,
@@ -270,6 +272,9 @@ export function streamAgent(
   }
   if (reasoningEffort !== undefined) {
     body.reasoning_effort = reasoningEffort
+  }
+  if (images && images.length > 0) {
+    body.images = images
   }
   return fetch(`${API_URL}/agent/stream`, {
     method: 'POST',

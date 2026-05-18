@@ -47,7 +47,7 @@ export function ContextMetricsCompact({ events }: { events: StreamEvent[] }) {
 
 export function AgentActivityStrip({ reasoningEffortLabel, liveActivitySummary, isRunning, streamEvents, latestRunCost, className = '' }: { reasoningEffortLabel: string; liveActivitySummary: string | null; isRunning: boolean; streamEvents: StreamEvent[]; latestRunCost: number | null; className?: string }) {
   return (
-    <div className={`border-t border-[color:var(--border)] bg-[color:var(--bg-elev)]/95 backdrop-blur-sm px-3 sm:px-4 py-2 font-sans text-[11px] text-muted ${className}`.trim()} role="status" aria-live={isRunning ? 'polite' : undefined}>
+    <div className={`border-t border-[color:var(--border)] bg-[color:var(--bg-elev)]/95 backdrop-blur-sm px-3 sm:px-4 py-2 font-sans text-[11px] text-muted ${className}`.trim()} role="status" {...(isRunning && { 'aria-live': 'polite' })}>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-[color:var(--text)]/90"><span className="uppercase tracking-wide text-[10px] text-muted">Reasoning effort</span>{' · '}<span className="font-mono">{reasoningEffortLabel}</span></span>
         {latestRunCost != null && <span className="text-[color:var(--success)] shrink-0"><span className="uppercase tracking-wide text-[10px] text-muted">Last cost</span>{' · '}<span className="font-mono">{formatCost(latestRunCost)}</span></span>}

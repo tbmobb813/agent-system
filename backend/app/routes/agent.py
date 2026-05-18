@@ -160,6 +160,7 @@ async def run_agent(
             max_iterations=body.max_iterations,
             conversation_id=body.conversation_id,
             reasoning_effort=body.reasoning_effort,
+            images=body.images,
         )
     except Exception:
         run_status = "failed"
@@ -281,6 +282,7 @@ async def stream_agent(
                 task_id=task_id,
                 conversation_id=body.conversation_id,
                 reasoning_effort=body.reasoning_effort,
+                images=body.images,
             )
             while True:
                 try:
