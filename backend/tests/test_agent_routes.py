@@ -1,3 +1,5 @@
+import base64
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
@@ -563,6 +565,29 @@ def test_agent_request_reasoning_effort_handles_empty_and_non_string_values():
 def test_agent_request_reasoning_effort_rejects_unknown():
     with pytest.raises(ValidationError):
         AgentRequest(query="x", reasoning_effort="bogus")
+
+
+def test_agent_request_images_accepts_valid_data_url():
+    encoded = base64.b64encode(b"small-image-bytes").decode("ascii")
+    request = AgentRequest(query="x", images=[f"data:image/png;base64,{encoded}"])
+    assert request.images is not None
+    assert len(request.images) == 1
+
+
+def test_agent_request_images_rejects_non_image_data_url():
+    with pytest.raises(ValidationError):
+        AgentRequest(query="x", images=["data:text/plain;base64,SGVsbG8="])
+
+
+def test_agent_request_images_rejects_invalid_base64_payload():
+    with pytest.raises(ValidationError):
+        AgentRequest(query="x", images=["data:image/png;base64,not-valid***"])
+
+
+def test_agent_request_images_rejects_oversized_payload():
+    oversized = base64.b64encode(b"x" * (5 * 1024 * 1024 + 1)).decode("ascii")
+    with pytest.raises(ValidationError):
+        AgentRequest(query="x", images=[f"data:image/png;base64,{oversized}"])
 
 
 async def test_run_agent_returns_422_for_invalid_reasoning_effort():

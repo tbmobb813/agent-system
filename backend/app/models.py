@@ -2,9 +2,11 @@
 Pydantic models for the AI agent system.
 """
 
+import base64
+import binascii
 from pydantic import BaseModel, Field, field_validator
 from datetime import UTC, datetime
-from typing import Optional, Literal
+from typing import ClassVar, Optional, Literal
 from enum import Enum
 
 
@@ -110,6 +112,7 @@ class AgentRequest(BaseModel):
     metadata: Optional[dict] = Field(
         default_factory=dict, description="Custom metadata"
     )
+    MAX_IMAGE_BYTES: ClassVar[int] = 5 * 1024 * 1024
     images: Optional[list[str]] = Field(
         default=None,
         description="Base64 data URLs (data:image/...;base64,...) for vision input",
@@ -142,6 +145,37 @@ class AgentRequest(BaseModel):
                 "(or omit for server env default)"
             )
         return s
+
+    @field_validator("images")
+    @classmethod
+    def validate_images(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        if value is None:
+            return value
+
+        for image in value:
+            prefix, sep, b64_payload = image.partition(",")
+            if (
+                not sep
+                or not prefix.lower().startswith("data:image/")
+                or ";base64" not in prefix.lower()
+            ):
+                raise ValueError(
+                    "Each image must be a data URL in the form data:image/...;base64,..."
+                )
+
+            estimated_size = (len(b64_payload) * 3) // 4
+            if estimated_size > cls.MAX_IMAGE_BYTES:
+                raise ValueError("Each image must be 5MB or smaller")
+
+            try:
+                decoded = base64.b64decode(b64_payload, validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise ValueError("Each image must contain valid base64 data") from exc
+
+            if len(decoded) > cls.MAX_IMAGE_BYTES:
+                raise ValueError("Each image must be 5MB or smaller")
+
+        return value
 
 
 class ExecutionEvent(BaseModel):
