@@ -110,7 +110,7 @@ function ConnectorOpsRow({
           className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-colors disabled:opacity-40 ${
             connector.enabled
               ? 'bg-[color:var(--accent)] border-[color:var(--accent)]'
-              : 'bg-[color:var(--surface-soft)] border-[color:var(--border)]'
+              : 'bg-[color:var(--surface-soft)] border-(--border)'
           }`}
         >
           <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${connector.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
@@ -552,7 +552,7 @@ export default function AgentExecutor() {
           {skills.length === 0 ? <p className="text-sm text-muted">No skill analytics found yet.</p> : null}
           {skills.length > 0 ? (
             <div className="panel panel-soft rounded-lg overflow-hidden">
-              <div className="grid grid-cols-[1.5fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-muted border-b border-[color:var(--border)]">
+              <div className="grid grid-cols-[1.5fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-muted border-b border-(--border)">
                 <span>Skill</span>
                 <span className="text-right">Success</span>
                 <span className="text-right">Uses</span>
@@ -614,7 +614,7 @@ export default function AgentExecutor() {
             </div>
           </div>
           <div className="panel panel-soft rounded-lg overflow-hidden">
-            <div className="grid grid-cols-[1.4fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-muted border-b border-[color:var(--border)]">
+            <div className="grid grid-cols-[1.4fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-muted border-b border-(--border)">
               <span>Endpoint</span>
               <span className="text-right">P50</span>
               <span className="text-right">P95</span>
