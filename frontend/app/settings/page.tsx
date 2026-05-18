@@ -76,7 +76,7 @@ function TextInput({ id, value, onChange, placeholder, type = 'text', className 
       id={id} type={type} value={value} placeholder={placeholder}
       min={min} max={max} step={step}
       onChange={e => onChange(e.target.value)}
-      className={`w-full bg-(--bg-elev)] border border-(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-(--accent)] ${className}`}
+      className={`${INPUT_CLASS} ${className}`}
     />
   )
 }
