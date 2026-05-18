@@ -163,7 +163,7 @@ class AgentRequest(BaseModel):
                     "Each image must be a data URL in the form data:image/...;base64,..."
                 )
 
-            estimated_size = (len(b64_payload) * 3) // 4
+            estimated_size = (len(b64_payload.rstrip("=")) * 3) // 4
             if estimated_size > cls.MAX_IMAGE_BYTES:
                 raise ValueError("Each image must be 5MB or smaller")
 
