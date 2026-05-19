@@ -70,6 +70,13 @@ async def run_migrations():
                     created_at timestamptz DEFAULT NOW()
                 )
             """)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_model (
+                    user_id text PRIMARY KEY,
+                    model_text text NOT NULL,
+                    updated_at timestamptz NOT NULL DEFAULT NOW()
+                )
+            """)
     except Exception as e:
         logger.warning("Migration failed (non-critical): %s", e)
     logger.info("Database migrations checked")

@@ -5,10 +5,16 @@ Memory routes — view, search, and manage the agent's long-term memory.
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, HTTPException
+from pydantic import BaseModel
 from app.utils.auth import verify_api_key, get_user_id_from_key
 from app.agent.memory import memory_manager
 
 router = APIRouter(prefix="/memory", tags=["memory"])
+
+
+class SaveMemoryRequest(BaseModel):
+    content: str
+    category: str = "fact"
 
 
 @router.get("/range")
@@ -78,14 +84,13 @@ async def search_memories(
 
 @router.post("")
 async def save_memory(
-    content: str,
-    category: str = "fact",
+    body: SaveMemoryRequest,
     api_key: str = Depends(verify_api_key),
 ):
     """Manually save a memory (facts, preferences, etc.)."""
     user_id = get_user_id_from_key(api_key)
     memory_id = await memory_manager.save(
-        content=content, category=category, user_id=user_id
+        content=body.content, category=body.category, user_id=user_id
     )
     if not memory_id:
         return {"status": "error", "detail": "Database unavailable"}

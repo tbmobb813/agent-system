@@ -86,7 +86,7 @@ async def test_save_memory_returns_error_when_save_fails(monkeypatch):
     async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         response = await client.post(
             "/memory",
-            params={"content": "x", "category": "fact"},
+            json={"content": "x", "category": "fact"},
             headers={"Authorization": "Bearer sk-agent-local-dev"},
         )
 

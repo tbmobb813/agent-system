@@ -599,3 +599,89 @@ export async function runAgent(query: string, context?: string, tools?: string[]
   if (!res.ok) throw new Error('Agent run failed')
   return res.json()
 }
+
+// ── Schedules ─────────────────────────────────────────────────────────────────
+
+export interface Schedule {
+  id: string
+  user_id: string | null
+  cron_expr: string
+  prompt: string
+  context: string | null
+  router_tier: string | null
+  max_iterations: number
+  enabled: boolean
+  last_run_at: string | null
+  next_run_at: string
+  created_at: string | null
+}
+
+export async function listSchedules(): Promise<Schedule[]> {
+  const res = await fetchWithTimeout(`${API_URL}/schedules`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch schedules (${res.status})`)
+  return res.json()
+}
+
+export async function createSchedule(data: {
+  cron: string
+  prompt: string
+  context?: string
+  router_tier?: string
+  max_iterations?: number
+  enabled?: boolean
+}): Promise<{ id: string; next_run_at: string }> {
+  const res = await fetchWithTimeout(`${API_URL}/schedules`, {
+    method: 'POST', headers: headers(), body: JSON.stringify(data),
+  })
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(String((e as Record<string, unknown>).detail ?? `Failed (${res.status})`)) }
+  return res.json()
+}
+
+export async function deleteSchedule(id: string): Promise<void> {
+  const res = await fetchWithTimeout(`${API_URL}/schedules/${encodeURIComponent(id)}`, {
+    method: 'DELETE', headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Failed to delete schedule (${res.status})`)
+}
+
+// ── Memory ────────────────────────────────────────────────────────────────────
+
+export interface Memory {
+  id: string
+  content: string
+  category: string
+  created_at: string
+  relevance_score?: number
+  similarity?: number
+}
+
+export async function listMemories(limit = 20, category?: string): Promise<{ memories: Memory[]; total: number }> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (category) params.set('category', category)
+  const res = await fetchWithTimeout(`${API_URL}/memory?${params}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch memories (${res.status})`)
+  return res.json()
+}
+
+export async function searchMemories(q: string, limit = 10): Promise<{ query: string; results: Memory[]; total: number }> {
+  const res = await fetchWithTimeout(`${API_URL}/memory/search?q=${encodeURIComponent(q)}&limit=${limit}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to search memories (${res.status})`)
+  return res.json()
+}
+
+export async function saveMemory(content: string, category = 'fact'): Promise<{ status: string; id: string }> {
+  const res = await fetchWithTimeout(`${API_URL}/memory`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ content, category }),
+  })
+  if (!res.ok) throw new Error(`Failed to save memory (${res.status})`)
+  return res.json()
+}
+
+export async function deleteMemory(id: string): Promise<void> {
+  const res = await fetchWithTimeout(`${API_URL}/memory/${encodeURIComponent(id)}`, {
+    method: 'DELETE', headers: headers(),
+  })
+  if (!res.ok) throw new Error(`Failed to delete memory (${res.status})`)
+}

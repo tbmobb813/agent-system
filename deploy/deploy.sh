@@ -129,7 +129,21 @@ echo "==> Restarting services"
 pm2 restart all --update-env
 
 echo "==> Waiting for services to be ready..."
-sleep 20
+for _i in $(seq 1 24); do
+	_backend_ok=0
+	_frontend_ok=0
+	curl -sf --max-time 3 http://localhost:8000/health >/dev/null 2>&1 && _backend_ok=1
+	curl -sf --max-time 3 http://localhost:3003      >/dev/null 2>&1 && _frontend_ok=1
+	if [[ "$_backend_ok" -eq 1 && "$_frontend_ok" -eq 1 ]]; then
+		echo "  services ready after $((_i * 5))s"
+		break
+	fi
+	if [[ "$_i" -eq 24 ]]; then
+		echo "[deploy][error] Services did not become ready within 120s" >&2
+		exit 1
+	fi
+	sleep 5
+done
 
 echo "==> Monitoring smoke checks"
 MONITOR_BASE_URL="${MONITOR_BASE_URL:-https://agent.techtrendwire.com}"

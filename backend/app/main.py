@@ -33,6 +33,7 @@ from app.routes.analytics import router as analytics_router
 from app.routes.integrations import router as integrations_router
 from app.routes.connectors import router as connectors_router
 from app.routes.projects import router as projects_router
+from app.routes.schedules import router as schedules_router
 
 # Configure logging
 logging.basicConfig(
@@ -149,6 +150,7 @@ app.include_router(analytics_router)
 app.include_router(integrations_router)
 app.include_router(connectors_router)
 app.include_router(projects_router)
+app.include_router(schedules_router)
 
 
 # ============================================================================

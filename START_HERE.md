@@ -3,6 +3,7 @@
 **This is your complete, production-ready AI agent system.**
 
 You now have everything needed to build a personal AI co-worker that:
+
 - Researches, analyzes, codes, and automates
 - Costs $30/month max (enforced)
 - Runs on your VPS or locally
@@ -15,18 +16,21 @@ You now have everything needed to build a personal AI co-worker that:
 ## 📖 Start Here
 
 ### Quick Path (30 minutes)
+
 1. Read: **`QUICKSTART.md`**
 2. Run: `docker-compose up`
-3. Visit: http://localhost:3000
+3. Visit: <http://localhost:3003>
 4. Done!
 
 ### Full Path (VPS Deployment)
+
 1. Read: **`SETUP.md`**
 2. Follow step-by-step guide
 3. Deploy to your VPS
 4. Access from anywhere
 
 ### Understanding the System
+
 1. Read: **`PACKAGE_SUMMARY.md`** (overview of everything)
 2. Read: **`README.md`** (architecture + features)
 3. Explore code files
@@ -88,7 +92,7 @@ cp .env.example .env
 docker-compose up
 
 # Access
-# - Frontend: http://localhost:3000
+# - Frontend: http://localhost:3003
 # - API: http://localhost:8000
 # - Docs: http://localhost:8000/docs
 ```
@@ -120,24 +124,28 @@ python -m uvicorn app.main:app --reload
 ## 💡 What You Can Do
 
 ### Day 1: Get It Running
+
 - [ ] Read QUICKSTART.md
 - [ ] Run `docker-compose up`
 - [ ] Test agent via web dashboard
 - [ ] Try a simple query
 
 ### Day 2: Customize
+
 - [ ] Edit model routing in `backend/app/config.py`
 - [ ] Add your first tool in `backend/app/tools/`
 - [ ] Adjust cost limits
 - [ ] Setup Telegram bot
 
 ### Week 1: Deploy
+
 - [ ] Follow SETUP.md for VPS deployment
 - [ ] Get your domain set up
 - [ ] Configure SSL certificate
 - [ ] Access from anywhere
 
 ### Month 1: Extend
+
 - [ ] Build agent orchestration (`backend/app/agent/`)
 - [ ] Add custom tools for your workflows
 - [ ] Enhance frontend dashboard
@@ -148,7 +156,9 @@ python -m uvicorn app.main:app --reload
 ## 🎯 Key Features
 
 ### Real-Time Streaming
+
 Watch your agent think and work in real-time:
+
 ```json
 {
   "type": "status",
@@ -166,7 +176,9 @@ Watch your agent think and work in real-time:
 ```
 
 ### Cost Tracking & Budgeting
+
 Automatic enforcement of your $30/month budget:
+
 ```json
 {
   "budget": 30.0,
@@ -178,7 +190,9 @@ Automatic enforcement of your $30/month budget:
 ```
 
 ### Multi-Model Routing
+
 Automatically picks the right model for the job:
+
 - Simple queries → DeepSeek ($0.14/MTok) - 60% of requests
 - Balanced → Claude Haiku ($1/MTok) - 30% of requests
 - Advanced → Claude Sonnet ($3/MTok) - 10% of requests
@@ -186,7 +200,9 @@ Automatically picks the right model for the job:
 **Result: 70% cost savings vs single-model approach**
 
 ### Persistent Memory
+
 Remembers preferences, facts, and patterns across sessions:
+
 - Learns your writing style
 - Remembers your preferences
 - Stores useful context
@@ -213,13 +229,14 @@ Remembers preferences, facts, and patterns across sessions:
 ### Your $30/month Budget Breakdown
 
 | Usage Level | Monthly Calls | Daily Average | Cost |
-|------------|--------------|--------------|------|
+| ------------ | -------------- | -------------- | ------ |
 | Light user | 1,000 | 33 | $5 |
 | Regular use | 3,000 | 100 | $15 |
 | Heavy use | 6,000 | 200 | $30 |
 | Power user | 10,000+ | 333 | 💥 Hits limit |
 
 The system automatically:
+
 - ✅ Routes to cheap models
 - ✅ Caches responses
 - ✅ Compresses context
@@ -266,18 +283,21 @@ The system automatically:
 ## 🎓 Learning Paths
 
 ### Path 1: Just Use It
+
 1. Read QUICKSTART.md
 2. Run docker-compose up
 3. Click "Run Agent"
 4. Done!
 
 ### Path 2: Understand It
+
 1. Read README.md (architecture)
 2. Read PACKAGE_SUMMARY.md (inventory)
 3. Browse backend/app/main.py
 4. Read supabase/migrations/001_initial_schema.sql
 
 ### Path 3: Extend It
+
 1. Understand Path 2
 2. Read backend/app/tools/example_tool.py
 3. Add a new tool
@@ -285,6 +305,7 @@ The system automatically:
 5. Deploy
 
 ### Path 4: Master It
+
 1. Complete Paths 1-3
 2. Build agent orchestration in backend/app/agent/
 3. Enhance frontend components
@@ -296,6 +317,7 @@ The system automatically:
 ## 🎉 Next Steps
 
 ### Right Now (5 minutes)
+
 ```bash
 cd agent-system
 cp .env.example .env
@@ -303,16 +325,19 @@ cp .env.example .env
 ```
 
 ### In 30 Minutes
+
 ```bash
 docker-compose up
-# Then visit http://localhost:3000
+# Then visit http://localhost:3003
 ```
 
 ### In 2 Hours
+
 - Follow SETUP.md for VPS deployment
 - Get your agent accessible from anywhere
 
 ### This Week
+
 - Add your first custom tool
 - Setup Telegram bot
 - Monitor costs
@@ -332,6 +357,7 @@ docker-compose up
 ## ✨ What Makes This Special
 
 ### vs Perplexity Computer
+
 - ✅ Costs $30/month (vs $200/month)
 - ✅ Runs on your VPS (not their servers)
 - ✅ You control the models (not locked in)
@@ -339,6 +365,7 @@ docker-compose up
 - ✅ Own your data (not Perplexity's)
 
 ### vs OpenAI GPTs
+
 - ✅ Runs 24/7 (not chat-only)
 - ✅ Multi-model routing (you choose)
 - ✅ Persistent memory (across sessions)
@@ -346,6 +373,7 @@ docker-compose up
 - ✅ Cost controlled (enforced limits)
 
 ### vs Building From Scratch
+
 - ✅ Production-ready code
 - ✅ Database schema included
 - ✅ Cost tracking built-in
@@ -354,7 +382,7 @@ docker-compose up
 
 ---
 
-## 🚀 You're Ready!
+## 🚀 You're Ready
 
 **Everything is set up for you to succeed.**
 
@@ -362,7 +390,7 @@ docker-compose up
 # The fastest way to get started:
 cd agent-system
 docker-compose up
-# Then visit http://localhost:3000
+# Then visit http://localhost:3003
 ```
 
 That's it. You now have a working AI agent system.
