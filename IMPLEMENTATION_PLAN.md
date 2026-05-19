@@ -13,7 +13,7 @@
 | P2 | Memory & Skills Dashboard | ~2 days | done |
 | P3 | Discord Bot | ~2 days | todo |
 | P4 | Slack Bot | ~1 day | todo |
-| P5 | CLI / TUI | ~3 days | todo |
+| P5 | CLI / TUI | ~3 days | done |
 | P6 | WhatsApp via Meta Cloud API | ~2 days | todo |
 | P7 | Modal + SSH terminal backends | ~3 days | todo |
 | P8 | DIY Dialectic User Model | ~1 day | done |

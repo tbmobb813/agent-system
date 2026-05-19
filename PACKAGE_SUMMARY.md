@@ -22,7 +22,7 @@ A complete, battle-tested codebase for a personal AI agent that:
 ### Core Files
 
 | File | Purpose |
-|------|---------|
+| ------ | --------- |
 | `README.md` | Overview + architecture |
 | `QUICKSTART.md` | **Start here** - 30 min setup |
 | `SETUP.md` | Full VPS deployment guide |
@@ -33,7 +33,7 @@ A complete, battle-tested codebase for a personal AI agent that:
 ### Backend (`/backend`)
 
 | File | Purpose |
-|------|---------|
+| ------ | --------- |
 | `app/main.py` | FastAPI server with all routes |
 | `app/config.py` | Settings + cost tracking |
 | `app/models.py` | Pydantic types |
@@ -49,7 +49,7 @@ A complete, battle-tested codebase for a personal AI agent that:
 ### Frontend (`/frontend` - skeleton)
 
 | File | Purpose |
-|------|---------|
+| ------ | --------- |
 | `app/` | Next.js app router |
 | `components/` | React components |
 | `package.json` | JS dependencies |
@@ -135,7 +135,7 @@ Dockerfile provided in backend, easily deployable to any container platform.
 ### Pricing Per Model (March 2026)
 
 | Model | Input | Output | Best For |
-|-------|-------|--------|----------|
+| ------- | ------- | -------- | ---------- |
 | DeepSeek | $0.14 | $0.28 | Fast, cheap |
 | Llama 3 | $0.05 | $0.05 | Free alternatives |
 | Claude Haiku | $1.00 | $5.00 | Balanced |
@@ -327,43 +327,35 @@ docker-compose logs -f
 
 ### Research & Analysis
 
-```
 User: "Research the latest AI news in 2026"
 → Agent: Plans research (5 steps)
 → Agent: Web searches, summarizes, compiles
 → Agent: Returns organized report with sources
 → Cost: ~$0.05
-```
 
 ### Coding
 
-```
 User: "Write a Python script to parse JSON from a URL"
 → Agent: Asks clarifying questions
 → Agent: Writes code, tests it
 → Agent: Returns working script + explanation
 → Cost: ~$0.10
-```
 
 ### Analysis
 
-```
 User: "Analyze this PDF and extract key points"
 → Agent: Reads document, extracts info
 → Agent: Creates summary + action items
 → Agent: Formats as markdown
 → Cost: ~$0.02
-```
 
 ### Automation
 
-```
 User: "Check competitor pricing and compile spreadsheet"
 → Agent: Visits websites, extracts prices
 → Agent: Compares, calculates differences
 → Agent: Creates CSV with analysis
 → Cost: ~$0.15
-```
 
 ---
 
