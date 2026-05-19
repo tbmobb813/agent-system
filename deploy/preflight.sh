@@ -20,7 +20,9 @@ warn() { echo "[preflight][warn]  $*"; }
 ok() { echo "[preflight][ok]    $*"; }
 # Use backend venv Python if available, otherwise fall back to system python3
 PYTHON_BIN="python3"
-if [[ -f "backend/venv/bin/python" ]]; then
+if [[ -f "backend/.venv/bin/python" ]]; then
+  PYTHON_BIN="backend/.venv/bin/python"
+elif [[ -f "backend/venv/bin/python" ]]; then
   PYTHON_BIN="backend/venv/bin/python"
 fi
 
