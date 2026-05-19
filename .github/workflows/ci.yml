@@ -223,10 +223,10 @@ jobs:
       !failure() && !cancelled()
     runs-on: ubuntu-latest
     env:
-      DEPLOY_HOST: ${{ secrets.VPS_HOST }}
+      VPS_SECRETS_CONFIGURED: ${{ secrets.VPS_HOST != '' && secrets.VPS_USER != '' && secrets.VPS_SSH_KEY != '' }}
     steps:
       - name: Deploy via SSH
-        if: env.DEPLOY_HOST != ''
+        if: env.VPS_SECRETS_CONFIGURED == 'true'
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -235,8 +235,8 @@ jobs:
           script: bash ~/agent-system/deploy/deploy.sh
 
       - name: Skip (VPS secrets not configured)
-        if: env.DEPLOY_HOST == ''
-        run: echo "Skipping deployment — VPS_HOST secret not set in repository settings."
+        if: env.VPS_SECRETS_CONFIGURED != 'true'
+        run: echo "Skipping deployment — VPS_HOST, VPS_USER, and VPS_SSH_KEY secrets must all be set in repository settings."
 
   deploy_baseline:
     name: Deploy Baseline Checks
