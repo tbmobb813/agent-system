@@ -101,7 +101,9 @@ class UserModelManager:
             if row and row["updated_at"]:
                 age = datetime.now(UTC) - row["updated_at"].replace(tzinfo=UTC)
                 if age < timedelta(minutes=_REFLECTION_COOLDOWN_MINUTES):
-                    logger.debug("user_model reflection skipped — cooldown active for %s", uid)
+                    logger.debug(
+                        "user_model reflection skipped — cooldown active for %s", uid
+                    )
                     return
         except Exception as e:
             logger.debug("user_model cooldown check failed: %s", e)
@@ -126,7 +128,11 @@ class UserModelManager:
             return
 
         if len(memories) < _MIN_MEMORIES_REQUIRED:
-            logger.debug("user_model reflection skipped — only %d memories for %s", len(memories), uid)
+            logger.debug(
+                "user_model reflection skipped — only %d memories for %s",
+                len(memories),
+                uid,
+            )
             return
 
         # ── Build prompt ──────────────────────────────────────────────────────
