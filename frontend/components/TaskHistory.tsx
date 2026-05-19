@@ -456,6 +456,7 @@ export default function TaskHistory() {
   const { data, loading, error, refresh } = useHistory()
   const [offset, setOffset] = useState(0)
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [expandedThread, setExpandedThread] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [activeSearch, setActiveSearch] = useState('')
@@ -589,6 +590,17 @@ export default function TaskHistory() {
                     <span className="dr-row-time">{formatDate(isThread ? entry.updated_at : entry.created_at)}</span>
                     <span className="dr-row-cost">{formatCost(entry.total_cost)}</span>
                     <div className="relative flex items-center gap-1.5" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+                      {!isThread && entry.conversation_id && (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedThread(p => p === entry.conversation_id ? null : entry.conversation_id!)}
+                          className="text-xs text-muted hover:text-[color:var(--accent)] transition-colors"
+                          aria-label="View conversation thread"
+                          title="View thread"
+                        >
+                          💬
+                        </button>
+                      )}
                       {!isThread && entry.id && (
                         <>
                           <button
@@ -628,6 +640,12 @@ export default function TaskHistory() {
                     <ThreadPanel
                       conversationId={entry.conversation_id}
                       onClose={() => setExpanded(null)}
+                    />
+                  )}
+                  {!isThread && entry.conversation_id && expandedThread === entry.conversation_id && (
+                    <ThreadPanel
+                      conversationId={entry.conversation_id}
+                      onClose={() => setExpandedThread(null)}
                     />
                   )}
                   {isExpanded && !isThread && entry.id && (

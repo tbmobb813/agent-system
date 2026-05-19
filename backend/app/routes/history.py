@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from app.database import fetch, fetchrow, fetchval, execute
 from app.agent.memory import memory_manager
-from app.utils.auth import verify_api_key
+from app.utils.auth import verify_api_key, get_user_id_from_key
 
 router = APIRouter(prefix="/history", tags=["history"])
 logger = logging.getLogger(__name__)
@@ -172,6 +172,7 @@ async def get_conversation_thread(
     conversation_id: str, api_key: str = Depends(verify_api_key)
 ):
     """Return all tasks in a conversation thread, oldest first."""
+    user_id = get_user_id_from_key(api_key)
     rows = await fetch(
         """
         SELECT
@@ -190,10 +191,11 @@ async def get_conversation_thread(
                 ORDER BY tf.created_at DESC LIMIT 1
             ) AS feedback_signal
         FROM tasks t
-        WHERE t.conversation_id = $1
+        WHERE t.conversation_id = $1 AND t.user_id = $2
         ORDER BY t.created_at ASC
         """,
         conversation_id,
+        user_id,
     )
     return {"conversation_id": conversation_id, "messages": [dict(r) for r in rows]}
 

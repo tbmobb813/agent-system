@@ -85,15 +85,38 @@ echo "==> Running database migrations"
 cd "$REPO_DIR"
 # Load DATABASE_URL from backend/.env if not already set
 if [[ -z "${DATABASE_URL:-}" && -f "$REPO_DIR/backend/.env" ]]; then
-	DATABASE_URL="$(grep -E '^DATABASE_URL=' "$REPO_DIR/backend/.env" | head -1 | cut -d'=' -f2-)"
+	_raw="$(grep -E '^DATABASE_URL=' "$REPO_DIR/backend/.env" | head -1 | cut -d'=' -f2-)"
+	# Strip surrounding single or double quotes
+	if [[ "$_raw" =~ ^\"(.*)\"$ ]]; then
+		_raw="${BASH_REMATCH[1]}"
+	elif [[ "$_raw" =~ ^\'(.*)\'$ ]]; then
+		_raw="${BASH_REMATCH[1]}"
+	fi
+	DATABASE_URL="$_raw"
 	export DATABASE_URL
 fi
 if [[ -z "${DATABASE_URL:-}" ]]; then
 	echo "[deploy][warn] DATABASE_URL not set — skipping migrations" >&2
 else
+	# Ensure migration tracking table exists so each file runs at most once
+	psql "$DATABASE_URL" --set=ON_ERROR_STOP=1 --quiet -c "
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			filename TEXT PRIMARY KEY,
+			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+	"
 	for migration_file in "$REPO_DIR"/supabase/migrations/*.sql; do
-		echo "  applying $(basename "$migration_file")"
-		psql "$DATABASE_URL" -f "$migration_file" -v ON_ERROR_STOP=0 --quiet
+		filename="$(basename "$migration_file")"
+		applied="$(psql "$DATABASE_URL" --set=ON_ERROR_STOP=1 --tuples-only --quiet \
+			-c "SELECT 1 FROM schema_migrations WHERE filename = '$filename';" | tr -d '[:space:]')"
+		if [[ "$applied" == "1" ]]; then
+			echo "  skipping $filename (already applied)"
+			continue
+		fi
+		echo "  applying $filename"
+		psql "$DATABASE_URL" --set=ON_ERROR_STOP=1 -f "$migration_file" --quiet
+		psql "$DATABASE_URL" --set=ON_ERROR_STOP=1 --quiet \
+			-c "INSERT INTO schema_migrations (filename) VALUES ('$filename');"
 	done
 	echo "==> Migrations complete"
 fi
