@@ -128,6 +128,9 @@ bash "$REPO_DIR/deploy/preflight.sh"
 echo "==> Restarting services"
 pm2 restart all
 
+echo "==> Waiting for services to be ready..."
+sleep 20
+
 echo "==> Monitoring smoke checks"
 MONITOR_BASE_URL="${MONITOR_BASE_URL:-https://agent.techtrendwire.com}"
 for attempt in 1 2 3; do
@@ -140,7 +143,7 @@ for attempt in 1 2 3; do
 		exit 1
 	fi
 	echo "[deploy][warn] Monitoring checks failed (attempt $attempt/3), retrying..."
-	sleep 5
+	sleep 15
 done
 
 echo "==> Done. Check logs with: pm2 logs"
