@@ -108,7 +108,7 @@ check_status() {
   fi
 
   local code
-  code="$(curl -sS -m "$TIMEOUT" -o /dev/null -w '%{http_code}' "$url")" || report_failure "$label request failed"
+  code="$(curl -sS -L -m "$TIMEOUT" -o /dev/null -w '%{http_code}' "$url")" || report_failure "$label request failed"
 
   if [[ "$code" != "$expected" ]]; then
     report_failure "$label expected HTTP $expected, got $code"
