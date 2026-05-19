@@ -126,7 +126,7 @@ bash "$REPO_DIR/deploy/preflight.sh"
 
 
 echo "==> Restarting services"
-pm2 restart all
+pm2 restart all --update-env
 
 echo "==> Waiting for services to be ready..."
 sleep 20
