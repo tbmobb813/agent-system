@@ -39,6 +39,7 @@ from app.agent.cost_learning import refresh_efficiency_cache
 from app.agent.prompts.system_prompt import PROMPT_VERSION, build_system_prompt
 from app.agent import tool_preferences as _tool_prefs
 from app.agent import skill_composer as _skill_composer
+from app.agent.user_model import user_model_manager
 
 
 def _score_tool_result(name: str, result: str, err: Optional[str]) -> float:
@@ -378,6 +379,7 @@ class AgentOrchestrator:
                 tool_hint,
                 tool_bias_hint,
                 active_skill_chain,
+                current_user_model,
             ) = await asyncio.gather(
                 _get_budget(),
                 conversation_manager.get_or_create(conversation_id, user_id=user_id),
@@ -386,6 +388,7 @@ class AgentOrchestrator:
                 get_tool_hint(query),
                 _get_bias_hint(),
                 _skill_composer.get_applicable_chain(query),
+                user_model_manager.get(user_id),
             )
 
             # ── #5 Tool precondition + budget filtering ───────────────────────
@@ -521,6 +524,7 @@ class AgentOrchestrator:
                 budget_remaining=budget_remaining,
                 monthly_budget_usd=float(settings.OPENROUTER_BUDGET_MONTHLY),
                 tool_names=self.tools.list_tools(),
+                user_model=current_user_model or None,
             )
 
             # ── Plan-then-execute for qualifying multi-step queries ───
@@ -1067,6 +1071,11 @@ class AgentOrchestrator:
                             logger.warning(f"Memory save failed: {e}")
                     else:
                         logger.debug("Skipping memory extraction for low-value turn")
+
+                    # Dialectic user model — synthesize memories into a user portrait.
+                    asyncio.create_task(
+                        user_model_manager.run_dialectic_reflection(user_id)
+                    )
 
                     # Post-task reflection + outcome marking (fire-and-forget).
                     asyncio.create_task(

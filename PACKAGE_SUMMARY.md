@@ -40,6 +40,7 @@ A complete, battle-tested codebase for a personal AI agent that:
 | `requirements.txt` | Python dependencies |
 
 **What's included but needs expansion:**
+
 - `app/agent/` - Orchestration logic (agent spawning, planning)
 - `app/tools/` - Tool definitions (web search, browser, code exec)
 - `app/routes/` - HTTP endpoints (agent execution, history)
@@ -54,6 +55,7 @@ A complete, battle-tested codebase for a personal AI agent that:
 | `package.json` | JS dependencies |
 
 **Includes:**
+
 - Dark/light mode dashboard
 - Real-time agent execution UI
 - Cost tracking dashboard
@@ -68,6 +70,7 @@ A complete, battle-tested codebase for a personal AI agent that:
 | `002_cost_tracking.sql` | Budget + cost tracking |
 
 **Schema includes:**
+
 - User authentication
 - Task execution history
 - Long-term memory (pgvector embeddings)
@@ -83,6 +86,7 @@ A complete, battle-tested codebase for a personal AI agent that:
 | `requirements.txt` | Dependencies |
 
 **Features:**
+
 - `/ask` - Ask agent a question
 - `/analyze` - Analyze documents
 - `/code` - Generate code
@@ -95,6 +99,7 @@ A complete, battle-tested codebase for a personal AI agent that:
 ### Option 1: Local Development (Fastest)
 
 **Time: 30 minutes**
+
 ```bash
 cd agent-system
 cp .env.example .env
@@ -110,6 +115,7 @@ See `QUICKSTART.md` for details.
 **Time: 2 hours**
 
 Follow `SETUP.md` step-by-step. You'll get:
+
 - Production Docker setup
 - Nginx reverse proxy
 - SSL/HTTPS
@@ -144,6 +150,7 @@ Dockerfile provided in backend, easily deployable to any container platform.
 - **Per second** = ~7 calls/second average
 
 The system automatically routes:
+
 - 70% of requests to cheap models
 - 20% to balanced models
 - 10% to advanced models
@@ -244,6 +251,7 @@ The skeleton is complete, but you'll want to expand:
 ## 📚 Technology Stack
 
 ### Backend
+
 - **Framework**: FastAPI (async, type-safe)
 - **Agent**: PydanticAI + LangGraph
 - **LLM**: OpenRouter (unified API to 400+ models)
@@ -251,18 +259,21 @@ The skeleton is complete, but you'll want to expand:
 - **Streaming**: Server-Sent Events (SSE)
 
 ### Frontend
+
 - **Framework**: Next.js 15 (React)
 - **UI**: TailwindCSS
 - **State**: Vercel AI SDK
 - **Streaming**: fetch EventSource API
 
 ### DevOps
+
 - **Containerization**: Docker + Docker Compose
 - **Web Server**: Nginx
 - **Deployment**: Systemd + VPS
 - **Monitoring**: Built-in logging
 
 ### Optional
+
 - **Code Execution**: E2B sandbox
 - **Web Search**: Tavily API
 - **Embeddings**: Supabase pgvector
@@ -295,6 +306,7 @@ The skeleton is complete, but you'll want to expand:
 ✅ **Health checks** - Service availability
 
 Access via:
+
 ```bash
 # Cost status
 curl http://localhost:8000/status/costs
@@ -314,6 +326,7 @@ docker-compose logs -f
 ## 🎯 Typical Usage Flows
 
 ### Research & Analysis
+
 ```
 User: "Research the latest AI news in 2026"
 → Agent: Plans research (5 steps)
@@ -323,6 +336,7 @@ User: "Research the latest AI news in 2026"
 ```
 
 ### Coding
+
 ```
 User: "Write a Python script to parse JSON from a URL"
 → Agent: Asks clarifying questions
@@ -332,6 +346,7 @@ User: "Write a Python script to parse JSON from a URL"
 ```
 
 ### Analysis
+
 ```
 User: "Analyze this PDF and extract key points"
 → Agent: Reads document, extracts info
@@ -341,6 +356,7 @@ User: "Analyze this PDF and extract key points"
 ```
 
 ### Automation
+
 ```
 User: "Check competitor pricing and compile spreadsheet"
 → Agent: Visits websites, extracts prices
@@ -434,6 +450,7 @@ SELECT * FROM cost_tracking LIMIT 10;
 ## 📈 Scaling Considerations
 
 This setup handles:
+
 - **Daily**: 100-500 agent executions
 - **Monthly**: 3,000-15,000 executions
 - **Cost**: $20-30/month on $30 budget
@@ -448,13 +465,13 @@ To scale further:
 
 ---
 
-## 🎉 You're Ready!
+## 🎉 You're Ready
 
 ### Next Steps
 
 1. **Read**: `QUICKSTART.md` (30 min start guide)
 2. **Try**: Run locally with `docker-compose up`
-3. **Test**: Hit http://localhost:3000
+3. **Test**: Hit <http://localhost:3000>
 4. **Deploy**: Follow `SETUP.md` for VPS
 5. **Customize**: Add your tools and workflows
 

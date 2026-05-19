@@ -25,7 +25,7 @@ The checklist below is **stricter than the validator**: it lists gaps the automa
 ## Reconciled: validator vs reality
 
 | Item | YAML / config | Code / behavior | Verdict |
-|------|-----------------|-----------------|---------|
+| ------ | ---------------- | ----------------- | --------- |
 | Unit tests | Was `enabled: false` | `backend/tests/` (~20 files), `pytest.ini` | Implemented; sync YAML |
 | CI | Was `enabled: false` | `.github/workflows/ci.yml` + pytest | Implemented; sync YAML |
 | Latency | Was `enabled: false` | `latency_metrics` + `_record_latency_metric` in `agent.py` | Partial — persist works; dashboards/alerts optional |
@@ -83,14 +83,14 @@ The checklist below is **stricter than the validator**: it lists gaps the automa
 ### Pillar 7 — UI
 
 | Priority | Task | Where |
-|----------|------|--------|
+| ---------- | ------ | -------- |
 | Low | Improve feedback discoverability/copy and analytics instrumentation | `frontend/`, `history` APIs |
 | Low | Slack/Discord parity with Telegram | `integrations/slack_discord_bot.py` |
 
 ### Pillar 8 — Testing & evals
 
 | Priority | Task | Where |
-|----------|------|--------|
+| ---------- | ------ | -------- |
 | Low | Raise coverage gate gradually (e.g. 55 → 60) after baseline stabilizes | `.github/workflows/ci.yml`, `pytest.ini` |
 | Medium | Expand eval cases + optional merge gate | `backend/evals/test_cases.json`, CI job |
 | Low | Latency SLO dashboards / alerts | `latency_metrics` + Grafana or analytics UI |
@@ -98,7 +98,7 @@ The checklist below is **stricter than the validator**: it lists gaps the automa
 ### Hygiene
 
 | Task | Where |
-|------|--------|
+|------|-------- |
 | `database.py` migrations placeholder vs real migration story | `backend/app/database.py`, `supabase/` |
 
 ---
@@ -106,7 +106,7 @@ The checklist below is **stricter than the validator**: it lists gaps the automa
 ## API quick reference (feedback, queue, agent)
 
 | Method | Path | Notes |
-|--------|------|--------|
+| -------- | ------ | -------- |
 | POST | `/agent/run` | Sync run |
 | POST | `/agent/stream` | SSE |
 | POST | `/agent/enqueue` | Deferred (in-process worker) |

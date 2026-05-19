@@ -109,6 +109,9 @@ class Settings(BaseSettings):
     QUALITY_SCORING_SAMPLE_RATE: float = Field(default=0.10)
     QUALITY_SCORING_MODEL: str = Field(default="anthropic/claude-3.5-haiku")
 
+    # Dialectic user modeling
+    AGENT_DIALECTIC_REFLECTION: bool = Field(default=True)
+
     # Context limits
     MAX_CONTEXT_TOKENS: int = Field(default=128000)
     CONTEXT_TRIGGER_PERCENT: float = Field(default=0.70)

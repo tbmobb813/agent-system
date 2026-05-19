@@ -13,6 +13,8 @@ const navLinks = [
   { href: '/projects', label: 'Projects' },
   { href: '/analytics', label: 'Analytics' },
   { href: '/costs', label: 'Costs' },
+  { href: '/schedules', label: 'Schedules' },
+  { href: '/memory', label: 'Memory' },
   { href: '/documents', label: 'Documents' },
   { href: '/settings', label: 'Settings' },
   { href: '/commands', label: 'Commands' },

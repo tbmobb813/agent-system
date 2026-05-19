@@ -1,7 +1,7 @@
 # Agent System - 8-Pillar Audit & Action Plan
 
 **Date:** May 5, 2026  
-**Repo:** https://github.com/tbmobb813/agent-system  
+**Repo:** <https://github.com/tbmobb813/agent-system>  
 **Framework:** AI Agent Development Lifecycle (8 Pillars)
 
 ---
@@ -17,7 +17,7 @@ The May 5 audit below is **preserved for history**. Items struck through in each
 ## Scoring Summary (reconciled 2026-05-07)
 
 | # | Pillar | Original (May 5) | Reconciled | Status |
-|---|--------|------------------|------------|--------|
+| --- | -------- | ------------------ | ------------ | -------- |
 | 1 | Define Purpose & Scope | 9/10 | 9/10 | Strong; formal `SCOPE.md` added in follow-up work |
 | 2 | System Prompt Design | 5/10 | 7/10 | Persona + fiscal injection live; modular `prompts/` package in follow-up |
 | 3 | Choose LLM | 8/10 | 8/10 | Solid |
@@ -35,25 +35,30 @@ The May 5 audit below is **preserved for history**. Items struck through in each
 ## Pillar 1: Define Purpose & Scope
 
 ### What the framework asks for
+
 - Use case definition
 - User needs analysis
 - Success criteria
 - Constraints
 
 ### What you have
+
 - **Use case:** Personal AI co-worker for research, coding, analysis, automation
 - **User needs:** Single user (you), multi-access (web/Telegram/API), cost-conscious
 - **Success criteria:** $30/month budget cap enforced at runtime, accessible everywhere, persistent memory across sessions
 - **Constraints:** 2 CPU / 8GB RAM VPS, single-user, open-source stack
 
 ### Gaps
+
 - No formal SLA targets (response time, uptime, accuracy)
 - No defined "out of scope" boundary - what should the agent refuse?
 
 ### Now implemented (2026-05-07)
+
 - ~~Formal scope/SLA doc~~ → **`backend/SCOPE.md`** added in follow-up work (targets + in/out of scope).
 
 ### Actions
+
 1. Add `SCOPE.md` defining what the agent does and explicitly does NOT do
 2. Define measurable success criteria: p95 response latency < 5s, uptime > 99%, task completion rate tracked
 
@@ -62,12 +67,14 @@ The May 5 audit below is **preserved for history**. Items struck through in each
 ## Pillar 2: System Prompt Design
 
 ### What the framework asks for
+
 - Goals
 - Role/Persona
 - Instructions
 - Guardrails
 
 ### What you have
+
 ```python
 # orchestrator.py - current system prompt
 SYSTEM_PROMPT = """You are a capable personal AI assistant with access to tools.
@@ -78,6 +85,7 @@ Guidelines:
 ```
 
 ### Gaps
+
 - **No persona definition** - no name, personality, or communication style
 - **No guardrails** - nothing about what the agent should refuse, cost-awareness in responses, or safety boundaries
 - **No goal framing** - the prompt doesn't tell the model WHY it exists or what success looks like
@@ -85,11 +93,13 @@ Guidelines:
 - **Static prompt** - no dynamic injection of user preferences from memory
 
 ### Now implemented (2026-05-07)
+
 - ~~No persona~~ → `build_persona_prompt` + `<assistant_profile>` in [`backend/app/agent/orchestrator.py`](backend/app/agent/orchestrator.py) (see `build_persona_prompt` import; fiscal block ~248–255).
 - ~~No guardrails in prompt~~ → Data-only `<retrieved_context>`, profile safety line, `<fiscal_context>` when budget known (same file; modularized to `backend/app/agent/prompts/` in follow-up).
 - ~~No goal framing~~ → Plan step + `ExecutionState.goal` / `done_when` + `<progress_checkpoint>` (`_format_progress_checkpoint`, `_compose_system_with_progress`).
 
 ### Actions (Priority: HIGH)
+
 1. Create `backend/app/agent/prompts/system_prompt.py` with a structured prompt builder:
    - Base persona + role definition
    - Dynamic context injection (user preferences, memory)
@@ -104,12 +114,14 @@ Guidelines:
 ## Pillar 3: Choose LLM
 
 ### What the framework asks for
+
 - Base model selection
 - Parameters (temp, top-p)
 - Context window management
 - Cost/latency optimization
 
 ### What you have
+
 - **ModelRouter** with 8 tiers: free -> simple -> balanced -> coding -> research -> advanced -> premium -> agent
 - **Complexity-based classification** using keyword matching
 - **Fallback chains** for model failures
@@ -117,18 +129,21 @@ Guidelines:
 - **Context window management** - auto-compaction at 75%, sliding summarization
 
 ### Gaps
+
 - **No parameter tuning** - temperature and top-p aren't configurable per tier or task type
 - **Keyword-based classification is brittle** - "write a function" routes to coding, but "help me think through this architecture" might miss "complex"
 - **No A/B testing** - can't compare model quality across routing decisions
 - **No latency tracking per model** - you track cost but not speed
 
 ### Now implemented (2026-05-07)
+
 - ~~No per-tier sampling~~ → `ModelRouter.sampling_params_for_model` + orchestrator injection for ReAct calls ([`backend/app/agent/router.py`](backend/app/agent/router.py), orchestrator).
 - ~~No latency tracking~~ → `_record_latency_metric` in [`backend/app/routes/agent.py`](backend/app/routes/agent.py); persisted for analysis.
 - **A/B testing** → [`backend/app/agent/ab_testing.py`](backend/app/agent/ab_testing.py) exists (wiring optional).
 - **Optional** → LLM classifier + `/agent/model-stats` remain nice-to-haves.
 
 ### Actions
+
 1. Add `temperature` and `top_p` to each model tier config in `router.py`
 2. Consider an LLM-based classifier as a lightweight pre-pass (use free model to classify, then route)
 3. Log latency per model per request in the cost_tracking table
@@ -139,6 +154,7 @@ Guidelines:
 ## Pillar 4: Tools & Integrations
 
 ### What the framework asks for
+
 - Simple (local) tools
 - API integrations (web, apps, data)
 - MCP server support
@@ -146,12 +162,14 @@ Guidelines:
 - Custom functions
 
 ### What you have
+
 - **ToolRegistry** with 6 built-in tools: web_search, browser_automation, file_operations, code_execution, api_call, search_documents
 - **Parallel tool execution** in the ReAct loop
 - **Tool schema generation** for LLM function calling
 - Placeholder implementations (several tools log "not yet implemented")
 
 ### Gaps
+
 - **MCP server integration** - mentioned in docs ("Extensible via MCP") but no actual implementation
 - **Agent-as-a-tool** - no sub-agent invocation pattern
 - **Several tools are stubs** - browser_automation returns placeholder, code_execution needs E2B key
@@ -159,12 +177,14 @@ Guidelines:
 - **No tool versioning or capability registry**
 
 ### Now implemented (2026-05-07)
+
 - ~~No MCP~~ → HTTP JSON-RPC [`backend/app/tools/mcp_client.py`](backend/app/tools/mcp_client.py); SSE hub [`backend/app/tools/mcp_hub.py`](backend/app/tools/mcp_hub.py); `load_mcp_tools()` at startup ([`backend/app/main.py`](backend/app/main.py)).
 - ~~No sub-agent~~ → `delegate_sub_agent` on tool registry + [`backend/app/agent/sub_agent.py`](backend/app/agent/sub_agent.py).
 - ~~No health endpoint~~ → `GET /agent/tools/health`.
 - **Still partial** → browser/E2B in prod, stdio MCP (follow-up), tool versioning registry.
 
 ### Actions (Priority: HIGH)
+
 1. Implement real tool functions - at minimum: web_search (Tavily), code_execution (E2B or local sandbox)
 2. Add MCP client in `backend/app/tools/mcp_client.py` - connect to external MCP servers
 3. Create `backend/app/agent/sub_agent.py` - allow orchestrator to spawn sub-agents as tools
@@ -176,6 +196,7 @@ Guidelines:
 ## Pillar 5: Memory Systems
 
 ### What the framework asks for
+
 - Episodic memory (conversation-level)
 - Working memory (within-session)
 - Vector database
@@ -183,6 +204,7 @@ Guidelines:
 - File storage
 
 ### What you have
+
 - **pgvector semantic search** with 1536-dim embeddings (text-embedding-3-small)
 - **Full-text search fallback** when no OpenAI key
 - **Memory categories:** context, preference, fact, pattern
@@ -191,6 +213,7 @@ Guidelines:
 - **Document storage** with semantic search (doc_context_for_query)
 
 ### Gaps
+
 - **No true episodic memory** - conversations are stored but not indexed by session/episode with temporal context (when did this happen, what was the broader context)
 - **No working memory** - within a single session, there's no scratchpad for intermediate reasoning state that persists across tool calls
 - **No memory decay/pruning** - memories accumulate forever; no relevance decay over time
@@ -198,12 +221,14 @@ Guidelines:
 - **File storage** - documents can be uploaded but there's no structured file management
 
 ### Now implemented (2026-05-07)
+
 - ~~No temporal queries~~ → `GET /memory/range` + `search_by_time_range` ([`backend/app/agent/memory.py`](backend/app/agent/memory.py), routes).
 - ~~No working memory~~ → `ExecutionState.working_memory` in orchestrator (ReAct trace across iterations).
 - ~~No consolidation~~ → Weekly dedupe/consolidation when enabled in pillar config ([`REMAINING_WORK_CHECKLIST.md`](REMAINING_WORK_CHECKLIST.md)).
 - **Still partial** → semantic-merge consolidation, richer file management.
 
 ### Actions
+
 1. Add `session_id` and `timestamp_range` to memory table - enable temporal queries ("what did we discuss last week")
 2. Create a working memory scratchpad in `ExecutionState` that persists across iterations within a single run
 3. Implement memory decay: reduce `relevance_score` over time, prune low-relevance memories monthly
@@ -215,6 +240,7 @@ Guidelines:
 ## Pillar 6: Orchestration
 
 ### What the framework asks for
+
 - Routes/workflows
 - Triggers (scheduled, event-driven)
 - Parameters
@@ -223,6 +249,7 @@ Guidelines:
 - Error handling
 
 ### What you have
+
 - **ReAct loop** with plan-then-execute for complex queries
 - **Parallel tool execution** with asyncio.gather
 - **Fallback chains** - model failures cascade through alternatives
@@ -231,13 +258,15 @@ Guidelines:
 - **Conversation compaction** - auto-summarize when context window fills
 
 ### Gaps
+
 - **No triggers** - everything is user-initiated; no scheduled tasks, no cron-like runs
 - **No message queues** - tasks execute synchronously or stream; no deferred execution
 - **No Agent2Agent** - can't delegate sub-tasks to specialized agents
 - **No workflow definitions** - no way to define multi-step workflows declaratively
 - **Error handling is basic** - fallback chain for model errors, but no retry with exponential backoff, no dead-letter queue
 
-### Now implemented (2026-05-07)
+### Now implemented - Orchestration (2026-05-07)
+
 - ~~No deferred execution~~ → `POST /agent/enqueue` + in-process worker ([`backend/app/agent/orchestration_runtime.py`](backend/app/agent/orchestration_runtime.py)).
 - ~~No queue~~ → Optional Redis-backed queue when configured + `REDIS_URL`.
 - ~~No Agent2Agent~~ → Sub-agent / `delegate_sub_agent`.
@@ -245,6 +274,7 @@ Guidelines:
 - **Still partial** → User-defined cron API (follow-up), workflow YAML DSL, Celery/RQ for multi-process.
 
 ### Actions
+
 1. Add `backend/app/scheduler/` with APScheduler or Celery Beat for scheduled tasks
 2. Create workflow DSL in `backend/app/agent/workflows.py` - define multi-step pipelines as YAML/JSON
 3. Implement Agent2Agent via the sub-agent pattern (Pillar 4 action #3)
@@ -256,28 +286,33 @@ Guidelines:
 ## Pillar 7: User Interface
 
 ### What the framework asks for
+
 - Chat interface
 - Web app
 - API endpoint
 - Slack/Discord bot
 
 ### What you have
+
 - **Web dashboard** - Next.js 15 with dark/light mode, real-time streaming, cost tracking, history, settings, documents, commands pages
 - **API endpoints** - FastAPI with /agent/run, /agent/stream, /agent/tools, /agent/models, full Swagger docs
 - **Telegram bot** - /ask, /code, /analyze, /history, /status, /help commands with real-time processing
 - **SSE streaming** - token-by-token response display
 
 ### Gaps
+
 - **No Slack/Discord bot** - slot is identified but not built
 - **Frontend is partially skeleton** - some components need implementation (AgentExecutor, CostTracker detail views)
 - **No mobile-native app** - web is responsive but no PWA or native app
 - **No feedback mechanism** - no thumbs up/down or rating on responses
 
 ### Now implemented (2026-05-07)
+
 - ~~No feedback~~ → `submitTaskFeedback` + thumbs in [`frontend/components/AgentExecutor.tsx`](frontend/components/AgentExecutor.tsx) and [`frontend/components/TaskHistory.tsx`](frontend/components/TaskHistory.tsx); API `POST /history/{task_id}/feedback`.
 - **Still partial** → Slack/Discord, PWA manifest (follow-up).
 
 ### Actions
+
 1. Add user feedback collection: thumbs up/down + optional text on each response
 2. Store feedback in a `response_feedback` table for quality tracking (feeds Pillar 8)
 3. Consider PWA manifest for mobile - low effort, high value
@@ -288,18 +323,21 @@ Guidelines:
 ## Pillar 8: Testing & Evals
 
 ### What the framework asks for
+
 - Unit tests
 - Latency testing
 - Quality metrics
 - Iterate & improve loop
 
 ### What you have
+
 - **Deployment checklist** - manual verification steps
 - **Health check endpoint** - `/health`
 - **Basic logging** - structured Python logging
 - Screenshot shows "Running 5 tests using 2 workers - 5 passed (16.3s)"
 
 ### Gaps (CRITICAL - weakest pillar)
+
 - **No test suite** - no pytest tests for orchestrator, router, memory, tools
 - **No latency benchmarks** - no p50/p95/p99 response time tracking
 - **No quality metrics** - no way to measure if responses are good
@@ -308,6 +346,7 @@ Guidelines:
 - **No CI/CD integration** - no GitHub Actions running tests on push
 
 ### Now implemented (2026-05-07)
+
 - ~~No test suite~~ → [`backend/tests/`](backend/tests/) (router, memory, tools, orchestrator, etc.).
 - ~~No CI~~ → [`.github/workflows/ci.yml`](.github/workflows/ci.yml) with pytest + `--cov-fail-under`.
 - ~~No latency~~ → `_record_latency_metric` in [`backend/app/routes/agent.py`](backend/app/routes/agent.py).
@@ -316,6 +355,7 @@ Guidelines:
 - **Still partial** → Grafana-style SLO dashboards, eval merge gate strictness, expanded case library.
 
 ### Actions (Priority: CRITICAL)
+
 1. Create `backend/tests/` with pytest:
    - `test_router.py` - verify query classification maps to correct model tiers
    - `test_memory.py` - verify save/search/context_for_query
@@ -343,6 +383,7 @@ Guidelines:
 <summary>Original roadmap (historical)</summary>
 
 ### Phase 1 - Foundation (Week 1-2)
+
 | Action | Pillar | Effort | Impact |
 |--------|--------|--------|--------|
 | Create pytest test suite | 8 | 4-6 hrs | Critical |
@@ -351,6 +392,7 @@ Guidelines:
 | Add latency + quality tracking | 8 | 3-4 hrs | High |
 
 ### Phase 2 - Memory & Orchestration (Week 3-4)
+
 | Action | Pillar | Effort | Impact |
 |--------|--------|--------|--------|
 | Add episodic memory + working memory | 5 | 4-6 hrs | High |
@@ -359,6 +401,7 @@ Guidelines:
 | User feedback collection | 7 | 2-3 hrs | Medium |
 
 ### Phase 3 - Advanced (Week 5-8)
+
 | Action | Pillar | Effort | Impact |
 |--------|--------|--------|--------|
 | MCP client integration | 4 | 4-6 hrs | Medium |

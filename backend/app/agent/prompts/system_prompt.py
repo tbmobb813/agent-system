@@ -27,6 +27,7 @@ def build_system_prompt(
     budget_remaining: Optional[float] = None,
     monthly_budget_usd: Optional[float] = None,
     tool_names: Optional[list[str]] = None,
+    user_model: Optional[str] = None,
 ) -> str:
     """Build the static + injected system prompt."""
     system = BASE_SYSTEM_PROMPT
@@ -39,6 +40,9 @@ def build_system_prompt(
     system += guardrails.capabilities_section(tool_names or [])
 
     system += guardrails.assistant_profile_section(persona_prompt or "")
+
+    if user_model:
+        system += guardrails.user_model_section(user_model)
 
     if retrieved_context:
         system += guardrails.retrieved_context_section(retrieved_context)
