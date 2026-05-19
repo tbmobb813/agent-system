@@ -3,24 +3,44 @@
 import { useEffect, useRef, useState, useCallback, type KeyboardEvent } from 'react'
 import dynamic from 'next/dynamic'
 import { useHistory } from '@/lib/hooks'
-import { deleteTask, getTaskDetail, submitTaskFeedback, listProjects, assignTaskToProject, removeTaskFromProject, type Project } from '@/lib/api'
+import { deleteTask, getTaskDetail, getConversationMessages, submitTaskFeedback, listProjects, assignTaskToProject, removeTaskFromProject, type Project } from '@/lib/api'
 import { formatCost, formatDate } from '@/lib/utils'
 import { exportElementToPdf } from '@/lib/pdf'
 
 const MarkdownContent = dynamic(() => import('./MarkdownContent'), { ssr: false })
 
-type Task = {
-  id: string
-  query: string
+// A thread groups multiple task rows that share a conversation_id.
+// A standalone task has no conversation_id — shown as a single row.
+type HistoryEntry = {
+  entry_type: 'thread' | 'task'
+  // thread fields
+  conversation_id?: string | null
+  message_count: number
+  total_cost: number
+  updated_at: string
+  // shared
+  id?: string | null       // only set for standalone tasks
+  query: string            // first_query for threads, query for tasks
   status: string
   created_at: string
-  cost: number
   model_used: string | null
   feedback_signal?: string | null
 }
 
+type ThreadMessage = {
+  id: string
+  query: string
+  status: string
+  result: string | null
+  created_at: string
+  execution_time: number | null
+  cost: number
+  model_used: string | null
+  feedback_signal: string | null
+}
+
 type TaskDetail = {
-  task: Task & { result: string | null; execution_time: number | null }
+  task: ThreadMessage
   steps: unknown[]
   feedback?: {
     signal: 'up' | 'down'
@@ -371,6 +391,65 @@ function TaskDetailPanel({ taskId, onClose, onFeedbackSaved }: { taskId: string;
   )
 }
 
+function ThreadPanel({ conversationId, onClose }: { conversationId: string; onClose: () => void }) {
+  const [messages, setMessages] = useState<ThreadMessage[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    getConversationMessages(conversationId)
+      .then(data => { if (!cancelled) setMessages(data.messages) })
+      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [conversationId])
+
+  return (
+    <div className="mt-3 border-t border-[color:var(--border)] pt-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted">{messages.length} message{messages.length !== 1 ? 's' : ''} in this thread</span>
+        <button type="button" onClick={onClose} className="btn-ghost px-2 py-1 rounded text-xs text-muted">Collapse</button>
+      </div>
+
+      {loading && <p className="text-muted text-xs">Loading thread…</p>}
+      {error && <p className="text-[color:var(--danger)] text-xs">{error}</p>}
+
+      {messages.map((msg, i) => (
+        <div key={msg.id} className="border border-[color:var(--border)] rounded-lg overflow-hidden">
+          <div
+            role="button"
+            tabIndex={0}
+            className="flex items-start gap-3 px-3 py-2.5 cursor-pointer hover:bg-[color:var(--surface-soft)] transition-colors"
+            onClick={() => setExpanded(p => p === msg.id ? null : msg.id)}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(p => p === msg.id ? null : msg.id) } }}
+            aria-expanded={expanded === msg.id}
+          >
+            <span className="text-[10px] text-muted shrink-0 pt-0.5 w-4 text-center">{i + 1}</span>
+            <span className="flex-1 text-sm truncate">{msg.query}</span>
+            <span className="shrink-0 flex items-center gap-2">
+              <StatusBadge status={msg.status} />
+              <span className="text-xs text-muted">{formatCost(msg.cost)}</span>
+              <span className="text-xs text-muted">{formatDate(msg.created_at)}</span>
+            </span>
+          </div>
+          {expanded === msg.id && msg.result && (
+            <div className="border-t border-[color:var(--border)] px-3 py-3 text-sm bg-[color:var(--bg-elev)] leading-relaxed">
+              <MarkdownContent content={msg.result} />
+            </div>
+          )}
+          {expanded === msg.id && !msg.result && (
+            <p className="border-t border-[color:var(--border)] px-3 py-2 text-xs text-muted italic">No result stored.</p>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 const PAGE_SIZE = 15
 
 export default function TaskHistory() {
@@ -458,14 +537,14 @@ export default function TaskHistory() {
           <p className="dr-history-summary">
             {activeSearch
               ? `${data.total} result${data.total !== 1 ? 's' : ''} for "${activeSearch}"`
-              : `${data.total} runs`}
+              : `${data.total} conversation${data.total !== 1 ? 's' : ''}`}
             {data.total > PAGE_SIZE && ` · showing ${offset + 1}–${Math.min(offset + PAGE_SIZE, data.total)}`}
           </p>
 
           <div>
             <div className="dr-history-head-row">
               <span>Status</span>
-              <span>Query</span>
+              <span>Thread / Query</span>
               <span>Model</span>
               <span className="dr-align-right">Time</span>
               <span className="dr-align-right">Cost</span>
@@ -477,65 +556,90 @@ export default function TaskHistory() {
               </div>
             )}
 
-            {(Array.isArray(data.tasks) ? data.tasks as Task[] : []).map((task) => (
-              <div key={task.id}>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  aria-label={expanded === task.id ? `Collapse task: ${task.query}` : `Expand task: ${task.query}`}
-                  className="dr-history-data-row"
-                  onClick={() => toggleExpand(task.id)}
-                  onKeyDown={e => rowKeyToggle(e, task.id)}
-                >
-                  <span className="dr-inline-status">
-                    <StatusBadge status={task.status} />
-                    {task.feedback_signal && <FeedbackHint signal={task.feedback_signal} />}
-                  </span>
-                  <span className="dr-row-query" title={task.query}>{task.query}</span>
-                  <code className="dr-code dr-code-start" title={task.model_used ?? ''}>{(task.model_used ?? 'unknown').split('/').pop()}</code>
-                  <span className="dr-row-time">{formatDate(task.created_at)}</span>
-                  <span className="dr-row-cost">{formatCost(task.cost)}</span>
-                  <div className="relative flex items-center gap-1.5" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      onClick={() => { setPickerOpen(p => p === task.id ? null : task.id) }}
-                      className="text-xs text-muted hover:text-[color:var(--accent)] transition-colors"
-                      aria-label="Add to project"
-                      title="Add to project"
-                    >
-                      📁
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(task.id)}
-                      disabled={deleting === task.id}
-                      className="text-xs text-muted hover:text-[color:var(--danger)] transition-colors disabled:opacity-50"
-                      aria-label="Delete task"
-                      title="Delete task"
-                    >
-                      {deleting === task.id ? '…' : '✕'}
-                    </button>
-                    {pickerOpen === task.id && (
-                      <ProjectPicker
-                        taskId={task.id}
-                        projects={projects}
-                        currentProjectId={taskProjects[task.id] ?? null}
-                        onAssigned={pid => setTaskProjects(prev => ({ ...prev, [task.id]: pid }))}
-                        onClose={() => setPickerOpen(null)}
-                      />
-                    )}
-                  </div>
-                </div>
+            {(Array.isArray(data.tasks) ? data.tasks as HistoryEntry[] : []).map((entry) => {
+              const isThread = entry.entry_type === 'thread'
+              // Threads are keyed by conversation_id, standalone tasks by id
+              const rowKey = isThread ? entry.conversation_id! : entry.id!
+              const isExpanded = expanded === rowKey
+              const displayQuery = entry.query
 
-                {expanded === task.id && (
-                  <TaskDetailPanel
-                    taskId={task.id}
-                    onClose={() => setExpanded(null)}
-                    onFeedbackSaved={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)}
-                  />
-                )}
-              </div>
-            ))}
+              return (
+                <div key={rowKey}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label={isExpanded ? `Collapse: ${displayQuery}` : `Expand: ${displayQuery}`}
+                    className="dr-history-data-row"
+                    onClick={() => toggleExpand(rowKey)}
+                    onKeyDown={e => rowKeyToggle(e, rowKey)}
+                  >
+                    <span className="dr-inline-status">
+                      <StatusBadge status={entry.status} />
+                      {!isThread && entry.feedback_signal && <FeedbackHint signal={entry.feedback_signal} />}
+                    </span>
+                    <span className="dr-row-query flex items-center gap-2" title={displayQuery}>
+                      {isThread && (
+                        <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full border border-[color:var(--accent)]/40 bg-[color:var(--accent)]/10 text-[color:var(--accent)] font-medium">
+                          💬 {entry.message_count}
+                        </span>
+                      )}
+                      <span className="truncate">{displayQuery}</span>
+                    </span>
+                    <code className="dr-code dr-code-start" title={entry.model_used ?? ''}>{(entry.model_used ?? 'unknown').split('/').pop()}</code>
+                    <span className="dr-row-time">{formatDate(isThread ? entry.updated_at : entry.created_at)}</span>
+                    <span className="dr-row-cost">{formatCost(entry.total_cost)}</span>
+                    <div className="relative flex items-center gap-1.5" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+                      {!isThread && entry.id && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => { setPickerOpen(p => p === entry.id ? null : entry.id!) }}
+                            className="text-xs text-muted hover:text-[color:var(--accent)] transition-colors"
+                            aria-label="Add to project"
+                            title="Add to project"
+                          >
+                            📁
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(entry.id!)}
+                            disabled={deleting === entry.id}
+                            className="text-xs text-muted hover:text-[color:var(--danger)] transition-colors disabled:opacity-50"
+                            aria-label="Delete task"
+                            title="Delete task"
+                          >
+                            {deleting === entry.id ? '…' : '✕'}
+                          </button>
+                          {pickerOpen === entry.id && (
+                            <ProjectPicker
+                              taskId={entry.id}
+                              projects={projects}
+                              currentProjectId={taskProjects[entry.id] ?? null}
+                              onAssigned={pid => setTaskProjects(prev => ({ ...prev, [entry.id!]: pid }))}
+                              onClose={() => setPickerOpen(null)}
+                            />
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {isExpanded && isThread && entry.conversation_id && (
+                    <ThreadPanel
+                      conversationId={entry.conversation_id}
+                      onClose={() => setExpanded(null)}
+                    />
+                  )}
+                  {isExpanded && !isThread && entry.id && (
+                    <TaskDetailPanel
+                      taskId={entry.id}
+                      onClose={() => setExpanded(null)}
+                      onFeedbackSaved={() => refresh(PAGE_SIZE, offset, activeSearch || undefined)}
+                    />
+                  )}
+                </div>
+              )
+            })}
           </div>
 
           {data.total > PAGE_SIZE && (

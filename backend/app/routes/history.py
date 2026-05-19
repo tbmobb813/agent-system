@@ -32,24 +32,34 @@ async def get_history(
     q: Optional[str] = Query(None, max_length=500),
     api_key: str = Depends(verify_api_key),
 ):
-    """Get paginated execution history, optionally filtered by search query."""
+    """
+    Paginated history grouped by conversation thread.
+
+    Each entry is either:
+      - type "thread": multiple tasks sharing a conversation_id, shown as one row
+      - type "task": a standalone task with no conversation_id
+    Search falls back to a flat per-task view so individual messages are findable.
+    """
     if q and q.strip():
+        # Search: flat per-task results so every matching message is surfaced
         pattern = f"%{q.strip()}%"
-        tasks = await fetch(
+        rows = await fetch(
             """
             SELECT
-                t.id,
+                'task'          AS entry_type,
+                t.id::text      AS id,
+                t.conversation_id,
                 t.query,
-                t.status,
+                1               AS message_count,
+                COALESCE(t.cost, 0) AS total_cost,
                 t.created_at,
-                t.cost,
+                t.created_at    AS updated_at,
+                t.status,
                 t.model_used,
                 (
-                    SELECT tf.signal
-                    FROM task_feedback tf
+                    SELECT tf.signal FROM task_feedback tf
                     WHERE tf.task_id = t.id
-                    ORDER BY tf.created_at DESC
-                    LIMIT 1
+                    ORDER BY tf.created_at DESC LIMIT 1
                 ) AS feedback_signal
             FROM tasks t
             WHERE t.query ILIKE $3 OR t.result ILIKE $3
@@ -64,37 +74,128 @@ async def get_history(
             "SELECT COUNT(*) FROM tasks WHERE query ILIKE $1 OR result ILIKE $1",
             pattern,
         )
-    else:
-        tasks = await fetch(
-            """
+        return {
+            "tasks": [dict(r) for r in rows],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    # Default: group threads, mix with standalone tasks
+    rows = await fetch(
+        """
+        WITH thread_agg AS (
             SELECT
-                t.id,
-                t.query,
-                t.status,
-                t.created_at,
-                t.cost,
-                t.model_used,
+                conversation_id,
+                (array_agg(id::text   ORDER BY created_at ASC))[1]  AS first_id,
+                (array_agg(query      ORDER BY created_at ASC))[1]  AS first_query,
+                COUNT(*)::int                                         AS message_count,
+                COALESCE(SUM(cost), 0)                               AS total_cost,
+                MIN(created_at)                                       AS created_at,
+                MAX(created_at)                                       AS updated_at,
+                (array_agg(status     ORDER BY created_at DESC))[1] AS latest_status,
+                (array_agg(model_used ORDER BY created_at DESC))[1] AS model_used
+            FROM tasks
+            WHERE conversation_id IS NOT NULL
+            GROUP BY conversation_id
+        ),
+        standalone AS (
+            SELECT
+                id::text        AS id,
+                query,
+                COALESCE(cost, 0) AS cost,
+                created_at,
+                status,
+                model_used,
                 (
-                    SELECT tf.signal
-                    FROM task_feedback tf
-                    WHERE tf.task_id = t.id
-                    ORDER BY tf.created_at DESC
-                    LIMIT 1
+                    SELECT tf.signal FROM task_feedback tf
+                    WHERE tf.task_id = tasks.id
+                    ORDER BY tf.created_at DESC LIMIT 1
                 ) AS feedback_signal
-            FROM tasks t
-            ORDER BY t.created_at DESC
-            LIMIT $1 OFFSET $2
-            """,
-            limit,
-            offset,
+            FROM tasks
+            WHERE conversation_id IS NULL
+        ),
+        combined AS (
+            SELECT
+                'thread'            AS entry_type,
+                NULL                AS id,
+                ta.conversation_id,
+                ta.first_query      AS query,
+                ta.message_count,
+                ta.total_cost,
+                ta.created_at,
+                ta.updated_at,
+                ta.latest_status    AS status,
+                ta.model_used,
+                NULL                AS feedback_signal
+            FROM thread_agg ta
+
+            UNION ALL
+
+            SELECT
+                'task'              AS entry_type,
+                s.id,
+                NULL                AS conversation_id,
+                s.query,
+                1                   AS message_count,
+                s.cost              AS total_cost,
+                s.created_at,
+                s.created_at        AS updated_at,
+                s.status,
+                s.model_used,
+                s.feedback_signal
+            FROM standalone s
         )
-        total = await fetchval("SELECT COUNT(*) FROM tasks")
+        SELECT * FROM combined
+        ORDER BY updated_at DESC
+        LIMIT $1 OFFSET $2
+        """,
+        limit,
+        offset,
+    )
+    total = await fetchval("""
+        SELECT (
+            (SELECT COUNT(DISTINCT conversation_id) FROM tasks WHERE conversation_id IS NOT NULL)
+            + (SELECT COUNT(*) FROM tasks WHERE conversation_id IS NULL)
+        )
+        """)
     return {
-        "tasks": [dict(t) for t in tasks],
+        "tasks": [dict(r) for r in rows],
         "total": total,
         "limit": limit,
         "offset": offset,
     }
+
+
+@router.get("/conversations/{conversation_id}")
+async def get_conversation_thread(
+    conversation_id: str, api_key: str = Depends(verify_api_key)
+):
+    """Return all tasks in a conversation thread, oldest first."""
+    rows = await fetch(
+        """
+        SELECT
+            t.id,
+            t.query,
+            t.status,
+            t.result,
+            t.created_at,
+            t.completed_at,
+            t.execution_time,
+            t.cost,
+            t.model_used,
+            (
+                SELECT tf.signal FROM task_feedback tf
+                WHERE tf.task_id = t.id
+                ORDER BY tf.created_at DESC LIMIT 1
+            ) AS feedback_signal
+        FROM tasks t
+        WHERE t.conversation_id = $1
+        ORDER BY t.created_at ASC
+        """,
+        conversation_id,
+    )
+    return {"conversation_id": conversation_id, "messages": [dict(r) for r in rows]}
 
 
 @router.get("/{task_id}")
