@@ -210,6 +210,15 @@ tools:
         command: "npx"
         args: ["-y", "@notionhq/notion-mcp-server"]
         # NOTION_API_KEY is inherited from the process environment (set in .env)
+
+      # GitHub — search repos, read files, manage issues and PRs
+      # Requires: GITHUB_TOKEN in .env (personal access token with repo scope)
+      # Create at: https://github.com/settings/tokens
+      - name: "github"
+        transport: stdio
+        command: "npx"
+        args: ["-y", "@modelcontextprotocol/server-github"]
+        # GITHUB_TOKEN is inherited from the process environment (set in .env)
   
   agent_as_tool:
     enabled: true   # SubAgentRunner + run_sub_agent; enable in pillars when exposed as LLM-callable tool
