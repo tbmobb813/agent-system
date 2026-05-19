@@ -29,8 +29,9 @@ def _resolved_path_under_repo_roots(resolved: Path) -> bool:
 
 
 _FILE_ORDER = [
-    ("operations", "operations.md"),
     ("soul", "soul.md"),
+    ("projects", "projects.md"),
+    ("operations", "operations.md"),
     ("style", "style.md"),
     ("skill", "skill.md"),
     ("memory", "memory.md"),

@@ -421,7 +421,7 @@ class AgentOrchestrator:
             if task_id in self._cancelled_tasks:
                 raise asyncio.CancelledError()
 
-            agent_model = self.router.select_for_run(
+            agent_model = await self.router.select_for_run_async(
                 query,
                 has_tools=bool(tool_schemas),
                 budget_remaining=budget_remaining,

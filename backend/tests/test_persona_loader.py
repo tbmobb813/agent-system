@@ -19,8 +19,9 @@ def test_build_persona_prompt_returns_empty_when_disabled(tmp_path):
 def test_build_persona_prompt_loads_existing_files_in_expected_order(tmp_path):
     persona_dir = tmp_path / "persona"
     persona_dir.mkdir()
-    (persona_dir / "operations.md").write_text("Ops", encoding="utf-8")
     (persona_dir / "soul.md").write_text("Soul", encoding="utf-8")
+    (persona_dir / "projects.md").write_text("Projects", encoding="utf-8")
+    (persona_dir / "operations.md").write_text("Ops", encoding="utf-8")
     (persona_dir / "style.md").write_text("Style", encoding="utf-8")
     (persona_dir / "skill.md").write_text("Skill", encoding="utf-8")
     (persona_dir / "memory.md").write_text("Memory", encoding="utf-8")
@@ -33,8 +34,9 @@ def test_build_persona_prompt_loads_existing_files_in_expected_order(tmp_path):
     )
 
     expected = (
-        "<operations>\nOps\n</operations>\n\n"
         "<soul>\nSoul\n</soul>\n\n"
+        "<projects>\nProjects\n</projects>\n\n"
+        "<operations>\nOps\n</operations>\n\n"
         "<style>\nStyle\n</style>\n\n"
         "<skill>\nSkill\n</skill>\n\n"
         "<memory>\nMemory\n</memory>"

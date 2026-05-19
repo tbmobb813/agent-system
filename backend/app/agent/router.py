@@ -669,15 +669,83 @@ class ModelRouter:
             return False
         return self.is_complex(query)
 
+    async def _classify_async(self, query: str) -> str:
+        """Classify via LLM when enabled in agent_pillars.yaml, else keyword classifier."""
+        if self.complexity_mode() == "llm_classifier" and settings.OPENROUTER_API_KEY:
+            return await self._classify_query_llm(query)
+        return self._classify(query)
+
+    async def select_for_run_async(
+        self,
+        query: str,
+        has_tools: bool = False,
+        budget_remaining: float = 30.0,
+    ) -> str:
+        """
+        Async version of select_for_run — uses the LLM classifier when enabled.
+        Orchestrator should call this instead of select_for_run.
+        """
+        if budget_remaining < 2.0:
+            logger.warning(
+                f"Budget critical (${budget_remaining:.2f}) — forcing free model"
+            )
+            return self.MODELS["free"]["model"]
+
+        query_type = await self._classify_async(query)
+
+        if not has_tools:
+            if budget_remaining < 8.0:
+                return self.MODELS["simple"]["model"]
+            tier_map = {
+                "conversational": "free",
+                "simple": "simple",
+                "balanced": "balanced",
+                "coding": "coding",
+                "writing": "advanced",
+                "research": "research",
+                "complex": "advanced",
+                "premium": "premium",
+            }
+            tier = tier_map.get(query_type, "balanced")
+            model = self.MODELS[tier]["model"]
+            alternatives = [
+                m["model"] for m in self.MODELS.values() if m["model"] != model
+            ]
+            model = cost_learning.suggest_model(model, alternatives)
+            logger.info(f"Routing → {tier} ({model}) for query type: {query_type}")
+            return model
+
+        # Tool run — same logic as select_for_run but with async classification.
+        tier_map = {
+            "conversational": "agent",
+            "simple": "agent",
+            "balanced": "agent",
+            "coding": "agent",
+            "writing": "advanced",
+            "research": "research",
+            "complex": "advanced",
+            "premium": "premium",
+        }
+        tier = tier_map.get(query_type, "agent")
+        if budget_remaining < 8.0 and tier == "premium":
+            tier = "advanced"
+        if tier not in self._TOOL_SAFE_TIERS:
+            logger.warning("Tier '%s' is not tool-safe; falling back to agent", tier)
+            tier = "agent"
+        model = self.MODELS[tier]["model"]
+        logger.info(
+            f"Tool-run routing → {tier} ({model}) for query type: {query_type}, "
+            f"budget_remaining=${budget_remaining:.2f}"
+        )
+        return model
+
     async def should_plan_async(
         self, query: str, has_tools: bool, has_history: bool = False
     ) -> bool:
         if not has_tools or has_history:
             return False
-        if self.complexity_mode() == "llm_classifier" and settings.OPENROUTER_API_KEY:
-            qt = await self._classify_query_llm(query)
-            return qt in ("complex", "research")
-        return self.is_complex(query)
+        qt = await self._classify_async(query)
+        return qt in ("complex", "research")
 
     def is_worth_remembering(self, query: str) -> bool:
         """Return True if the query is substantive enough to warrant memory extraction.
