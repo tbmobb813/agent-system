@@ -53,9 +53,18 @@ def _score_tool_result(name: str, result: str, err: Optional[str]) -> float:
         return 0.1
     lower = text.lower()
     _FAILURE_PHRASES = (
-        "no results", "not found", "0 results", "nothing found",
-        "error:", "failed:", "could not", "unable to", "no matches",
-        "no data", "empty response", "no information",
+        "no results",
+        "not found",
+        "0 results",
+        "nothing found",
+        "error:",
+        "failed:",
+        "could not",
+        "unable to",
+        "no matches",
+        "no data",
+        "empty response",
+        "no information",
     )
     if any(p in lower for p in _FAILURE_PHRASES):
         return 0.25
@@ -290,6 +299,7 @@ class AgentOrchestrator:
         max_iterations: int = 10,
         conversation_id: Optional[str] = None,
         reasoning_effort: Optional[str] = None,
+        images: Optional[list[str]] = None,
     ) -> tuple[str, Optional[str]]:
         """Execute agent synchronously. Returns (result, conversation_id)."""
         task_id = str(uuid.uuid4())
@@ -304,6 +314,7 @@ class AgentOrchestrator:
             task_id=task_id,
             conversation_id=conversation_id,
             reasoning_effort=reasoning_effort,
+            images=images,
         ):
             if event.type == EventType.TEXT_DELTA:
                 result += event.content or ""
@@ -321,6 +332,7 @@ class AgentOrchestrator:
         task_id: Optional[str] = None,
         conversation_id: Optional[str] = None,
         reasoning_effort: Optional[str] = None,
+        images: Optional[list[str]] = None,
     ) -> AsyncIterator[ExecutionEvent]:
         """
         ReAct loop — stream events as the agent reasons and acts.
@@ -409,7 +421,7 @@ class AgentOrchestrator:
             if task_id in self._cancelled_tasks:
                 raise asyncio.CancelledError()
 
-            agent_model = self.router.select_for_run(
+            agent_model = await self.router.select_for_run_async(
                 query,
                 has_tools=bool(tool_schemas),
                 budget_remaining=budget_remaining,
@@ -594,9 +606,17 @@ class AgentOrchestrator:
             messages = [{"role": "system", "content": system_base}]
             _dynamic_context: list[str] = []  # warnings accumulate here
             messages.extend(history)
-            user_content = (
+            user_text = (
                 f"[Plan]\n{plan_prefix}\n\n[Task]\n{query}" if plan_prefix else query
             )
+            if images:
+                user_content: Any = [{"type": "text", "text": user_text}]
+                for img_url in images[:4]:
+                    user_content.append(
+                        {"type": "image_url", "image_url": {"url": img_url}}
+                    )
+            else:
+                user_content = user_text
             messages.append({"role": "user", "content": user_content})
 
             if history:
@@ -647,8 +667,10 @@ class AgentOrchestrator:
                 if not _permanently_disabled_tools:
                     return tool_schemas
                 return [
-                    s for s in tool_schemas
-                    if s.get("function", {}).get("name") not in _permanently_disabled_tools
+                    s
+                    for s in tool_schemas
+                    if s.get("function", {}).get("name")
+                    not in _permanently_disabled_tools
                 ]
 
             # ── #4 Tool quality tracking — consecutive low-score counter per tool ─
@@ -1210,11 +1232,18 @@ class AgentOrchestrator:
                     # If a tool returns an infrastructure error (missing binary,
                     # unconfigured key, etc.) it won't recover this session — remove
                     # it from tool_schemas immediately so the LLM stops retrying it.
-                    if name not in _permanently_disabled_tools and _is_permanent_failure(result_str):
+                    if (
+                        name not in _permanently_disabled_tools
+                        and _is_permanent_failure(result_str)
+                    ):
                         _permanently_disabled_tools.add(name)
-                        logger.warning("Tool '%s' permanently disabled this run: %s", name, result_str[:120])
+                        logger.warning(
+                            "Tool '%s' permanently disabled this run: %s",
+                            name,
+                            result_str[:120],
+                        )
                         _dynamic_context.append(
-                            f"<tool_disabled tool=\"{name}\">"
+                            f'<tool_disabled tool="{name}">'
                             f"{name} has encountered a non-recoverable infrastructure error "
                             f"and has been disabled for this session. "
                             f"Do NOT call it again. Use an alternative tool to complete the task."
@@ -1240,7 +1269,8 @@ class AgentOrchestrator:
                 # ── #4 Inject replanning nudge when a tool keeps returning poor results ─
                 _LOW_QUALITY_THRESHOLD = 2
                 poor_tools = [
-                    t for t, streak in _tool_low_quality_streak.items()
+                    t
+                    for t, streak in _tool_low_quality_streak.items()
                     if streak >= _LOW_QUALITY_THRESHOLD
                 ]
                 if poor_tools:
@@ -1256,10 +1286,7 @@ class AgentOrchestrator:
 
                 # ── #6 Goal-state alignment check every 3 tool rounds ────────
                 _GOAL_CHECK_INTERVAL = 3
-                if (
-                    state.done_when
-                    and (iteration + 1) % _GOAL_CHECK_INTERVAL == 0
-                ):
+                if state.done_when and (iteration + 1) % _GOAL_CHECK_INTERVAL == 0:
                     alignment, assessment = await self._check_goal_alignment(
                         state, run_client
                     )
@@ -1357,7 +1384,9 @@ class AgentOrchestrator:
         recent = []
         for entry in state.working_memory[-6:]:
             if entry.get("type") == "tool_result":
-                recent.append(f"- {entry['tool']}: {entry.get('result_preview', '')[:200]}")
+                recent.append(
+                    f"- {entry['tool']}: {entry.get('result_preview', '')[:200]}"
+                )
             elif entry.get("type") == "tool_error":
                 recent.append(f"- {entry['tool']} FAILED: {entry.get('error', '')}")
         results_text = "\n".join(recent) if recent else "No tool results yet."

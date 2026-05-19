@@ -41,9 +41,22 @@ function errMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
+type McpForm = { name: string; transport: string; url: string; command: string; args: string }
+type SkillForm = { task_type: string; skill_name: string; required_tools: string }
+type ChainForm = { name: string; task_type: string; description: string; steps: string }
+
 export function useAgentExecutorState() {
   const [query, setQuery] = useState('')
   const [context, setContext] = useState('')
+  const [attachedImages, setAttachedImages] = useState<string[]>([])
+  const [editText, setEditText] = useState('')
+  const [opsBusy, setOpsBusy] = useState<string | null>(null)
+  const [opsNotice, setOpsNotice] = useState<string | null>(null)
+  const [mcpForm, setMcpForm] = useState<McpForm>({ name: '', transport: 'http_json', url: '', command: '', args: '' })
+  const [skillForm, setSkillForm] = useState<SkillForm>({ task_type: '', skill_name: '', required_tools: '' })
+  const [chainForm, setChainForm] = useState<ChainForm>({ name: '', task_type: 'research', description: '', steps: '' })
+  const streamEndRef = useRef<HTMLDivElement>(null)
+  const editInputRef = useRef<HTMLTextAreaElement>(null)
   const [editLastOpen, setEditLastOpen] = useState(false)
   const [showThinkingLive, setShowThinkingLive] = useState(true)
   const [reasoningPhaseOpenByTurn, setReasoningPhaseOpenByTurn] = useState<Record<number, boolean>>({})
@@ -303,7 +316,12 @@ export function useAgentExecutorState() {
   const openOpsPanel = useCallback((panel: OpsPanel) => { setOpsPanel(panel); setOpsModalOpen(true); loadOpsPanel(panel) }, [loadOpsPanel])
 
   return {
-    query, setQuery, context, setContext, editLastOpen, setEditLastOpen, showThinkingLive, setShowThinkingLive,
+    query, setQuery, context, setContext, attachedImages, setAttachedImages,
+    editText, setEditText,
+    opsBusy, setOpsBusy, opsNotice, setOpsNotice,
+    mcpForm, setMcpForm, skillForm, setSkillForm, chainForm, setChainForm,
+    streamEndRef, editInputRef,
+    editLastOpen, setEditLastOpen, showThinkingLive, setShowThinkingLive,
     reasoningPhaseOpenByTurn, setReasoningPhaseOpenByTurn, reasoningEffortForRequest, setReasoningEffortForRequest,
     showFeedbackNudge, dismissFeedbackNudge, feedbackDetailsRef, contextPanelRef, queryInputRef,
     toolNames, queryCursor, setQueryCursor, suggestDismissed, setSuggestDismissed, suggestHighlight, setSuggestHighlight,

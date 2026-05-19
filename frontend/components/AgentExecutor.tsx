@@ -110,7 +110,7 @@ function ConnectorOpsRow({
           className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-colors disabled:opacity-40 ${
             connector.enabled
               ? 'bg-[color:var(--accent)] border-[color:var(--accent)]'
-              : 'bg-[color:var(--surface-soft)] border-[color:var(--border)]'
+              : 'bg-[color:var(--surface-soft)] border-(--border)'
           }`}
         >
           <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${connector.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
@@ -127,7 +127,12 @@ export default function AgentExecutor() {
   }, [])
 
   const {
-    query, setQuery, editLastOpen, setEditLastOpen, showThinkingLive,
+    query, setQuery, context, setContext, attachedImages, setAttachedImages,
+    editText, setEditText,
+    opsBusy, setOpsBusy, opsNotice, setOpsNotice,
+    mcpForm, setMcpForm, skillForm, setSkillForm, chainForm, setChainForm,
+    streamEndRef, editInputRef,
+    editLastOpen, setEditLastOpen, showThinkingLive,
     reasoningPhaseOpenByTurn, reasoningEffortForRequest, setReasoningEffortForRequest,
     dismissFeedbackNudge, feedbackDetailsRef, queryInputRef,
     toolNames, queryCursor, setQueryCursor, suggestDismissed, setSuggestDismissed, suggestHighlight, setSuggestHighlight,
@@ -139,23 +144,27 @@ export default function AgentExecutor() {
     suggestions,
   } = useAgentExecutorState()
 
-  type PendingAttachment = {
-    id: string
-    filename: string
-    status: 'uploading' | 'ready' | 'error'
-    error?: string
-  }
+  const imageInputRef = useRef<HTMLInputElement>(null)
 
-  const [attachments, setAttachments] = useState<PendingAttachment[]>([])
-  const [editText, setEditText] = useState('')
-  const editInputRef = useRef<HTMLTextAreaElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const streamEndRef = useRef<HTMLDivElement>(null)
-  const [opsBusy, setOpsBusy] = useState<string | null>(null)
-  const [opsNotice, setOpsNotice] = useState<string | null>(null)
-  const [mcpForm, setMcpForm] = useState({ name: '', transport: 'http_json', url: '', command: '', args: '' })
-  const [skillForm, setSkillForm] = useState({ task_type: '', skill_name: '', required_tools: '' })
-  const [chainForm, setChainForm] = useState({ name: '', task_type: 'research', description: '', steps: '' })
+  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length) return
+    const remaining = 4 - attachedImages.length
+    const toRead = files.slice(0, remaining)
+    toRead.forEach(file => {
+      const reader = new FileReader()
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string
+        if (dataUrl) setAttachedImages(prev => [...prev, dataUrl].slice(0, 4))
+      }
+      reader.readAsDataURL(file)
+    })
+    e.target.value = ''
+  }, [attachedImages.length, setAttachedImages])
+
+  const removeImage = useCallback((idx: number) => {
+    setAttachedImages(prev => prev.filter((_, i) => i !== idx))
+  }, [setAttachedImages])
 
   const suggestionRows = useMemo(
     () => buildSuggestionRows(query, queryCursor, suggestDismissed, toolNames),
@@ -243,47 +252,12 @@ export default function AgentExecutor() {
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault(); const raw = el.value.trim(); if (!raw || isRunning) return
-      const readyNames = attachments.filter(a => a.status === 'ready').map(a => a.filename)
-      const attachmentContext = readyNames.length > 0
-        ? `Attached files in document store: ${readyNames.join(', ')}`
-        : undefined
-      run(raw, attachmentContext, conversationId, reasoningEffortForRequest); setQuery('')
+      const imgs = attachedImages.length > 0 ? [...attachedImages] : undefined
+      run(raw, context.trim() || undefined, conversationId, reasoningEffortForRequest, imgs)
+      setQuery('')
+      setAttachedImages([])
     }
   }
-
-  const handlePickFiles = useCallback(() => {
-    fileInputRef.current?.click()
-  }, [])
-
-  const handleAttachFiles = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-    if (files.length === 0) return
-
-    const queue = files.map(file => ({
-      id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
-      filename: file.name,
-      status: 'uploading' as const,
-    }))
-
-    setAttachments(prev => [...queue, ...prev])
-
-    await Promise.all(queue.map(async (item, idx) => {
-      try {
-        await uploadDocument(files[idx])
-        setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, status: 'ready' } : a))
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Upload failed'
-        setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, status: 'error', error: msg } : a))
-      }
-    }))
-
-    // Allow selecting the same file again later.
-    e.currentTarget.value = ''
-  }, [])
-
-  const removeAttachment = useCallback((id: string) => {
-    setAttachments(prev => prev.filter(a => a.id !== id))
-  }, [])
 
   useEffect(() => {
     streamEndRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' })
@@ -548,7 +522,7 @@ export default function AgentExecutor() {
           {skills.length === 0 ? <p className="text-sm text-muted">No skill analytics found yet.</p> : null}
           {skills.length > 0 ? (
             <div className="panel panel-soft rounded-lg overflow-hidden">
-              <div className="grid grid-cols-[1.5fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-muted border-b border-[color:var(--border)]">
+              <div className="grid grid-cols-[1.5fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-muted border-b border-(--border)">
                 <span>Skill</span>
                 <span className="text-right">Success</span>
                 <span className="text-right">Uses</span>
@@ -610,7 +584,7 @@ export default function AgentExecutor() {
             </div>
           </div>
           <div className="panel panel-soft rounded-lg overflow-hidden">
-            <div className="grid grid-cols-[1.4fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-muted border-b border-[color:var(--border)]">
+            <div className="grid grid-cols-[1.4fr_0.8fr_0.8fr] gap-3 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-muted border-b border-(--border)">
               <span>Endpoint</span>
               <span className="text-right">P50</span>
               <span className="text-right">P95</span>
@@ -926,157 +900,113 @@ export default function AgentExecutor() {
         )}
       </div>
 
-
-
-      {/* ── Input zone ───────────────────────────── */}
-      <div className="dr-chat-input-zone">
-        <div className="dr-chat-input-inner">
-          <form onSubmit={(e) => e.preventDefault()}>
-            {error ? <p className="text-sm text-[color:var(--danger)] mb-2 px-1" role="alert">{error}</p> : null}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,.pdf,.doc,.docx,.txt,.md,.csv,.json,.yaml,.yml"
-              multiple
-              aria-label="Attach files and photos"
-              title="Attach files and photos"
-              className="hidden"
-              onChange={handleAttachFiles}
-            />
-            {attachments.length > 0 ? (
-              <div className="dr-agent-attachments mb-2">
-                {attachments.map(item => (
-                  <span key={item.id} className={`dr-agent-attachment-chip ${item.status === 'error' ? 'is-error' : item.status === 'ready' ? 'is-ready' : ''}`}>
-                    <span className="truncate" title={item.filename}>{item.filename}</span>
-                    <span className="dr-agent-attachment-status">
-                      {item.status === 'uploading' ? 'uploading' : item.status === 'ready' ? 'ready' : 'error'}
-                    </span>
-                    <button type="button" onClick={() => removeAttachment(item.id)} className="dr-agent-attachment-remove" aria-label={`Remove ${item.filename}`}>×</button>
-                  </span>
-                ))}
+      <div className="shrink-0 space-y-3 sticky bottom-0 z-20 bg-[color:var(--bg)]/95 backdrop-blur-sm pt-2 border-t border-[color:var(--border)]">
+        <form onSubmit={(e) => e.preventDefault()} className="space-y-2">
+          {error ? (
+            <p className="text-sm text-[color:var(--danger)]" role="alert">{error}</p>
+          ) : null}
+          {editLastOpen && (
+            <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--bg-elev)] mb-2 overflow-hidden">
+              <div className="flex items-center gap-2 px-3 pt-2 pb-1">
+                <span className="text-[10px] uppercase tracking-widest text-muted">Editing last message</span>
+                <button type="button" onClick={() => setEditLastOpen(false)} className="ml-auto text-xs text-muted hover:text-[color:var(--text)]">✕ Cancel</button>
               </div>
-            ) : null}
-            {editLastOpen && (
-              <div className="dr-chat-input-card mb-2">
-                <div className="flex items-center gap-2 px-4 pt-3 pb-1">
-                  <span className="text-[10px] uppercase tracking-widest text-muted">Editing last message</span>
-                  <button type="button" onClick={() => setEditLastOpen(false)} className="ml-auto text-xs text-muted hover:text-[color:var(--text)]">✕ Cancel</button>
-                </div>
-                <textarea
-                  ref={editInputRef}
-                  value={editText}
-                  onChange={(e) => {
-                    setEditText(e.target.value)
-                    e.target.style.height = 'auto'
-                    e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      const text = editText.trim()
-                      if (!text || isRunning) return
-                      run(text, undefined, conversationId, reasoningEffortForRequest)
-                      setEditLastOpen(false)
-                      setEditText('')
-                    }
-                    if (e.key === 'Escape') setEditLastOpen(false)
-                  }}
-                  rows={2}
-                  className="dr-chat-input-textarea"
-                  placeholder="Edit your message…"
-                />
-                <div className="dr-chat-input-toolbar">
-                  <div className="flex-1" />
-                  <button
-                    type="button"
-                    disabled={isRunning || !editText.trim()}
-                    onClick={() => {
-                      const text = editText.trim()
-                      if (!text || isRunning) return
-                      run(text, undefined, conversationId, reasoningEffortForRequest)
-                      setEditLastOpen(false)
-                      setEditText('')
-                    }}
-                    className="dr-btn-accent px-3 py-1.5 rounded-lg text-sm disabled:opacity-50"
-                  >
-                    Resend
-                  </button>
-                </div>
-              </div>
-            )}
-            <div className="dr-chat-input-card">
               <textarea
-                data-testid="agent-message-input"
-                ref={queryInputRef}
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value)
-                  e.target.style.height = 'auto'
-                  e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`
+                ref={editInputRef}
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    const text = editText.trim()
+                    if (!text || isRunning) return
+                    run(text, undefined, conversationId, reasoningEffortForRequest)
+                    setEditLastOpen(false)
+                    setEditText('')
+                  }
+                  if (e.key === 'Escape') setEditLastOpen(false)
                 }}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask the agent anything…"
-                rows={1}
-                disabled={isRunning}
-                className="dr-chat-input-textarea disabled:opacity-50"
+                rows={2}
+                placeholder="Edit your message…"
+                className="w-full bg-transparent px-3 py-2 text-sm focus:outline-none resize-none"
               />
-              <div className="dr-chat-input-toolbar">
-                <div className="relative" ref={quickActionsRef}>
-                  <button type="button" ref={quickActionsButtonRef} onClick={() => setQuickActionsOpen(!quickActionsOpen)} className="dr-btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm">
-                    <IconPlus /> Actions
-                  </button>
-                  {quickActionsOpen && (
-                    <QuickActionsMenu
-                      isRunning={isRunning}
-                      hasMessages={merged.length > 0}
-                      hasLastMessage={!!lastUserMessage}
-                      reasoningEffortLabel={reasoningEffortLabel}
-                      threadExportEmpty={false}
-                      onNewConversation={() => { newConversation(); setQuickActionsOpen(false) }}
-                      onStop={() => { void stop(); setQuickActionsOpen(false) }}
-                      onClear={() => { reset(); setQuickActionsOpen(false) }}
-                      onOpenOps={(p) => { openOpsPanel(p); setQuickActionsOpen(false) }}
-                      onOpenModels={() => { setModelsModalOpen(true); loadModelsForModal(); setQuickActionsOpen(false) }}
-                      onOpenHelp={() => { setHelpModalOpen(true); setQuickActionsOpen(false) }}
-                      onOpenReasoningPicker={() => { setSuggestDismissed(true); setReasoningArgModal({ from: -1, to: -1 }); setQuickActionsOpen(false) }}
-                      onCopyThread={() => { setQuickActionsOpen(false) }}
-                      onFeedback={() => { tryOpenFeedbackPanel(); setQuickActionsOpen(false) }}
-                      onEditResend={() => { setEditLastOpen(!editLastOpen); setQuickActionsOpen(false) }}
-                    />
-                  )}
-                </div>
-                <button type="button" aria-label="Attach files and photos" title="Attach files and photos" onClick={handlePickFiles} className="dr-btn-ghost p-1.5 rounded-lg">
-                  <IconPaperclip />
+              <div className="flex justify-end px-3 pb-2">
+                <button
+                  type="button"
+                  disabled={isRunning || !editText.trim()}
+                  onClick={() => {
+                    const text = editText.trim()
+                    if (!text || isRunning) return
+                    run(text, undefined, conversationId, reasoningEffortForRequest)
+                    setEditLastOpen(false)
+                    setEditText('')
+                  }}
+                  className="btn-accent px-3 py-1.5 rounded-lg text-sm disabled:opacity-50"
+                >
+                  Resend
                 </button>
-                <div className="flex-1" />
-                <button type="button" onClick={() => setReasoningArgModal({ from: -1, to: -1 })} className="dr-agent-hint dr-btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-muted font-mono">
-                  <IconClock /> {reasoningEffortLabel}
-                </button>
-                {isRunning ? (
-                  <button type="button" aria-label="Stop" onClick={() => void stop()} className="dr-btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-[color:var(--danger)]">
-                    <IconStop /> Stop
-                  </button>
-                ) : (
-                  <button
-                    type="submit"
-                    data-testid="agent-send-button"
-                    aria-label="Send"
-                    onClick={() => {
-                      const readyNames = attachments.filter(a => a.status === 'ready').map(a => a.filename)
-                      const attachmentContext = readyNames.length > 0
-                        ? `Attached files in document store: ${readyNames.join(', ')}`
-                        : undefined
-                      run(query, attachmentContext, conversationId, reasoningEffortForRequest)
-                      setQuery('')
-                      if (queryInputRef.current) queryInputRef.current.style.height = 'auto'
-                    }}
-                    className="dr-btn-accent dr-btn-accent-lg px-3 py-1.5 rounded-lg text-sm"
-                  >
-                    <IconSend />
-                  </button>
-                )}
               </div>
             </div>
+          )}
+          <div className="relative rounded-xl border border-[color:var(--border)] bg-[color:var(--bg-elev)] focus-within:border-[color:var(--accent)] transition-colors">
+            <textarea data-testid="agent-message-input" ref={queryInputRef} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={handleKeyDown} placeholder="Ask anything…" rows={3} disabled={isRunning} className="relative z-10 w-full bg-transparent rounded-t-xl px-4 pt-3 pb-2 text-sm focus:outline-none resize-none disabled:opacity-50" />
+            {attachedImages.length > 0 && (
+              <div className="flex gap-2 flex-wrap px-3 pb-2">
+                {attachedImages.map((src, i) => (
+                  <div key={i} className="relative group/img shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={src} alt={`Attached image ${i + 1}`} className="h-16 w-16 object-cover rounded-lg border border-[color:var(--border)]" />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(i)}
+                      aria-label="Remove image"
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[color:var(--danger)] text-white text-[10px] flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity leading-none"
+                    >✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-1 px-2 pb-2 pt-1 border-t border-[color:var(--border)]/50">
+              <div className="relative" ref={quickActionsRef}>
+                <button type="button" ref={quickActionsButtonRef} onClick={() => setQuickActionsOpen(!quickActionsOpen)} className="btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm"><IconPlus /> Actions</button>
+                {quickActionsOpen && <QuickActionsMenu isRunning={isRunning} hasMessages={merged.length > 0} hasLastMessage={!!lastUserMessage} reasoningEffortLabel={reasoningEffortLabel} threadExportEmpty={false} onNewConversation={() => { newConversation(); setQuickActionsOpen(false) }} onStop={() => { void stop(); setQuickActionsOpen(false) }} onClear={() => { reset(); setQuickActionsOpen(false) }} onOpenOps={(p) => { openOpsPanel(p); setQuickActionsOpen(false) }} onOpenModels={() => { setModelsModalOpen(true); loadModelsForModal(); setQuickActionsOpen(false) }} onOpenHelp={() => { setHelpModalOpen(true); setQuickActionsOpen(false) }} onOpenReasoningPicker={() => { setSuggestDismissed(true); setReasoningArgModal({ from: -1, to: -1 }); setQuickActionsOpen(false) }} onCopyThread={() => { setQuickActionsOpen(false) }} onFeedback={() => { tryOpenFeedbackPanel(); setQuickActionsOpen(false) }} onEditResend={() => { setEditLastOpen(!editLastOpen); setQuickActionsOpen(false) }} />}
+              </div>
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                title="Attach image"
+                className="hidden"
+                onChange={handleImageSelect}
+                disabled={isRunning}
+              />
+              <button
+                type="button"
+                aria-label="Attach image"
+                title={attachedImages.length >= 4 ? 'Max 4 images' : 'Attach image (camera or gallery)'}
+                disabled={isRunning || attachedImages.length >= 4}
+                onClick={() => imageInputRef.current?.click()}
+                className={`btn-ghost p-1.5 rounded-lg disabled:opacity-40 ${attachedImages.length > 0 ? 'text-[color:var(--accent)]' : ''}`}
+              >
+                <IconPaperclip />
+                {attachedImages.length > 0 && (
+                  <span className="ml-0.5 text-[10px] font-mono">{attachedImages.length}</span>
+                )}
+              </button>
+              <div className="flex-1" />
+              <button type="button" onClick={() => setReasoningArgModal({ from: -1, to: -1 })} className="btn-ghost flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-muted font-mono"><IconClock /> {reasoningEffortLabel}</button>
+              {isRunning
+                ? <button type="button" aria-label="Stop" onClick={() => void stop()} className="btn-ghost text-[color:var(--danger)]"><IconStop /> Stop</button>
+                : <button type="submit" data-testid="agent-send-button" aria-label="Send" onClick={() => {
+                    const imgs = attachedImages.length > 0 ? [...attachedImages] : undefined
+                    run(query, context || undefined, conversationId, reasoningEffortForRequest, imgs)
+                    setQuery('')
+                    setAttachedImages([])
+                  }} className="btn-accent px-3 py-1.5 rounded-lg text-sm"><IconSend /></button>
+              }
+            </div>
+          </div>
           </form>
           {!isRunning && suggestions.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', padding: '0.5rem 1rem 0.25rem', alignItems: 'center' }}>
@@ -1111,7 +1041,6 @@ export default function AgentExecutor() {
           )}
           <p className="dr-chat-disclaimer">Agent can make mistakes. Verify important information.</p>
         </div>
-      </div>
 
       {/* ── Modals ───────────────────────────────── */}
       {helpModalOpen && (

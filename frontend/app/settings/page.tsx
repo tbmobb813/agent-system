@@ -76,17 +76,17 @@ function TextInput({ id, value, onChange, placeholder, type = 'text', className 
       id={id} type={type} value={value} placeholder={placeholder}
       min={min} max={max} step={step}
       onChange={e => onChange(e.target.value)}
-      className={`w-full bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[color:var(--accent)] ${className}`}
+      className={`${INPUT_CLASS} ${className}`}
     />
   )
 }
 
-const INPUT_CLASS = 'w-full bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[color:var(--accent)]'
+const INPUT_CLASS = 'w-full bg-[color:var(--bg-elev)] border border-(--border) rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[color:var(--accent)]'
 
 // All IANA timezone names available in this browser (falls back gracefully).
 const TZ_OPTIONS: string[] = (() => {
   try {
-    return (Intl as any).supportedValuesOf('timeZone') as string[]
+    return (Intl as unknown as { supportedValuesOf: (key: string) => string[] }).supportedValuesOf('timeZone')
   } catch {
     return [
       'America/New_York','America/Chicago','America/Denver','America/Los_Angeles',
@@ -157,14 +157,14 @@ function ConnectorCard({ connector, onUpdate }: { connector: ConnectorStatus; on
   }
 
   return (
-    <div className={`panel p-5 space-y-4 ${connector.enabled ? 'border-[color:var(--accent)]/30' : ''}`}>
+    <div className={`panel p-5 space-y-4 ${connector.enabled ? 'border-(--accent)/30' : ''}`}>
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="section-title dr-title-16">{connector.name}</h3>
             {connector.configured
-              ? <span className={`text-[10px] uppercase tracking-widest px-2 py-0.5 rounded border font-semibold ${connector.enabled ? 'border-[color:var(--success)]/50 text-[color:var(--success)] bg-[color:var(--success)]/10' : 'border-[color:var(--border)] text-muted'}`}>{connector.enabled ? 'Enabled' : 'Disabled'}</span>
-              : <span className="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded border border-[color:var(--border)] text-muted">Not configured</span>
+              ? <span className={`text-[10px] uppercase tracking-widest px-2 py-0.5 rounded border font-semibold ${connector.enabled ? 'border-[color:var(--success)]/50 text-[color:var(--success)] bg-[color:var(--success)]/10' : 'border-(--border) text-muted'}`}>{connector.enabled ? 'Enabled' : 'Disabled'}</span>
+              : <span className="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded border border-(--border) text-muted">Not configured</span>
             }
           </div>
           <p className="text-sm text-muted mt-1">{connector.description}</p>
@@ -172,7 +172,7 @@ function ConnectorCard({ connector, onUpdate }: { connector: ConnectorStatus; on
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {connector.configured && (
-            <button type="button" onClick={handleToggle} disabled={saving} className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-colors disabled:opacity-50 ${connector.enabled ? 'bg-[color:var(--accent)] border-[color:var(--accent)]' : 'bg-[color:var(--surface-soft)] border-[color:var(--border)]'}`}>
+            <button type="button" onClick={handleToggle} disabled={saving} className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-colors disabled:opacity-50 ${connector.enabled ? 'bg-[color:var(--accent)] border-[color:var(--accent)]' : 'bg-[color:var(--surface-soft)] border-(--border)'}`}>
               <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${connector.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
             </button>
           )}
@@ -181,11 +181,11 @@ function ConnectorCard({ connector, onUpdate }: { connector: ConnectorStatus; on
       </div>
       {connector.configured && !expanded && <div className="flex flex-wrap gap-1.5">{connector.actions.map(a => <span key={a} className="dr-chip dr-chip-tool">{a}</span>)}</div>}
       {expanded && (
-        <div className="space-y-3 border-t border-[color:var(--border)] pt-4">
+        <div className="space-y-3 border-t border-(--border) pt-4">
           <div className="space-y-1">
             <FieldLabel>{connector.token_label}</FieldLabel>
             <div className="relative">
-              <input type={showToken ? 'text' : 'password'} value={token} onChange={e => setToken(e.target.value)} placeholder={connector.configured ? 'Enter new token to replace existing' : 'Paste token here'} className="w-full bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded-lg px-3 py-2 text-sm font-mono pr-16 focus:outline-none focus:border-[color:var(--accent)]" />
+              <input type={showToken ? 'text' : 'password'} value={token} onChange={e => setToken(e.target.value)} placeholder={connector.configured ? 'Enter new token to replace existing' : 'Paste token here'} className="w-full bg-[color:var(--bg-elev)] border border-(--border) rounded-lg px-3 py-2 text-sm font-mono pr-16 focus:outline-none focus:border-[color:var(--accent)]" />
               <button type="button" onClick={() => setShowToken(s => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted px-1 hover:text-[color:var(--text)]">{showToken ? 'hide' : 'show'}</button>
             </div>
             <a href={connector.token_help} target="_blank" rel="noopener noreferrer" className="text-xs text-[color:var(--accent-2)] hover:underline">How to get a token ↗</a>
@@ -195,10 +195,10 @@ function ConnectorCard({ connector, onUpdate }: { connector: ConnectorStatus; on
             <button type="button" onClick={handleTest} disabled={testing || !connector.configured} className="dr-btn-ghost px-3 py-1.5 rounded-lg text-xs disabled:opacity-50">{testing ? 'Testing…' : 'Test connection'}</button>
             {connector.configured && <button type="button" onClick={handleClear} disabled={clearing} className="dr-btn-ghost px-3 py-1.5 rounded-lg text-xs text-[color:var(--danger)] disabled:opacity-50 ml-auto">{clearing ? 'Removing…' : 'Remove token'}</button>}
           </div>
-          {testResult && <p className={`text-xs px-3 py-2 rounded-lg border ${testResult.ok ? 'text-[color:var(--success)] border-[color:var(--success)]/30 bg-[color:var(--success)]/10' : 'text-[color:var(--danger)] border-[color:var(--danger)]/30 bg-[color:var(--danger)]/10'}`}>{testResult.ok ? '✓' : '✗'} {testResult.detail}</p>}
+          {testResult && <p className={`text-xs px-3 py-2 rounded-lg border ${testResult.ok ? 'text-[color:var(--success)] border-[color:var(--success)]/30 bg-(--success)/10' : 'text-(--danger) border-(--danger)/30 bg-(--danger)/10'}`}>{testResult.ok ? '✓' : '✗'} {testResult.detail}</p>}
         </div>
       )}
-      {notice && <p className="text-xs text-muted border-t border-[color:var(--border)] pt-3">{notice}</p>}
+      {notice && <p className="text-xs text-muted border-t border-(--border) pt-3">{notice}</p>}
     </div>
   )
 }
@@ -414,7 +414,7 @@ export default function SettingsPage() {
       <div className="flex gap-1 overflow-x-auto border-b border-[color:var(--border)] pb-0 scrollbar-none">
         {TABS.map(t => (
           <button key={t.id} type="button" onClick={() => setActiveTab(t.id)}
-            className={`px-4 py-2 text-sm font-medium rounded-t-lg border border-b-0 whitespace-nowrap transition-colors ${activeTab === t.id ? 'border-[color:var(--border)] bg-[color:var(--surface)] text-[color:var(--text)]' : 'border-transparent text-muted hover:text-[color:var(--text)]'}`}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg border border-b-0 whitespace-nowrap transition-colors ${activeTab === t.id ? 'border-(--border) bg-[color:var(--surface)] text-[color:var(--text)]' : 'border-transparent text-muted hover:text-[color:var(--text)]'}`}
           >{t.label}</button>
         ))}
       </div>
@@ -457,7 +457,7 @@ export default function SettingsPage() {
                 <p className="text-xs text-muted mt-1">Type to search — e.g. America/New_York.</p>
               </div>
 
-              <div className="pt-2 border-t border-[color:var(--border)] space-y-3">
+              <div className="pt-2 border-t border-(--border) space-y-3">
                 <p className="text-xs uppercase tracking-widest text-muted">Persona</p>
                 <Toggle id="persona-enabled" checked={settings.agent_persona_enabled} onChange={v => setSettings({ ...settings, agent_persona_enabled: v })} label="Enable persona profile injection" />
                 <div>
@@ -469,10 +469,10 @@ export default function SettingsPage() {
                   <button type="button" onClick={async () => { setPreviewLoading(true); setPreviewError(null); try { setPersonaPreview((await getPersonaPreview()).preview || '') } catch (e) { setPreviewError(e instanceof Error ? e.message : 'Failed') } finally { setPreviewLoading(false) } }} disabled={previewLoading} className="btn-ghost px-3 py-1.5 rounded text-xs disabled:opacity-50">{previewLoading ? 'Loading…' : 'Preview resolved persona'}</button>
                   {previewError && <span className="text-[color:var(--danger)] text-xs">{previewError}</span>}
                 </div>
-                <textarea value={personaPreview} readOnly rows={5} className="w-full bg-[color:var(--bg-elev)] rounded-lg px-3 py-2 text-xs border border-[color:var(--border)] focus:outline-none" placeholder="Click preview to load the resolved persona prompt" />
+                <textarea value={personaPreview} readOnly rows={5} className="w-full bg-[color:var(--bg-elev)] rounded-lg px-3 py-2 text-xs border border-(--border) focus:outline-none" placeholder="Click preview to load the resolved persona prompt" />
               </div>
 
-              <div className="pt-2 border-t border-[color:var(--border)] space-y-3">
+              <div className="pt-2 border-t border-(--border) space-y-3">
                 <p className="text-xs uppercase tracking-widest text-muted">Behaviour</p>
                 <Toggle id="notifications" checked={settings.enable_notifications} onChange={v => setSettings({ ...settings, enable_notifications: v })} label="Enable notifications" />
                 <Toggle id="autosave" checked={settings.auto_save_results} onChange={v => setSettings({ ...settings, auto_save_results: v })} label="Auto-save results" />
@@ -480,7 +480,7 @@ export default function SettingsPage() {
               </div>
 
               {autostart !== null && (
-                <div className="pt-2 border-t border-[color:var(--border)]">
+                <div className="pt-2 border-t border-(--border)">
                   <Toggle id="autostart" checked={autostart} onChange={async v => { setAutostartState(v); await setAutostart(v) }} label="Launch on login" description="Desktop only." />
                 </div>
               )}
@@ -511,7 +511,7 @@ export default function SettingsPage() {
                       {tool.description && <p className="text-xs text-muted mt-1 leading-relaxed">{tool.description}</p>}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className={`text-[10px] uppercase tracking-widest px-2 py-1 rounded border ${enabledTools.has(tool.name) ? 'border-[color:var(--success)] text-[color:var(--success)]' : 'border-[color:var(--border)] text-muted'}`}>
+                      <span className={`text-[10px] uppercase tracking-widest px-2 py-1 rounded border ${enabledTools.has(tool.name) ? 'border-[color:var(--success)] text-[color:var(--success)]' : 'border-(--border) text-muted'}`}>
                         {enabledTools.has(tool.name) ? 'enabled' : 'optional'}
                       </span>
                       <button type="button" disabled={!tool.name || toolsBusy === tool.name} onClick={() => void toggleTool(tool.name, !enabledTools.has(tool.name))} className="dr-btn-ghost px-2 py-1 rounded text-xs disabled:opacity-50">
@@ -544,7 +544,7 @@ export default function SettingsPage() {
             <p className="text-xs uppercase tracking-widest text-muted">Add MCP Server</p>
             <div className="grid sm:grid-cols-2 gap-2">
               <TextInput value={mcpForm.name} onChange={v => setMcpForm(p => ({ ...p, name: v }))} placeholder="Server name" />
-              <select value={mcpForm.transport} onChange={e => setMcpForm(p => ({ ...p, transport: e.target.value }))} className="bg-[color:var(--bg-elev)] border border-[color:var(--border)] rounded-lg px-3 py-2 text-sm">
+              <select value={mcpForm.transport} onChange={e => setMcpForm(p => ({ ...p, transport: e.target.value }))} className="bg-[color:var(--bg-elev)] border border-(--border) rounded-lg px-3 py-2 text-sm">
                 <option value="http_json">http_json</option>
                 <option value="sse">sse</option>
                 <option value="stdio">stdio</option>
@@ -616,7 +616,7 @@ export default function SettingsPage() {
           {!loadingSkills && skills.length === 0 && <p className="text-sm text-muted">No skills tracked yet. Skills are learned automatically or added above.</p>}
           {skills.length > 0 && (
             <div className="panel panel-soft rounded-lg overflow-hidden">
-              <div className="grid grid-cols-[1.5fr_0.7fr_0.7fr_auto] gap-3 px-4 py-2 text-[10px] uppercase tracking-widest text-muted border-b border-[color:var(--border)]">
+              <div className="grid grid-cols-[1.5fr_0.7fr_0.7fr_auto] gap-3 px-4 py-2 text-[10px] uppercase tracking-widest text-muted border-b border-(--border)">
                 <span>Skill</span><span className="text-right">Success</span><span className="text-right">Uses</span><span />
               </div>
               {skills.map((skill, i) => {
@@ -625,7 +625,7 @@ export default function SettingsPage() {
                 const success = skill.success_rate ?? skill.success ?? skill.win_rate
                 const uses = skill.count ?? skill.uses ?? skill.total ?? '—'
                 return (
-                  <div key={taskType} className="grid grid-cols-[1.5fr_0.7fr_0.7fr_auto] gap-3 px-4 py-2.5 text-sm border-b last:border-b-0 border-[color:var(--border)]/50 items-center">
+                  <div key={taskType} className="grid grid-cols-[1.5fr_0.7fr_0.7fr_auto] gap-3 px-4 py-2.5 text-sm border-b last:border-b-0 border-(--border)/50 items-center">
                     <span className="truncate font-medium" title={name}>{name}</span>
                     <span className="text-right text-muted">{success == null ? '—' : String(success)}</span>
                     <span className="text-right text-muted">{String(uses)}</span>

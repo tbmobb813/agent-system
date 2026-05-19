@@ -8,7 +8,6 @@ automating as a named workflow.
 
 import json
 import logging
-from typing import Optional
 from app import database as _db
 
 logger = logging.getLogger(__name__)
@@ -72,4 +71,6 @@ def _default_query(task_type: str) -> str:
         "summarisation": "Summarise the following: {paste text or describe source here}",
         "general": "Help me with: {your task here}",
     }
-    return templates.get(task_type, f"Complete this {task_type} task: {{your task here}}")
+    return templates.get(
+        task_type, f"Complete this {task_type} task: {{your task here}}"
+    )

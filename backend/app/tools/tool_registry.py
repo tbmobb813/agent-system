@@ -348,7 +348,9 @@ class ToolRegistry:
             {
                 "tool": "browser_automation",
                 "ok": browser_ok,
-                "detail": "chromium_binary_found" if browser_ok else "run: playwright install chromium",
+                "detail": "chromium_binary_found"
+                if browser_ok
+                else "run: playwright install chromium",
             }
         )
 
@@ -753,7 +755,13 @@ class ToolRegistry:
                         "properties": {
                             "action": {
                                 "type": "string",
-                                "enum": ["create", "update", "delete", "list", "search"],
+                                "enum": [
+                                    "create",
+                                    "update",
+                                    "delete",
+                                    "list",
+                                    "search",
+                                ],
                                 "description": "Operation: create new chain, update existing, delete, list all, or search by task_type",
                             },
                             "name": {
@@ -814,6 +822,7 @@ class ToolRegistry:
         try:
             import importlib
             import platform
+
             importlib.import_module("playwright")
             system = platform.system()
             if system == "Darwin":
@@ -855,9 +864,11 @@ class ToolRegistry:
         return ok, reason
 
     # Tools filtered out when the budget is critically low.
-    _BUDGET_EXPENSIVE: frozenset[str] = frozenset({"browser_automation", "code_execution"})
+    _BUDGET_EXPENSIVE: frozenset[str] = frozenset(
+        {"browser_automation", "code_execution"}
+    )
     BUDGET_CRITICAL_USD: float = 1.0  # below this → strip expensive tools
-    BUDGET_LOW_USD: float = 3.0       # below this → urgent guardrail language
+    BUDGET_LOW_USD: float = 3.0  # below this → urgent guardrail language
 
     def get_available_tools_filtered(
         self,
@@ -885,9 +896,18 @@ class ToolRegistry:
                 logger.debug("Tool %s filtered — %s", name, reason)
                 continue
 
-            if budget_remaining < self.BUDGET_CRITICAL_USD and name in self._BUDGET_EXPENSIVE:
-                removed.append((name, f"budget_critical (${budget_remaining:.2f} remaining)"))
-                logger.info("Tool %s filtered — budget critical (${%.2f})", name, budget_remaining)
+            if (
+                budget_remaining < self.BUDGET_CRITICAL_USD
+                and name in self._BUDGET_EXPENSIVE
+            ):
+                removed.append(
+                    (name, f"budget_critical (${budget_remaining:.2f} remaining)")
+                )
+                logger.info(
+                    "Tool %s filtered — budget critical (${%.2f})",
+                    name,
+                    budget_remaining,
+                )
                 continue
 
             filtered.append(schema)
@@ -910,7 +930,9 @@ class ToolRegistry:
     # Built-in Tool Implementations (Placeholders)
     # ========================================================================
 
-    async def _web_search(self, query: str, max_results: int = 10, page: int = 1) -> dict:
+    async def _web_search(
+        self, query: str, max_results: int = 10, page: int = 1
+    ) -> dict:
         """
         Search the web. Tries SearXNG first, falls back to Brave Search if unreachable.
         """
@@ -923,7 +945,9 @@ class ToolRegistry:
         logger.warning("SearXNG returned no results — trying Brave Search fallback")
         return await self._brave_search(query, max_results, page)
 
-    async def _searxng_search(self, query: str, max_results: int = 10, page: int = 1) -> dict:
+    async def _searxng_search(
+        self, query: str, max_results: int = 10, page: int = 1
+    ) -> dict:
         """Search via SearXNG (primary)."""
         logger.info(f"SearXNG search: {query} (max={max_results}, page={page})")
         try:
@@ -966,7 +990,9 @@ class ToolRegistry:
             logger.error(f"SearXNG search failed: {e}")
             return {"query": query, "results": [], "error": str(e)}
 
-    async def _brave_search(self, query: str, max_results: int = 10, page: int = 1) -> dict:
+    async def _brave_search(
+        self, query: str, max_results: int = 10, page: int = 1
+    ) -> dict:
         """Search via Brave Search API (fallback)."""
         if not settings.BRAVE_SEARCH_API_KEY:
             logger.error(
@@ -1288,7 +1314,9 @@ class ToolRegistry:
             resolved_ip = infos[0][4][0]
             ip_obj = _ipaddress.ip_address(resolved_ip)
             if not ip_obj.is_global:
-                return {"error": f"Host resolved to non-public IP at connection time: {resolved_ip}"}
+                return {
+                    "error": f"Host resolved to non-public IP at connection time: {resolved_ip}"
+                }
         except (OSError, ValueError) as e:
             return {"error": f"DNS resolution failed: {e}"}
 
@@ -1297,6 +1325,7 @@ class ToolRegistry:
         query = parsed.query or ""
         if params:
             from urllib.parse import urlencode
+
             extra = urlencode(params)
             query = f"{query}&{extra}" if query else extra
         if query:
@@ -1309,8 +1338,12 @@ class ToolRegistry:
             (b"accept", b"application/json, */*"),
         ]
         for k, v in (headers or {}).items():
-            req_headers.append((k.encode() if isinstance(k, str) else k,
-                                 v.encode() if isinstance(v, str) else v))
+            req_headers.append(
+                (
+                    k.encode() if isinstance(k, str) else k,
+                    v.encode() if isinstance(v, str) else v,
+                )
+            )
 
         body_bytes = b""
         if method.upper() in ("POST", "PUT", "PATCH") and data is not None:
@@ -1473,7 +1506,10 @@ class ToolRegistry:
         if action == "search":
             chain = await get_applicable_chain(task_type or name or "general")
             if not chain:
-                return {"found": False, "message": f"No chain found for task_type='{task_type}'"}
+                return {
+                    "found": False,
+                    "message": f"No chain found for task_type='{task_type}'",
+                }
             return {"found": True, "chain": chain}
 
         if action == "create":
@@ -1495,7 +1531,11 @@ class ToolRegistry:
                     description=description,
                     trigger_keywords=trigger_keywords or [],
                 )
-                return {"created": True, "chain": chain, "message": f"Skill chain '{name}' saved."}
+                return {
+                    "created": True,
+                    "chain": chain,
+                    "message": f"Skill chain '{name}' saved.",
+                }
             except Exception as e:
                 return {"error": str(e)}
 
@@ -1526,4 +1566,6 @@ class ToolRegistry:
                 return {"error": f"Chain {chain_id} not found"}
             return {"deleted": True, "chain_id": chain_id}
 
-        return {"error": f"Unknown action '{action}'. Use: create, update, delete, list, search"}
+        return {
+            "error": f"Unknown action '{action}'. Use: create, update, delete, list, search"
+        }

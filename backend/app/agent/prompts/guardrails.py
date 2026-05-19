@@ -50,7 +50,11 @@ def capabilities_section(tool_names: list[str]) -> str:
     'what can you do?' correctly regardless of which model is routing the query.
     Built from live tool names so it stays current as tools are added/removed.
     """
-    tools_str = "\n".join(f"  - {t}" for t in sorted(tool_names)) if tool_names else "  (none loaded)"
+    tools_str = (
+        "\n".join(f"  - {t}" for t in sorted(tool_names))
+        if tool_names
+        else "  (none loaded)"
+    )
     return (
         "\n\n<agent_capabilities>\n"
         "You are a full-featured personal AI agent, not a basic chatbot. "
@@ -105,17 +109,10 @@ def fiscal_context_section(
         )
     else:
         urgency = ""
-        instruction = (
-            "Prefer cheaper approaches, fewer tool calls, and avoid unnecessary searches."
-        )
+        instruction = "Prefer cheaper approaches, fewer tool calls, and avoid unnecessary searches."
 
     header = (
         f"{urgency + '. ' if urgency else ''}"
         f"Monthly budget: ${budget:.2f} — remaining: ${remaining:.2f} ({pct:.0f}%)."
     )
-    return (
-        f"\n\n<fiscal_context>\n"
-        f"{header}\n"
-        f"{instruction}\n"
-        f"</fiscal_context>"
-    )
+    return f"\n\n<fiscal_context>\n{header}\n{instruction}\n</fiscal_context>"

@@ -129,13 +129,13 @@ class ModelRouter:
 
         tier_map = {
             "conversational": "free",
-            "simple":         "simple",
-            "balanced":       "balanced",
-            "coding":         "coding",
-            "writing":        "advanced", # Haiku — quality prose matters
-            "research":       "research",
-            "complex":        "advanced",
-            "premium":        "premium",
+            "simple": "simple",
+            "balanced": "balanced",
+            "coding": "coding",
+            "writing": "advanced",  # Haiku — quality prose matters
+            "research": "research",
+            "complex": "advanced",
+            "premium": "premium",
         }
         tier = tier_map.get(query_type, "balanced")
         model = self.MODELS[tier]["model"]
@@ -162,43 +162,96 @@ class ModelRouter:
 
         # ── Modifier 1: brevity/speed signal ─────────────────────────────
         # User explicitly wants a quick or short answer → downgrade tier.
-        wants_brief = any(s in q for s in (
-            "quickly", "quick answer", "brief answer", "briefly",
-            "in short", "in one sentence", "one sentence answer",
-            "tldr", "tl;dr", "short answer", "simple answer",
-            "just tell me", "just say", "just give me",
-        ))
+        wants_brief = any(
+            s in q
+            for s in (
+                "quickly",
+                "quick answer",
+                "brief answer",
+                "briefly",
+                "in short",
+                "in one sentence",
+                "one sentence answer",
+                "tldr",
+                "tl;dr",
+                "short answer",
+                "simple answer",
+                "just tell me",
+                "just say",
+                "just give me",
+            )
+        )
 
         # ── Modifier 2: compound / multi-question request ─────────────────
         # Two or more questions, or explicit multi-part phrasing → floor at complex.
-        is_multi_part = (
-            q.count("?") >= 2
-            or any(p in q for p in (
-                "and also", "and then", "additionally,", "furthermore,",
-                "as well as", "on top of that", "in addition",
-                "and finally", "step 1", "step 2",
-            ))
+        is_multi_part = q.count("?") >= 2 or any(
+            p in q
+            for p in (
+                "and also",
+                "and then",
+                "additionally,",
+                "furthermore,",
+                "as well as",
+                "on top of that",
+                "in addition",
+                "and finally",
+                "step 1",
+                "step 2",
+            )
         )
 
         # ── Conversational — always return immediately ────────────────────
         conversational_starts = (
-            "hi", "hello", "hey", "good morning", "good afternoon", "good evening",
-            "how are you", "what's up", "thanks", "thank you", "ok", "okay",
-            "sure", "yes", "no", "nice", "great", "awesome", "cool", "lol",
-            "are you", "can you help", "do you know",
+            "hi",
+            "hello",
+            "hey",
+            "good morning",
+            "good afternoon",
+            "good evening",
+            "how are you",
+            "what's up",
+            "thanks",
+            "thank you",
+            "ok",
+            "okay",
+            "sure",
+            "yes",
+            "no",
+            "nice",
+            "great",
+            "awesome",
+            "cool",
+            "lol",
+            "are you",
+            "can you help",
+            "do you know",
         )
         if any(q.startswith(w) for w in conversational_starts) or word_count <= 2:
             return "conversational"
 
         # ── Premium ───────────────────────────────────────────────────────
         premium_keywords = (
-            "best possible", "use your best", "use claude sonnet", "use sonnet",
-            "most thorough", "spare no detail", "write a complete",
-            "professional report", "comprehensive report", "detailed report",
-            "full report", "thorough analysis", "full analysis",
-            "in-depth analysis", "complete guide", "in-depth guide",
-            "cover letter", "business plan", "executive summary",
-            "white paper", "literature review",
+            "best possible",
+            "use your best",
+            "use claude sonnet",
+            "use sonnet",
+            "most thorough",
+            "spare no detail",
+            "write a complete",
+            "professional report",
+            "comprehensive report",
+            "detailed report",
+            "full report",
+            "thorough analysis",
+            "full analysis",
+            "in-depth analysis",
+            "complete guide",
+            "in-depth guide",
+            "cover letter",
+            "business plan",
+            "executive summary",
+            "white paper",
+            "literature review",
         )
         if any(kw in q for kw in premium_keywords):
             result = "premium"
@@ -206,94 +259,253 @@ class ModelRouter:
         # ── Short definitional / "what is X" — checked before coding ────────
         # Prevents coding keywords (e.g. "python") winning over simple lookups.
         # "what is the best/difference/latest X" — research regardless of length
-        elif any(kw in q for kw in (
-            "what is the best", "what is the latest", "what is the current",
-            "what is the difference", "what is the relationship",
-            "what are the best", "what are the main",
-        )):
+        elif any(
+            kw in q
+            for kw in (
+                "what is the best",
+                "what is the latest",
+                "what is the current",
+                "what is the difference",
+                "what is the relationship",
+                "what are the best",
+                "what are the main",
+            )
+        ):
             result = "research"
 
         # Short definitional "what is X" — simple lookup
-        elif (q.startswith("what is ") or (wants_brief and "what is " in q)) and word_count <= 7:
+        elif (
+            q.startswith("what is ") or (wants_brief and "what is " in q)
+        ) and word_count <= 7:
             result = "simple"
 
         # ── Complex — checked before coding so "analyze this code" → complex ─
         # "framework" omitted — too broad (matches "what framework should I use")
-        elif any(kw in q for kw in (
-            "analyze", "analyse", "compare", "evaluate", "strategy",
-            "strategic", "explain in detail", "pros and cons",
-            "trade-off", "tradeoff", "system design", "architecture design",
-            "design a system", "step by step", "recommend", "decision",
-            "roadmap", "essay", "detailed plan", "make a plan", "write a plan",
-            "weigh", "assess", "critique", "structured", "technical design",
-        )):
+        elif any(
+            kw in q
+            for kw in (
+                "analyze",
+                "analyse",
+                "compare",
+                "evaluate",
+                "strategy",
+                "strategic",
+                "explain in detail",
+                "pros and cons",
+                "trade-off",
+                "tradeoff",
+                "system design",
+                "architecture design",
+                "design a system",
+                "step by step",
+                "recommend",
+                "decision",
+                "roadmap",
+                "essay",
+                "detailed plan",
+                "make a plan",
+                "write a plan",
+                "weigh",
+                "assess",
+                "critique",
+                "structured",
+                "technical design",
+            )
+        ):
             result = "complex"
 
         # ── Coding ───────────────────────────────────────────────────────
-        elif any(kw in q for kw in (
-            "code", "coding", "codebase", "implement", "function", "debug",
-            "class", "method", "algorithm", "python", "javascript", "typescript",
-            "java ", "rust", "golang", "c++", "c#", " sql ", "bash script",
-            "shell script", "write a script", "write me a script", "script to ",
-            "write code", "write a function",
-            "write a class", "write a program", "program", "refactor",
-            "syntax error", "traceback", "stack trace", "exception",
-            "dockerfile", "kubernetes", "k8s", "regex", "api endpoint",
-            "rest api", "graphql", "unit test", "integration test",
-            "npm", "pip install", "import ", "package", "repository",
-            "pull request", "git commit", "compile", "linter",
-            "type error", "null pointer", "segfault",
-        )):
+        elif any(
+            kw in q
+            for kw in (
+                "code",
+                "coding",
+                "codebase",
+                "implement",
+                "function",
+                "debug",
+                "class",
+                "method",
+                "algorithm",
+                "python",
+                "javascript",
+                "typescript",
+                "java ",
+                "rust",
+                "golang",
+                "c++",
+                "c#",
+                " sql ",
+                "bash script",
+                "shell script",
+                "write a script",
+                "write me a script",
+                "script to ",
+                "write code",
+                "write a function",
+                "write a class",
+                "write a program",
+                "program",
+                "refactor",
+                "syntax error",
+                "traceback",
+                "stack trace",
+                "exception",
+                "dockerfile",
+                "kubernetes",
+                "k8s",
+                "regex",
+                "api endpoint",
+                "rest api",
+                "graphql",
+                "unit test",
+                "integration test",
+                "npm",
+                "pip install",
+                "import ",
+                "package",
+                "repository",
+                "pull request",
+                "git commit",
+                "compile",
+                "linter",
+                "type error",
+                "null pointer",
+                "segfault",
+            )
+        ):
             result = "coding"
 
         # ── Writing ───────────────────────────────────────────────────────
         # Prose composition: emails, blog posts, essays, creative writing.
         # Routes to advanced (Haiku) — quality prose benefits from a stronger model.
-        elif any(kw in q for kw in (
-            "write an email", "write a message", "write a letter",
-            "draft an email", "draft a message", "draft a letter",
-            "compose an email", "compose a message",
-            "write a blog", "blog post", "write an article",
-            "write an essay", "write a story", "write a poem", "write me a poem",
-            "write a short", "write me a short", "write me a ",
-            "write a speech", "write a proposal", "write a pitch",
-            "write a press release", "write a newsletter",
-            "write a description", "write a bio", "write a profile",
-            "write a review", "write a summary",
-            "write a post", "social media post",
-            "rewrite this", "edit this", "improve this writing",
-            "proofread", "make this sound", "rephrase",
-            "tone of voice", "copywriting", "caption for",
-        )):
+        elif any(
+            kw in q
+            for kw in (
+                "write an email",
+                "write a message",
+                "write a letter",
+                "draft an email",
+                "draft a message",
+                "draft a letter",
+                "compose an email",
+                "compose a message",
+                "write a blog",
+                "blog post",
+                "write an article",
+                "write an essay",
+                "write a story",
+                "write a poem",
+                "write me a poem",
+                "write a short",
+                "write me a short",
+                "write me a ",
+                "write a speech",
+                "write a proposal",
+                "write a pitch",
+                "write a press release",
+                "write a newsletter",
+                "write a description",
+                "write a bio",
+                "write a profile",
+                "write a review",
+                "write a summary",
+                "write a post",
+                "social media post",
+                "rewrite this",
+                "edit this",
+                "improve this writing",
+                "proofread",
+                "make this sound",
+                "rephrase",
+                "tone of voice",
+                "copywriting",
+                "caption for",
+            )
+        ):
             result = "writing"
 
         # ── Research ─────────────────────────────────────────────────────
-        elif any(kw in q for kw in (
-            "research", "latest", "recent", "current", "news about",
-            "what's happening", "what is happening", "tell me about",
-            "information about", "information on", "facts about",
-            "history of", "overview of", "summarize", "summarise",
-            "read this", "review this document", "long article",
-            "detailed breakdown", "in depth", "deep dive",
-            "comprehensive overview", "market research",
-            "explain how", "how does", "how do", "what are the",
-            "who are the", "search for", "look up", "find out",
-            "investigate", "explore", "trends in", "state of",
-            "landscape of", "developments in", "advances in", "updates on",
-            "what is the best", "what are the best", "which is better",
-            "what should i use", "what would you recommend",
-        )):
+        elif any(
+            kw in q
+            for kw in (
+                "research",
+                "latest",
+                "recent",
+                "current",
+                "news about",
+                "what's happening",
+                "what is happening",
+                "tell me about",
+                "information about",
+                "information on",
+                "facts about",
+                "history of",
+                "overview of",
+                "summarize",
+                "summarise",
+                "read this",
+                "review this document",
+                "long article",
+                "detailed breakdown",
+                "in depth",
+                "deep dive",
+                "comprehensive overview",
+                "market research",
+                "explain how",
+                "how does",
+                "how do",
+                "what are the",
+                "who are the",
+                "search for",
+                "look up",
+                "find out",
+                "investigate",
+                "explore",
+                "trends in",
+                "state of",
+                "landscape of",
+                "developments in",
+                "advances in",
+                "updates on",
+                "what is the best",
+                "what are the best",
+                "which is better",
+                "what should i use",
+                "what would you recommend",
+            )
+        ):
             result = "research"
 
         # ── Simple — only when query is short ────────────────────────────
         # Long "what is X" questions are research, not simple lookups.
-        elif any(kw in q for kw in (
-            "who is", "when did", "where is", "define ", "meaning of",
-            "capital of", "how many", "what does", "convert ", "translate",
-            "spell ", "calculate", "what year", "what time",
-            "how far", "how long", "how much does",
-            "what is the price", "what is the cost",
-        )) and word_count <= 10:
+        elif (
+            any(
+                kw in q
+                for kw in (
+                    "who is",
+                    "when did",
+                    "where is",
+                    "define ",
+                    "meaning of",
+                    "capital of",
+                    "how many",
+                    "what does",
+                    "convert ",
+                    "translate",
+                    "spell ",
+                    "calculate",
+                    "what year",
+                    "what time",
+                    "how far",
+                    "how long",
+                    "how much does",
+                    "what is the price",
+                    "what is the cost",
+                )
+            )
+            and word_count <= 10
+        ):
             result = "simple"
 
         # "what is X" only simple when short — longer → research
@@ -315,11 +527,11 @@ class ModelRouter:
         # ── Post-processing: speed downgrade ─────────────────────────────
         if wants_brief:
             _SPEED_DOWNGRADE: dict[str, str] = {
-                "premium":  "complex",
-                "complex":  "balanced",
+                "premium": "complex",
+                "complex": "balanced",
                 "research": "balanced",
-                "writing":  "simple",
-                "coding":   "simple",
+                "writing": "simple",
+                "coding": "simple",
                 "advanced": "balanced",
             }
             result = _SPEED_DOWNGRADE.get(result, result)
@@ -416,13 +628,13 @@ class ModelRouter:
         query_type = self._classify(query)
         tier_map = {
             "conversational": "agent",
-            "simple":         "agent",
-            "balanced":       "agent",    # Haiku floor — DeepSeek tool use unreliable
-            "coding":         "agent",    # Haiku — file_ops/code_exec need reliability
-            "writing":        "advanced", # Haiku — prose with tools (search + write)
-            "research":       "research", # Gemini Flash — long context + tool use
-            "complex":        "advanced", # Haiku — reliable reasoning + tool use
-            "premium":        "premium",  # Sonnet 4 — best quality
+            "simple": "agent",
+            "balanced": "agent",  # Haiku floor — DeepSeek tool use unreliable
+            "coding": "agent",  # Haiku — file_ops/code_exec need reliability
+            "writing": "advanced",  # Haiku — prose with tools (search + write)
+            "research": "research",  # Gemini Flash — long context + tool use
+            "complex": "advanced",  # Haiku — reliable reasoning + tool use
+            "premium": "premium",  # Sonnet 4 — best quality
         }
         tier = tier_map.get(query_type, "agent")
 
@@ -457,15 +669,83 @@ class ModelRouter:
             return False
         return self.is_complex(query)
 
+    async def _classify_async(self, query: str) -> str:
+        """Classify via LLM when enabled in agent_pillars.yaml, else keyword classifier."""
+        if self.complexity_mode() == "llm_classifier" and settings.OPENROUTER_API_KEY:
+            return await self._classify_query_llm(query)
+        return self._classify(query)
+
+    async def select_for_run_async(
+        self,
+        query: str,
+        has_tools: bool = False,
+        budget_remaining: float = 30.0,
+    ) -> str:
+        """
+        Async version of select_for_run — uses the LLM classifier when enabled.
+        Orchestrator should call this instead of select_for_run.
+        """
+        if budget_remaining < 2.0:
+            logger.warning(
+                f"Budget critical (${budget_remaining:.2f}) — forcing free model"
+            )
+            return self.MODELS["free"]["model"]
+
+        query_type = await self._classify_async(query)
+
+        if not has_tools:
+            if budget_remaining < 8.0:
+                return self.MODELS["simple"]["model"]
+            tier_map = {
+                "conversational": "free",
+                "simple": "simple",
+                "balanced": "balanced",
+                "coding": "coding",
+                "writing": "advanced",
+                "research": "research",
+                "complex": "advanced",
+                "premium": "premium",
+            }
+            tier = tier_map.get(query_type, "balanced")
+            model = self.MODELS[tier]["model"]
+            alternatives = [
+                m["model"] for m in self.MODELS.values() if m["model"] != model
+            ]
+            model = cost_learning.suggest_model(model, alternatives)
+            logger.info(f"Routing → {tier} ({model}) for query type: {query_type}")
+            return model
+
+        # Tool run — same logic as select_for_run but with async classification.
+        tier_map = {
+            "conversational": "agent",
+            "simple": "agent",
+            "balanced": "agent",
+            "coding": "agent",
+            "writing": "advanced",
+            "research": "research",
+            "complex": "advanced",
+            "premium": "premium",
+        }
+        tier = tier_map.get(query_type, "agent")
+        if budget_remaining < 8.0 and tier == "premium":
+            tier = "advanced"
+        if tier not in self._TOOL_SAFE_TIERS:
+            logger.warning("Tier '%s' is not tool-safe; falling back to agent", tier)
+            tier = "agent"
+        model = self.MODELS[tier]["model"]
+        logger.info(
+            f"Tool-run routing → {tier} ({model}) for query type: {query_type}, "
+            f"budget_remaining=${budget_remaining:.2f}"
+        )
+        return model
+
     async def should_plan_async(
         self, query: str, has_tools: bool, has_history: bool = False
     ) -> bool:
         if not has_tools or has_history:
             return False
-        if self.complexity_mode() == "llm_classifier" and settings.OPENROUTER_API_KEY:
-            qt = await self._classify_query_llm(query)
-            return qt in ("complex", "research")
-        return self.is_complex(query)
+        qt = await self._classify_async(query)
+        return qt in ("complex", "research")
 
     def is_worth_remembering(self, query: str) -> bool:
         """Return True if the query is substantive enough to warrant memory extraction.
@@ -597,9 +877,14 @@ class ModelRouter:
 
     # Rank used by select_for_confidence — higher = more capable / expensive.
     _TIER_RANK: dict[str, int] = {
-        "free": 0, "simple": 1, "balanced": 2,
-        "coding": 2, "research": 2, "agent": 3,
-        "advanced": 4, "premium": 5,
+        "free": 0,
+        "simple": 1,
+        "balanced": 2,
+        "coding": 2,
+        "research": 2,
+        "agent": 3,
+        "advanced": 4,
+        "premium": 5,
     }
 
     def select_for_confidence(

@@ -185,6 +185,7 @@ async def run_agent(
             max_iterations=body.max_iterations,
             conversation_id=body.conversation_id,
             reasoning_effort=body.reasoning_effort,
+            images=body.images,
         )
     except Exception:
         run_status = "failed"
@@ -306,6 +307,7 @@ async def stream_agent(
                 task_id=task_id,
                 conversation_id=body.conversation_id,
                 reasoning_effort=body.reasoning_effort,
+                images=body.images,
             )
             while True:
                 try:
@@ -1002,7 +1004,9 @@ async def get_workflow_suggestions(
     api_key: str = Depends(verify_api_key),
 ):
     """Return recurring task patterns that are candidates for workflow automation."""
-    from app.agent.workflow_suggestions import get_workflow_suggestions as _get_suggestions
+    from app.agent.workflow_suggestions import (
+        get_workflow_suggestions as _get_suggestions,
+    )
 
     return {"suggestions": await _get_suggestions(min_occurrences=min_occurrences)}
 
@@ -1015,6 +1019,7 @@ async def list_skill_chains(
 ):
     """List all defined skill chains."""
     from app.agent.skill_composer import list_chains
+
     return {"chains": await list_chains()}
 
 
@@ -1026,6 +1031,7 @@ async def create_skill_chain(
 ):
     """Create a new skill chain."""
     from app.agent.skill_composer import create_chain
+
     body = await request.json()
     name = str(body.get("name") or "").strip()
     task_type = str(body.get("task_type") or "general").strip()
@@ -1056,6 +1062,7 @@ async def delete_skill_chain(
 ):
     """Delete a skill chain by ID."""
     from app.agent.skill_composer import delete_chain
+
     deleted = await delete_chain(chain_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Skill chain not found")
@@ -1070,7 +1077,12 @@ async def auto_generate_skill_chains(
 ):
     """Promote top tool_recommendations into skill chains automatically."""
     from app.agent.skill_composer import auto_generate_chains
-    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+
+    body = (
+        await request.json()
+        if request.headers.get("content-type", "").startswith("application/json")
+        else {}
+    )
     min_occ = int((body or {}).get("min_occurrences") or 5)
     created = await auto_generate_chains(min_occurrences=min_occ)
     return {"created": created, "count": len(created)}

@@ -33,10 +33,10 @@ purpose:
 # ═══════════════════════════════════════════════════════════════════
 system_prompt:
   persona:
-    name: "Agent"
-    role: "Personal AI co-worker"
-    personality: "Direct, concise, proactive. Explains reasoning when asked."
-    communication_style: "Professional but approachable"
+    name: "Kimi"
+    role: "Personal AI co-worker for JNix — developer, content creator, and entrepreneur"
+    personality: "Direct, concise, proactive. Adapts tone per domain: technical for dev, analytical for TechTrendWire, poetic for MindType.Studio, practical for business."
+    communication_style: "Between casual and professional — competence over pleasantries"
   
   goals:
     - "Complete user tasks efficiently with minimal cost"
@@ -192,18 +192,24 @@ tools:
         command: "npx"
         args: ["-y", "@modelcontextprotocol/server-brave-search"]
         # BRAVE_API_KEY is inherited from the process environment (set in .env)
-    # Examples:
-    # - name: "remote_http"
-    #   transport: http_json   # default when omitted; requires MCP HTTP bridge at url + /rpc
-    #   url: "https://your-mcp-bridge.example.com"
-    # - name: "github_sse"
-    #   transport: sse
-    #   url: "https://mcp.example.com/github/sse"
-    # - name: "local_stdio"
-    #   transport: stdio
-    #   command: "npx"
-    #   args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp/agent-workspace"]
-    #   env: { "FOO": "bar" }
+
+      # Google Workspace — Gmail + Google Calendar + Drive
+      # Requires OAuth credentials in .env:
+      #   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN
+      # First-time setup: run `npx mcp-server-google-workspace auth` to generate token.json
+      - name: "google_workspace"
+        transport: stdio
+        command: "npx"
+        args: ["-y", "mcp-server-google-workspace"]
+        # Credentials inherited from .env (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN)
+
+      # Notion — read/write pages, databases, blocks
+      # Requires: NOTION_API_KEY in .env (create at https://www.notion.so/profile/integrations)
+      - name: "notion"
+        transport: stdio
+        command: "npx"
+        args: ["-y", "@notionhq/notion-mcp-server"]
+        # NOTION_API_KEY is inherited from the process environment (set in .env)
   
   agent_as_tool:
     enabled: true   # SubAgentRunner + run_sub_agent; enable in pillars when exposed as LLM-callable tool
@@ -274,21 +280,52 @@ orchestration:
     max_iterations: 10
     parallel_tool_calls: true
     plan_complex_queries: true
-    complexity_threshold: "keyword"  # keyword | llm_classifier — latter uses llm.routing_classifier for planning gate
+    complexity_threshold: "llm_classifier"  # keyword | llm_classifier — latter uses llm.routing_classifier for planning gate
   
   triggers:
     scheduled_tasks:
       enabled: true   # Interval jobs from this list + built-in memory_decay / memory_consolidation
-      tasks: []
-      # Examples:
-      # - name: "weekly_consolidate"
-      #   interval_seconds: 604800
-      #   action: "consolidate_memories"
-      # - name: "daily_brief"
-      #   interval_seconds: 86400
-      #   query: "Summarize today's AI news in 5 bullets"
-      #   user_id: "optional-user-uuid"
-      #   max_iterations: 6
+      tasks:
+        # Daily briefing — runs every 24h from backend startup.
+        # For exact time-of-day (e.g. 8am daily), use POST /schedules with cron "0 8 * * *" instead.
+        - name: "daily_brief"
+          interval_seconds: 86400
+          max_iterations: 8
+          query: |
+            Run my daily briefing. Use available tools to gather real data, then produce a
+            structured summary under these sections:
+
+            ## Today's Schedule
+            Check Google Calendar for any events or deadlines today. List them with times.
+            If no calendar access, skip this section.
+
+            ## Inbox Highlights
+            Check Gmail for important unread messages (flag anything from clients, app stores,
+            Etsy, Printify, or anything that needs a response today). Skip if no Gmail access.
+
+            ## Tech News for TechTrendWire
+            Use web search to find 3-5 trending stories in AI, Gaming, VR/AR, or Hardware
+            from the last 24 hours. For each: headline, one-sentence summary, and whether it
+            has video + article crossover potential.
+
+            ## Project Pulse
+            Brief one-liner status on each active project based on memory:
+            - ReGrabber (Flutter)
+            - GameTranslationTool (C#/WPF)
+            - NixCategories (PSP/C)
+            - KidMap (React Native)
+
+            ## MindType.Studio
+            What emotion or theme should today's post explore? Suggest a caption concept
+            (poetic, minimalist, introspective). Note if a post is due today (3x/week cadence).
+
+            ## NixLevel (Etsy/Printify)
+            Any product or listing actions to consider today? (new variants, pricing check,
+            mockup ideas.) Keep this to 1-2 lines unless memory has specific pending items.
+
+            ## Next 3 Actions
+            Based on everything above, what are the 3 most important things to do today
+            across all projects and ventures?
     
     event_driven:
       enabled: true   # register_event_handler / emit_event in OrchestrationRuntime (lightweight)
