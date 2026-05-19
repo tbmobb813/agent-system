@@ -157,7 +157,7 @@ function ConnectorCard({ connector, onUpdate }: { connector: ConnectorStatus; on
   }
 
   return (
-    <div className={`panel p-5 space-y-4 ${connector.enabled ? 'border-(--accent)]/30' : ''}`}>
+    <div className={`panel p-5 space-y-4 ${connector.enabled ? 'border-(--accent)/30' : ''}`}>
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
