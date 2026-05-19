@@ -81,6 +81,23 @@ echo "==> Copy static assets to standalone output"
 # next/standalone doesn't copy public/ or .next/static/ automatically
 cp -r public .next/standalone/public 2>/dev/null || true
 cp -r .next/static .next/standalone/.next/static 2>/dev/null || true
+echo "==> Running database migrations"
+cd "$REPO_DIR"
+# Load DATABASE_URL from backend/.env if not already set
+if [[ -z "${DATABASE_URL:-}" && -f "$REPO_DIR/backend/.env" ]]; then
+	DATABASE_URL="$(grep -E '^DATABASE_URL=' "$REPO_DIR/backend/.env" | head -1 | cut -d'=' -f2-)"
+	export DATABASE_URL
+fi
+if [[ -z "${DATABASE_URL:-}" ]]; then
+	echo "[deploy][warn] DATABASE_URL not set — skipping migrations" >&2
+else
+	for migration_file in "$REPO_DIR"/supabase/migrations/*.sql; do
+		echo "  applying $(basename "$migration_file")"
+		psql "$DATABASE_URL" -f "$migration_file" -v ON_ERROR_STOP=0 --quiet
+	done
+	echo "==> Migrations complete"
+fi
+
 echo "==> Running deployment preflight checks"
 bash "$REPO_DIR/deploy/preflight.sh"
 

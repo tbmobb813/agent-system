@@ -213,6 +213,27 @@ jobs:
             echo "✓ $file ($(wc -l < "$file") lines)"
           done
 
+  deploy:
+    name: Deploy to VPS
+    needs: [backend, frontend]
+    # Only deploy on pushes to main — not on PRs, not on other branches.
+    if: |
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      !failure() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd ~/agent-system
+            git pull origin main
+            bash deploy/deploy.sh
+
   deploy_baseline:
     name: Deploy Baseline Checks
     needs: changes
