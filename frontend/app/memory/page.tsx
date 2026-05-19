@@ -66,8 +66,15 @@ export default function MemoryPage() {
   const [saving, setSaving] = useState(false)
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const flash = (msg: string) => { setNotice(msg); setTimeout(() => setNotice(null), 4000) }
+  const flash = (msg: string) => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current)
+    setNotice(msg)
+    noticeTimer.current = setTimeout(() => setNotice(null), 4000)
+  }
+
+  useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current) }, [])
 
   const loadMemories = useCallback(async (q?: string, cat?: string) => {
     setLoadingMem(true); setMemError(null)
@@ -124,6 +131,7 @@ export default function MemoryPage() {
   const [growthAreas, setGrowthAreas] = useState<string[]>([])
   const [loadingSkills, setLoadingSkills] = useState(false)
   const [skillsError, setSkillsError] = useState<string | null>(null)
+  const [skillsFetched, setSkillsFetched] = useState(false)
 
   const loadSkills = useCallback(async () => {
     setLoadingSkills(true); setSkillsError(null)
@@ -132,10 +140,10 @@ export default function MemoryPage() {
       setSkills(Array.isArray(d.skills) ? d.skills as SkillRow[] : [])
       setGrowthAreas(Array.isArray(d.growth_areas) ? d.growth_areas.map(String) : [])
     } catch (e) { setSkillsError(e instanceof Error ? e.message : 'Failed to load') }
-    finally { setLoadingSkills(false) }
+    finally { setLoadingSkills(false); setSkillsFetched(true) }
   }, [])
 
-  useEffect(() => { if (activeTab === 'skills' && skills.length === 0 && !loadingSkills) void loadSkills() }, [activeTab, skills.length, loadingSkills, loadSkills])
+  useEffect(() => { if (activeTab === 'skills' && !skillsFetched && !loadingSkills) void loadSkills() }, [activeTab, skillsFetched, loadingSkills, loadSkills])
 
   // ── Render ────────────────────────────────────────────────────────────────
 

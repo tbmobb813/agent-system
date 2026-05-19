@@ -125,7 +125,7 @@
 - `run_dialectic_reflection(user_id)`: called after each task completes — fetches recent memories, runs one LLM call to update the user model document
 - Reflection prompt: "Based on these memories, update your model of who this user is — goals, preferences, communication style, knowledge level, recurring patterns"
 - `get_user_model(user_id)`: retrieves the current model document
-- Inject user model into system prompt as a `<user_model>` block (after existing `<retrieved_context>`)
+- Inject user model into system prompt as a `<user_model>` block (before `<retrieved_context>`, after persona)
 - Config flag `AGENT_DIALECTIC_REFLECTION=true` to enable/disable
 
 ---

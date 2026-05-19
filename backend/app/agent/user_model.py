@@ -8,7 +8,7 @@ short ``user_model`` document. That document is then injected into the system
 prompt so every future run has a coherent picture of the user's goals, style,
 and preferences without repeating the raw memory list.
 
-Controlled by the ``AGENT_DIALECTIC_REFLECTION`` env flag (default True).
+Controlled by the ``AGENT_DIALECTIC_REFLECTION`` env flag (default False).
 Rate-limited to one reflection per user per 30 minutes to contain LLM costs.
 """
 

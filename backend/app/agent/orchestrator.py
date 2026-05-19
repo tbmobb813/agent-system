@@ -1073,9 +1073,10 @@ class AgentOrchestrator:
                         logger.debug("Skipping memory extraction for low-value turn")
 
                     # Dialectic user model — synthesize memories into a user portrait.
-                    asyncio.create_task(
-                        user_model_manager.run_dialectic_reflection(user_id)
-                    )
+                    if settings.AGENT_DIALECTIC_REFLECTION:
+                        asyncio.create_task(
+                            user_model_manager.run_dialectic_reflection(user_id)
+                        )
 
                     # Post-task reflection + outcome marking (fire-and-forget).
                     asyncio.create_task(

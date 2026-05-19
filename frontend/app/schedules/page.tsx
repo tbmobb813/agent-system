@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   listSchedules,
   createSchedule,
@@ -74,7 +74,15 @@ export default function SchedulesPage() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
-  const flash = (msg: string) => { setNotice(msg); setTimeout(() => setNotice(null), 4000) }
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const flash = (msg: string) => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current)
+    setNotice(msg)
+    noticeTimer.current = setTimeout(() => setNotice(null), 4000)
+  }
+
+  useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current) }, [])
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
