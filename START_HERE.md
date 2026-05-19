@@ -19,7 +19,7 @@ You now have everything needed to build a personal AI co-worker that:
 
 1. Read: **`QUICKSTART.md`**
 2. Run: `docker-compose up`
-3. Visit: <http://localhost:3000>
+3. Visit: <http://localhost:3003>
 4. Done!
 
 ### Full Path (VPS Deployment)
