@@ -411,7 +411,7 @@ export default function SettingsPage() {
       </header>
 
       {/* Tab bar */}
-      <div className="flex gap-1 overflow-x-auto border-b border-(--border)lbar-none">
+      <div className="flex gap-1 overflow-x-auto border-b border-[color:var(--border)] pb-0 scrollbar-none">
         {TABS.map(t => (
           <button key={t.id} type="button" onClick={() => setActiveTab(t.id)}
             className={`px-4 py-2 text-sm font-medium rounded-t-lg border border-b-0 whitespace-nowrap transition-colors ${activeTab === t.id ? 'border-(--border) bg-[color:var(--surface)] text-[color:var(--text)]' : 'border-transparent text-muted hover:text-[color:var(--text)]'}`}
