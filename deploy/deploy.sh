@@ -70,6 +70,11 @@ echo "==> Backend — install/update dependencies"
 cd "$REPO_DIR/backend"
 ./.venv/bin/pip install -r requirements.txt -q
 
+echo "==> Backend — install Playwright Chromium browser"
+./.venv/bin/playwright install chromium --with-deps 2>/dev/null || \
+  ./.venv/bin/python -m playwright install chromium 2>/dev/null || \
+  echo "[warn] Playwright browser install skipped (browser_automation will be unavailable)"
+
 echo "==> Frontend — install dependencies"
 cd "$REPO_DIR/frontend"
 pnpm install --frozen-lockfile
