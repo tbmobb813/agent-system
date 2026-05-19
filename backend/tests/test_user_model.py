@@ -1,8 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from app.agent.user_model import (
     UserModelManager,
     _build_memory_block,
