@@ -71,9 +71,15 @@ cd "$REPO_DIR/backend"
 ./.venv/bin/pip install -r requirements.txt -q
 
 echo "==> Backend — install Playwright Chromium browser"
-./.venv/bin/playwright install chromium --with-deps 2>/dev/null || \
-  ./.venv/bin/python -m playwright install chromium 2>/dev/null || \
-  echo "[warn] Playwright browser install skipped (browser_automation will be unavailable)"
+playwright_install_stderr="$(mktemp)"
+if ! ./.venv/bin/playwright install chromium --with-deps 2>"$playwright_install_stderr"; then
+	if ! ./.venv/bin/python -m playwright install chromium 2>>"$playwright_install_stderr"; then
+		echo "[warn] Playwright browser install skipped (browser_automation will be unavailable)" >&2
+		echo "[warn] Playwright install errors:" >&2
+		cat "$playwright_install_stderr" >&2
+	fi
+fi
+rm -f "$playwright_install_stderr"
 
 echo "==> Frontend — install dependencies"
 cd "$REPO_DIR/frontend"
