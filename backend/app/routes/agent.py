@@ -363,13 +363,16 @@ async def stream_agent(
                     if _db.db_pool:
                         try:
                             elapsed = (datetime.now(UTC) - started_at).total_seconds()
+                            conv_id = (
+                                data.get("conversation_id") or body.conversation_id
+                            )
                             await execute(
                                 """
                                 UPDATE tasks
                                 SET status = $1, result = $2, cost = $3,
                                     completed_at = $4, execution_time = $5,
-                                    model_used = $6
-                                WHERE id = $7
+                                    model_used = $6, conversation_id = $7
+                                WHERE id = $8
                                 """,
                                 status,
                                 "".join(result_parts)[:10000],
@@ -377,6 +380,7 @@ async def stream_agent(
                                 datetime.now(UTC),
                                 elapsed,
                                 model_used,
+                                conv_id,
                                 task_id,
                             )
                         except Exception as e:

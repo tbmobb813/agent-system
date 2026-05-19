@@ -156,6 +156,26 @@ export async function getTaskDetail(taskId: string) {
   return res.json()
 }
 
+export async function getConversationMessages(conversationId: string) {
+  const res = await fetchWithTimeout(`${API_URL}/history/conversations/${conversationId}`, { headers: headers() })
+  if (!res.ok) throw new Error(`Failed to fetch conversation (${res.status})`)
+  return res.json() as Promise<{
+    conversation_id: string
+    messages: Array<{
+      id: string
+      query: string
+      status: string
+      result: string | null
+      created_at: string
+      completed_at: string | null
+      execution_time: number | null
+      cost: number
+      model_used: string | null
+      feedback_signal: string | null
+    }>
+  }>
+}
+
 export async function submitTaskFeedback(
   taskId: string,
   data: { signal: 'up' | 'down'; notes?: string },
