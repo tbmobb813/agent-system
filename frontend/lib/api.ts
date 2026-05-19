@@ -651,7 +651,8 @@ export interface Memory {
   content: string
   category: string
   created_at: string
-  relevance?: number
+  relevance_score?: number
+  similarity?: number
 }
 
 export async function listMemories(limit = 20, category?: string): Promise<{ memories: Memory[]; total: number }> {
@@ -669,9 +670,10 @@ export async function searchMemories(q: string, limit = 10): Promise<{ query: st
 }
 
 export async function saveMemory(content: string, category = 'fact'): Promise<{ status: string; id: string }> {
-  const params = new URLSearchParams({ content, category })
-  const res = await fetchWithTimeout(`${API_URL}/memory?${params}`, {
-    method: 'POST', headers: headers(),
+  const res = await fetchWithTimeout(`${API_URL}/memory`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ content, category }),
   })
   if (!res.ok) throw new Error(`Failed to save memory (${res.status})`)
   return res.json()

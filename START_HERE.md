@@ -92,7 +92,7 @@ cp .env.example .env
 docker-compose up
 
 # Access
-# - Frontend: http://localhost:3000
+# - Frontend: http://localhost:3003
 # - API: http://localhost:8000
 # - Docs: http://localhost:8000/docs
 ```
@@ -328,7 +328,7 @@ cp .env.example .env
 
 ```bash
 docker-compose up
-# Then visit http://localhost:3000
+# Then visit http://localhost:3003
 ```
 
 ### In 2 Hours
@@ -390,7 +390,7 @@ docker-compose up
 # The fastest way to get started:
 cd agent-system
 docker-compose up
-# Then visit http://localhost:3000
+# Then visit http://localhost:3003
 ```
 
 That's it. You now have a working AI agent system.

@@ -12,7 +12,7 @@ Key bindings:
     Ctrl+C         Stop current run / exit if idle
     Ctrl+L         Clear output
     Ctrl+R         Retry last message
-    Up / Down      Cycle input history (when input is focused)
+    Ctrl+Up / Ctrl+Down  Cycle input history (when input is focused)
     Tab            Autocomplete slash command
 
 Slash commands:
@@ -69,7 +69,7 @@ HELP_TEXT = """\
   [cyan]Ctrl+C[/]          Stop run / exit
   [cyan]Ctrl+L[/]          Clear output
   [cyan]Ctrl+R[/]          Retry last message
-  [cyan]Up / Down[/]       Cycle input history (Ctrl+Up/Down in TextArea)\
+  [cyan]Ctrl+Up / Ctrl+Down[/]  Cycle input history\
 """
 
 

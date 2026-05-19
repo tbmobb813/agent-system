@@ -85,6 +85,8 @@ export default function MemoryPage() {
 
   useEffect(() => { void loadMemories() }, [loadMemories])
 
+  useEffect(() => () => { if (searchTimer.current) clearTimeout(searchTimer.current) }, [])
+
   // debounce search input
   const handleQueryChange = (val: string) => {
     setQuery(val)
@@ -241,8 +243,8 @@ export default function MemoryPage() {
                         {m.category}
                       </span>
                       <span className="text-xs text-muted">{fmtDatetime(m.created_at)}</span>
-                      {m.relevance != null && (
-                        <span className="text-xs text-muted">relevance {(m.relevance * 100).toFixed(0)}%</span>
+                      {(m.relevance_score != null || m.similarity != null) && (
+                        <span className="text-xs text-muted">relevance {((m.relevance_score ?? m.similarity ?? 0) * 100).toFixed(0)}%</span>
                       )}
                     </div>
                   </div>

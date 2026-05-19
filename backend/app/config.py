@@ -110,7 +110,7 @@ class Settings(BaseSettings):
     QUALITY_SCORING_MODEL: str = Field(default="anthropic/claude-3.5-haiku")
 
     # Dialectic user modeling
-    AGENT_DIALECTIC_REFLECTION: bool = Field(default=True)
+    AGENT_DIALECTIC_REFLECTION: bool = Field(default=False)
 
     # Context limits
     MAX_CONTEXT_TOKENS: int = Field(default=128000)

@@ -105,7 +105,7 @@ cd agent-system
 cp .env.example .env
 # Fill in OPENROUTER_API_KEY
 docker-compose up
-# Visit http://localhost:3000
+# Visit http://localhost:3003
 ```
 
 See `QUICKSTART.md` for details.
@@ -415,7 +415,7 @@ curl -X POST http://localhost:8000/agent/run \
 
 ```bash
 # Check console
-http://localhost:3000 → Browser DevTools (F12)
+http://localhost:3003 → Browser DevTools (F12)
 
 # Backend connection
 echo $NEXT_PUBLIC_API_URL
@@ -463,7 +463,7 @@ To scale further:
 
 1. **Read**: `QUICKSTART.md` (30 min start guide)
 2. **Try**: Run locally with `docker-compose up`
-3. **Test**: Hit <http://localhost:3003> (`3000` may be used in a separate dev mode)
+3. **Test**: Hit <http://localhost:3003>
 4. **Deploy**: Follow `SETUP.md` for VPS
 5. **Customize**: Add your tools and workflows
 
