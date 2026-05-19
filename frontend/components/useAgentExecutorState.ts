@@ -41,7 +41,6 @@ function errMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
-type Attachment = { id: string; filename: string; status: 'uploading' | 'ready' | 'error'; error?: string }
 type McpForm = { name: string; transport: string; url: string; command: string; args: string }
 type SkillForm = { task_type: string; skill_name: string; required_tools: string }
 type ChainForm = { name: string; task_type: string; description: string; steps: string }
@@ -50,14 +49,12 @@ export function useAgentExecutorState() {
   const [query, setQuery] = useState('')
   const [context, setContext] = useState('')
   const [attachedImages, setAttachedImages] = useState<string[]>([])
-  const [attachments, setAttachments] = useState<Attachment[]>([])
   const [editText, setEditText] = useState('')
   const [opsBusy, setOpsBusy] = useState<string | null>(null)
   const [opsNotice, setOpsNotice] = useState<string | null>(null)
   const [mcpForm, setMcpForm] = useState<McpForm>({ name: '', transport: 'http_json', url: '', command: '', args: '' })
   const [skillForm, setSkillForm] = useState<SkillForm>({ task_type: '', skill_name: '', required_tools: '' })
   const [chainForm, setChainForm] = useState<ChainForm>({ name: '', task_type: 'research', description: '', steps: '' })
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const streamEndRef = useRef<HTMLDivElement>(null)
   const editInputRef = useRef<HTMLTextAreaElement>(null)
   const [editLastOpen, setEditLastOpen] = useState(false)
@@ -320,10 +317,10 @@ export function useAgentExecutorState() {
 
   return {
     query, setQuery, context, setContext, attachedImages, setAttachedImages,
-    attachments, setAttachments, editText, setEditText,
+    editText, setEditText,
     opsBusy, setOpsBusy, opsNotice, setOpsNotice,
     mcpForm, setMcpForm, skillForm, setSkillForm, chainForm, setChainForm,
-    fileInputRef, streamEndRef, editInputRef,
+    streamEndRef, editInputRef,
     editLastOpen, setEditLastOpen, showThinkingLive, setShowThinkingLive,
     reasoningPhaseOpenByTurn, setReasoningPhaseOpenByTurn, reasoningEffortForRequest, setReasoningEffortForRequest,
     showFeedbackNudge, dismissFeedbackNudge, feedbackDetailsRef, contextPanelRef, queryInputRef,

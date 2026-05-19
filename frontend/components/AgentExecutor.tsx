@@ -128,10 +128,10 @@ export default function AgentExecutor() {
 
   const {
     query, setQuery, context, setContext, attachedImages, setAttachedImages,
-    attachments, setAttachments, editText, setEditText,
+    editText, setEditText,
     opsBusy, setOpsBusy, opsNotice, setOpsNotice,
     mcpForm, setMcpForm, skillForm, setSkillForm, chainForm, setChainForm,
-    fileInputRef, streamEndRef, editInputRef,
+    streamEndRef, editInputRef,
     editLastOpen, setEditLastOpen, showThinkingLive,
     reasoningPhaseOpenByTurn, reasoningEffortForRequest, setReasoningEffortForRequest,
     dismissFeedbackNudge, feedbackDetailsRef, queryInputRef,
@@ -258,40 +258,6 @@ export default function AgentExecutor() {
       setAttachedImages([])
     }
   }
-
-  const handlePickFiles = useCallback(() => {
-    fileInputRef.current?.click()
-  }, [])
-
-  const handleAttachFiles = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-    if (files.length === 0) return
-
-    const queue = files.map(file => ({
-      id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
-      filename: file.name,
-      status: 'uploading' as const,
-    }))
-
-    setAttachments(prev => [...queue, ...prev])
-
-    await Promise.all(queue.map(async (item, idx) => {
-      try {
-        await uploadDocument(files[idx])
-        setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, status: 'ready' } : a))
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Upload failed'
-        setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, status: 'error', error: msg } : a))
-      }
-    }))
-
-    // Allow selecting the same file again later.
-    e.currentTarget.value = ''
-  }, [])
-
-  const removeAttachment = useCallback((id: string) => {
-    setAttachments(prev => prev.filter(a => a.id !== id))
-  }, [])
 
   useEffect(() => {
     streamEndRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' })
@@ -939,6 +905,49 @@ export default function AgentExecutor() {
           {error ? (
             <p className="text-sm text-[color:var(--danger)]" role="alert">{error}</p>
           ) : null}
+          {editLastOpen && (
+            <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--bg-elev)] mb-2 overflow-hidden">
+              <div className="flex items-center gap-2 px-3 pt-2 pb-1">
+                <span className="text-[10px] uppercase tracking-widest text-muted">Editing last message</span>
+                <button type="button" onClick={() => setEditLastOpen(false)} className="ml-auto text-xs text-muted hover:text-[color:var(--text)]">✕ Cancel</button>
+              </div>
+              <textarea
+                ref={editInputRef}
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    const text = editText.trim()
+                    if (!text || isRunning) return
+                    run(text, undefined, conversationId, reasoningEffortForRequest)
+                    setEditLastOpen(false)
+                    setEditText('')
+                  }
+                  if (e.key === 'Escape') setEditLastOpen(false)
+                }}
+                rows={2}
+                placeholder="Edit your message…"
+                className="w-full bg-transparent px-3 py-2 text-sm focus:outline-none resize-none"
+              />
+              <div className="flex justify-end px-3 pb-2">
+                <button
+                  type="button"
+                  disabled={isRunning || !editText.trim()}
+                  onClick={() => {
+                    const text = editText.trim()
+                    if (!text || isRunning) return
+                    run(text, undefined, conversationId, reasoningEffortForRequest)
+                    setEditLastOpen(false)
+                    setEditText('')
+                  }}
+                  className="btn-accent px-3 py-1.5 rounded-lg text-sm disabled:opacity-50"
+                >
+                  Resend
+                </button>
+              </div>
+            </div>
+          )}
           <div className="relative rounded-xl border border-[color:var(--border)] bg-[color:var(--bg-elev)] focus-within:border-[color:var(--accent)] transition-colors">
             <textarea data-testid="agent-message-input" ref={queryInputRef} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={handleKeyDown} placeholder="Ask anything…" rows={3} disabled={isRunning} className="relative z-10 w-full bg-transparent rounded-t-xl px-4 pt-3 pb-2 text-sm focus:outline-none resize-none disabled:opacity-50" />
             {attachedImages.length > 0 && (
