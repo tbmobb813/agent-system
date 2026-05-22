@@ -41,6 +41,10 @@ from app.agent import tool_preferences as _tool_prefs
 from app.agent import skill_composer as _skill_composer
 from app.agent.user_model import user_model_manager
 from app.agent.episodes import save_episode
+from app.agent.skill_extractor import (
+    extract_skills_from_recent_episodes,
+    search_authored_skills,
+)
 
 
 def _score_tool_result(name: str, result: str, err: Optional[str]) -> float:
@@ -384,6 +388,7 @@ class AgentOrchestrator:
                 tool_bias_hint,
                 active_skill_chain,
                 current_user_model,
+                relevant_authored_skills,
             ) = await asyncio.gather(
                 _get_budget(),
                 conversation_manager.get_or_create(conversation_id, user_id=user_id),
@@ -393,6 +398,7 @@ class AgentOrchestrator:
                 _get_bias_hint(),
                 _skill_composer.get_applicable_chain(query),
                 user_model_manager.get(user_id),
+                search_authored_skills(query, user_id=user_id),
             )
 
             # ── #5 Tool precondition + budget filtering ───────────────────────
@@ -417,6 +423,7 @@ class AgentOrchestrator:
             asyncio.create_task(skill_registry.update_skills())
             asyncio.create_task(learn_tool_chains())
             asyncio.create_task(refresh_efficiency_cache())
+            asyncio.create_task(extract_skills_from_recent_episodes(user_id=user_id))
 
             persona_prompt = await asyncio.to_thread(
                 build_persona_prompt, user_settings
@@ -529,6 +536,7 @@ class AgentOrchestrator:
                 monthly_budget_usd=float(settings.OPENROUTER_BUDGET_MONTHLY),
                 tool_names=self.tools.list_tools(),
                 user_model=current_user_model or None,
+                authored_skills=relevant_authored_skills or None,
             )
 
             # ── Plan-then-execute for qualifying multi-step queries ───

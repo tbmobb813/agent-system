@@ -95,6 +95,46 @@ def user_model_section(model_text: str) -> str:
     )
 
 
+def authored_skills_section(skills: list[dict]) -> str:
+    """
+    Inject LLM-authored skills extracted from past successful tasks.
+    Skills are ordered by relevance to the current query (caller's responsibility).
+    Each skill is rendered compactly — pattern is the key trigger for the model.
+    """
+    if not skills:
+        return ""
+    lines: list[str] = [
+        "<learned_skills>",
+        "Skills acquired from your past tasks. "
+        "When the current task matches a pattern below, apply the solution.",
+    ]
+    for s in skills:
+        name = (s.get("name") or "").strip()
+        pattern = (s.get("pattern") or "").strip()
+        solution = (s.get("solution") or "").strip()[:400]
+        preconditions: list[str] = s.get("preconditions") or []
+        gotchas: list[str] = s.get("gotchas") or []
+        use_count: int = s.get("use_count") or 0
+        success_count: int = s.get("success_count") or 0
+
+        if not name or not pattern:
+            continue
+
+        lines.append(f"\n• **{name}**")
+        lines.append(f"  Problem: {pattern}")
+        lines.append(f"  Approach: {solution}")
+        if preconditions:
+            lines.append(f"  Apply when: {'; '.join(preconditions[:2])}")
+        if gotchas:
+            lines.append(f"  Watch out for: {'; '.join(gotchas[:2])}")
+        if use_count > 0:
+            pct = int(success_count / use_count * 100)
+            lines.append(f"  Used {use_count}× ({pct}% success rate)")
+
+    lines.append("</learned_skills>")
+    return "\n\n" + "\n".join(lines)
+
+
 def fiscal_context_section(
     budget_remaining: float,
     monthly_budget_usd: float,

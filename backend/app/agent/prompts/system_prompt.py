@@ -28,6 +28,7 @@ def build_system_prompt(
     monthly_budget_usd: Optional[float] = None,
     tool_names: Optional[list[str]] = None,
     user_model: Optional[str] = None,
+    authored_skills: Optional[list[dict]] = None,
 ) -> str:
     """Build the static + injected system prompt."""
     system = BASE_SYSTEM_PROMPT
@@ -46,6 +47,9 @@ def build_system_prompt(
 
     if retrieved_context:
         system += guardrails.retrieved_context_section(retrieved_context)
+
+    if authored_skills:
+        system += guardrails.authored_skills_section(authored_skills)
 
     if extra_context:
         system += f"\n\nAdditional context: {extra_context}"
