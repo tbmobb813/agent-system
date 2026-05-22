@@ -32,8 +32,8 @@ async def test_learn_tool_chains_skips_on_db_error():
 async def test_learn_tool_chains_skips_task_types_below_min_sample():
     mock_pool = MagicMock()
     rows = [
-        {"query": "write some code", "tool_name": "code_runner"},
-        {"query": "write some code", "tool_name": "web_search"},
+        {"query": "write some code", "status": "completed", "tool_name": "code_runner"},
+        {"query": "write some code", "status": "completed", "tool_name": "web_search"},
     ]
     mock_execute = AsyncMock()
     with (
@@ -49,11 +49,22 @@ async def test_learn_tool_chains_skips_task_types_below_min_sample():
 @pytest.mark.asyncio
 async def test_learn_tool_chains_upserts_when_enough_samples():
     mock_pool = MagicMock()
-    # Generate 6 tasks of the same type (each unique query = new task key)
     rows = []
     for i in range(6):
-        rows.append({"query": f"write code task {i}", "tool_name": "code_runner"})
-        rows.append({"query": f"write code task {i}", "tool_name": "web_search"})
+        rows.append(
+            {
+                "query": f"write code task {i}",
+                "status": "completed",
+                "tool_name": "code_runner",
+            }
+        )
+        rows.append(
+            {
+                "query": f"write code task {i}",
+                "status": "completed",
+                "tool_name": "web_search",
+            }
+        )
 
     mock_execute = AsyncMock()
     with (
@@ -70,7 +81,10 @@ async def test_learn_tool_chains_upserts_when_enough_samples():
 @pytest.mark.asyncio
 async def test_learn_tool_chains_upsert_failure_does_not_raise():
     mock_pool = MagicMock()
-    rows = [{"query": f"code task {i}", "tool_name": "tool_x"} for i in range(6)]
+    rows = [
+        {"query": f"code task {i}", "status": "completed", "tool_name": "tool_x"}
+        for i in range(6)
+    ]
 
     async def fail_execute(*a, **kw):
         raise Exception("upsert failed")
@@ -83,6 +97,89 @@ async def test_learn_tool_chains_upsert_failure_does_not_raise():
         patch("app.agent.tool_learning.classify_query", return_value="coding"),
     ):
         await learn_tool_chains()  # should not raise
+
+
+@pytest.mark.asyncio
+async def test_learn_tool_chains_success_rate_all_completed():
+    """All completed tasks → success_rate == 1.0"""
+    mock_pool = MagicMock()
+    rows = [
+        {"query": f"write code {i}", "status": "completed", "tool_name": "code_runner"}
+        for i in range(6)
+    ]
+    captured: list = []
+
+    async def capture_execute(sql, *args):
+        captured.append(args)
+
+    with (
+        patch.object(tl_mod._db, "db_pool", mock_pool),
+        patch.object(tl_mod._db, "fetch", AsyncMock(return_value=rows)),
+        patch.object(tl_mod._db, "execute", capture_execute),
+        patch("app.agent.tool_learning.MIN_SAMPLE_SIZE", 5),
+        patch("app.agent.tool_learning.classify_query", return_value="coding"),
+    ):
+        await learn_tool_chains()
+
+    assert len(captured) == 1
+    # args order: task_type, recommended_sequence, success_rate, sample_count
+    assert captured[0][2] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_learn_tool_chains_success_rate_mixed():
+    """4 completed + 2 failed → success_rate == 0.667"""
+    mock_pool = MagicMock()
+    rows = [
+        {"query": f"write code {i}", "status": "completed", "tool_name": "code_runner"}
+        for i in range(4)
+    ] + [
+        {"query": f"write code bad {i}", "status": "failed", "tool_name": "code_runner"}
+        for i in range(2)
+    ]
+    captured: list = []
+
+    async def capture_execute(sql, *args):
+        captured.append(args)
+
+    with (
+        patch.object(tl_mod._db, "db_pool", mock_pool),
+        patch.object(tl_mod._db, "fetch", AsyncMock(return_value=rows)),
+        patch.object(tl_mod._db, "execute", capture_execute),
+        patch("app.agent.tool_learning.MIN_SAMPLE_SIZE", 5),
+        patch("app.agent.tool_learning.classify_query", return_value="coding"),
+    ):
+        await learn_tool_chains()
+
+    assert len(captured) == 1
+    success_rate = captured[0][2]
+    assert abs(success_rate - round(4 / 6, 3)) < 0.001
+
+
+@pytest.mark.asyncio
+async def test_learn_tool_chains_success_rate_all_failed():
+    """All failed tasks → success_rate == 0.0"""
+    mock_pool = MagicMock()
+    rows = [
+        {"query": f"write code {i}", "status": "failed", "tool_name": "code_runner"}
+        for i in range(6)
+    ]
+    captured: list = []
+
+    async def capture_execute(sql, *args):
+        captured.append(args)
+
+    with (
+        patch.object(tl_mod._db, "db_pool", mock_pool),
+        patch.object(tl_mod._db, "fetch", AsyncMock(return_value=rows)),
+        patch.object(tl_mod._db, "execute", capture_execute),
+        patch("app.agent.tool_learning.MIN_SAMPLE_SIZE", 5),
+        patch("app.agent.tool_learning.classify_query", return_value="coding"),
+    ):
+        await learn_tool_chains()
+
+    assert len(captured) == 1
+    assert captured[0][2] == 0.0
 
 
 # ── get_tool_hint ─────────────────────────────────────────────────────────────

@@ -40,6 +40,7 @@ from app.agent.prompts.system_prompt import PROMPT_VERSION, build_system_prompt
 from app.agent import tool_preferences as _tool_prefs
 from app.agent import skill_composer as _skill_composer
 from app.agent.user_model import user_model_manager
+from app.agent.episodes import save_episode
 
 
 def _score_tool_result(name: str, result: str, err: Optional[str]) -> float:
@@ -349,6 +350,9 @@ class AgentOrchestrator:
             last_update=datetime.now(UTC),
         )
         self.active_tasks[task_id] = state
+        tools_used: list[str] = (
+            []
+        )  # initialised here so except handlers can always read it
 
         try:
             # ── Round 1: fully independent startup work in parallel ───────────
@@ -1099,6 +1103,20 @@ class AgentOrchestrator:
                                 active_skill_chain["id"], success=True
                             )
                         )
+                    asyncio.create_task(
+                        save_episode(
+                            task_id=task_id,
+                            user_id=user_id,
+                            query=query,
+                            outcome=final_text,
+                            success=True,
+                            tools_used=list(tools_used),
+                            duration_ms=int(
+                                (datetime.now(UTC) - state.start_time).total_seconds()
+                                * 1000
+                            ),
+                        )
+                    )
 
                     break  # Done
 
@@ -1368,6 +1386,19 @@ class AgentOrchestrator:
                         active_skill_chain["id"], success=False
                     )
                 )
+            asyncio.create_task(
+                save_episode(
+                    task_id=task_id,
+                    user_id=user_id,
+                    query=query,
+                    outcome=str(e),
+                    success=False,
+                    tools_used=list(tools_used),
+                    duration_ms=int(
+                        (datetime.now(UTC) - state.start_time).total_seconds() * 1000
+                    ),
+                )
+            )
             yield ExecutionEvent(type=EventType.ERROR, error=f"Execution failed: {e}")
 
         finally:

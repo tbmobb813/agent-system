@@ -31,12 +31,16 @@ def _row_to_chain(row: dict) -> dict:
         "name": row["name"],
         "description": row["description"] or "",
         "task_type": row["task_type"],
-        "steps": json.loads(row["steps"])
-        if isinstance(row["steps"], str)
-        else (row["steps"] or []),
-        "trigger_keywords": json.loads(row["trigger_keywords"])
-        if isinstance(row["trigger_keywords"], str)
-        else (row["trigger_keywords"] or []),
+        "steps": (
+            json.loads(row["steps"])
+            if isinstance(row["steps"], str)
+            else (row["steps"] or [])
+        ),
+        "trigger_keywords": (
+            json.loads(row["trigger_keywords"])
+            if isinstance(row["trigger_keywords"], str)
+            else (row["trigger_keywords"] or [])
+        ),
         "success_rate": row["success_rate"],
         "total_runs": row["total_runs"] or 0,
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
@@ -263,7 +267,7 @@ async def auto_generate_chains(min_occurrences: int = 5) -> list[dict]:
         name = f"{task_type}_auto"
         description = (
             f"Auto-generated from {row['sample_count']} past {task_type} tasks "
-            f"(success rate: {round((row['success_rate'] or 1.0) * 100):.0f}%)"
+            f"(success rate: {round((row['success_rate'] if row['success_rate'] is not None else 1.0) * 100):.0f}%)"
         )
         try:
             chain = await create_chain(

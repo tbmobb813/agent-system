@@ -34,10 +34,10 @@ async def learn_tool_chains() -> None:
 
     try:
         rows = await _db.fetch("""
-            SELECT t.query, tc.tool_name
+            SELECT t.query, t.status, tc.tool_name
             FROM tool_calls tc
             JOIN tasks t ON t.id::text = tc.task_id
-            WHERE t.status = 'completed'
+            WHERE t.status IN ('completed', 'failed')
               AND t.created_at > NOW() - INTERVAL '30 days'
             ORDER BY tc.task_id, tc.iteration
             """)
@@ -46,23 +46,26 @@ async def learn_tool_chains() -> None:
         return
 
     # Group tool names per (task_type, task_id) — preserve call order
+    # Track status alongside so we can compute a real success rate.
     type_sequences: dict[str, list[list[str]]] = {}
-    current_task_tools: dict[
-        str, tuple[str, list[str]]
-    ] = {}  # task_key → (type, [tools])
+    type_outcomes: dict[str, list[bool]] = {}  # task_type → [was_successful, ...]
+    current_task_tools: dict[str, tuple[str, list[str], bool]] = (
+        {}
+    )  # task_key → (type, [tools], success)
 
     for row in rows:
         query = row["query"] or ""
         task_type = classify_query(query)
         tool = row["tool_name"]
-        # Use query as a proxy for task identity within the result set
+        success = row["status"] == "completed"
         key = query[:100]
         if key not in current_task_tools:
-            current_task_tools[key] = (task_type, [])
+            current_task_tools[key] = (task_type, [], success)
         current_task_tools[key][1].append(tool)
 
-    for _key, (task_type, tools) in current_task_tools.items():
+    for _key, (task_type, tools, success) in current_task_tools.items():
         type_sequences.setdefault(task_type, []).append(tools)
+        type_outcomes.setdefault(task_type, []).append(success)
 
     for task_type, sequences in type_sequences.items():
         if len(sequences) < MIN_SAMPLE_SIZE:
@@ -72,8 +75,8 @@ async def learn_tool_chains() -> None:
         all_tools: list[str] = [t for seq in sequences for t in seq]
         top_tools = [tool for tool, _ in Counter(all_tools).most_common(MAX_HINT_TOOLS)]
 
-        # Success rate = all these sequences came from completed tasks
-        success_rate = 1.0  # already filtered to completed tasks above
+        outcomes = type_outcomes.get(task_type, [])
+        success_rate = sum(outcomes) / len(outcomes) if outcomes else 1.0
 
         try:
             await _db.execute(
@@ -135,6 +138,6 @@ async def get_tool_hint(query: str) -> str:
     count = row["sample_count"] or 0
     tools_str = ", ".join(tools)
     return (
-        f"For {task_type} tasks (based on {count} past successful runs), "
+        f"For {task_type} tasks (based on {count} past runs), "
         f"these tools tend to be effective: {tools_str}."
     )
