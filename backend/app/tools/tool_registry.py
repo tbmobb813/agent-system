@@ -348,9 +348,11 @@ class ToolRegistry:
             {
                 "tool": "browser_automation",
                 "ok": browser_ok,
-                "detail": "chromium_binary_found"
-                if browser_ok
-                else "run: playwright install chromium",
+                "detail": (
+                    "chromium_binary_found"
+                    if browser_ok
+                    else "run: playwright install chromium"
+                ),
             }
         )
 
@@ -1239,8 +1241,8 @@ class ToolRegistry:
 
     async def _code_execution(self, code: str, language: str = "python") -> str:
         """
-        Execute code in a sandboxed environment.
-        Requires E2B_API_KEY to be set. Returns placeholder if not configured.
+        Execute code in an E2B cloud sandbox and return the output.
+        Requires E2B_API_KEY. Supports Python by default; pass language= for others.
         """
         logger.info(f"Code execution: {language}")
 
@@ -1251,20 +1253,51 @@ class ToolRegistry:
                 f"Code received ({language}):\n{code}"
             )
 
-        # E2B code interpreter (optional dependency). Official pattern: async context manager.
         try:
-            from e2b_code_interpreter import Sandbox
+            from e2b_code_interpreter import AsyncSandbox
         except ImportError:
             return "Code execution not available — install e2b-code-interpreter package"
 
         try:
-            async with Sandbox() as sbx:
-                result = sbx.run_code(code)
-            output = "\n".join(str(r) for r in result.results)
-            if result.error:
-                output += f"\nError: {result.error}"
-            return output or "(no output)"
+            sbx = await AsyncSandbox.create(
+                api_key=settings.E2B_API_KEY,
+                timeout=120,  # sandbox lifetime in seconds
+            )
+            async with sbx:
+                execution = await sbx.run_code(
+                    code,
+                    language=language if language != "python" else None,
+                    timeout=60,  # per-run execution timeout
+                )
+
+            parts: list[str] = []
+
+            # stdout — print() output and other writes to stdout
+            if execution.logs and execution.logs.stdout:
+                parts.append("".join(execution.logs.stdout).rstrip())
+
+            # rich results — return values, reprs, display() output
+            for result in execution.results or []:
+                text = (result.text or "").strip()
+                if text:
+                    parts.append(text)
+
+            # stderr — warnings, deprecation notices, etc.
+            if execution.logs and execution.logs.stderr:
+                stderr_text = "".join(execution.logs.stderr).rstrip()
+                if stderr_text:
+                    parts.append(f"stderr:\n{stderr_text}")
+
+            # execution error — exception name, message, traceback
+            if execution.error:
+                parts.append(f"{execution.error.name}: {execution.error.value}")
+                if execution.error.traceback:
+                    parts.append(execution.error.traceback.rstrip())
+
+            return "\n\n".join(parts) if parts else "(no output)"
+
         except Exception as e:
+            logger.error(f"Code execution failed: {e}")
             return f"Code execution failed: {e}"
 
     async def _api_call(
