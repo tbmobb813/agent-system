@@ -133,8 +133,10 @@ async def test_ingest_document_stores_chunks_and_returns_summary(monkeypatch):
     assert result["file_type"] == "txt"
     assert result["chunk_count"] == 2
     assert result["total_tokens"] == 12
-    # 3 execute calls: documents row + 2 chunk rows
-    assert fake_conn.execute.await_count == 3
+    # 1 execute call for the documents row; 2 executemany calls for chunk rows
+    # (one batch with embedding, one batch without)
+    assert fake_conn.execute.await_count == 1
+    assert fake_conn.executemany.await_count == 2
 
 
 async def test_search_documents_uses_vector_when_embedding_exists(monkeypatch):
@@ -244,5 +246,6 @@ async def test_ingest_document_truncates_chunk_count(monkeypatch):
     out = await ingest_document("test.txt", b"data", user_id="u1")
 
     assert out["chunk_count"] == 2
-    # document insert + 2 chunk inserts
-    assert fake_conn.execute.await_count == 3
+    # 1 execute call for the documents row; 1 executemany call for 2 embedded chunks
+    assert fake_conn.execute.await_count == 1
+    assert fake_conn.executemany.await_count == 1

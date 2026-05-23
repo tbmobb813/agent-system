@@ -199,17 +199,20 @@ class ConversationManager:
             return 0
         try:
             async with _db.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT content, tokens FROM messages WHERE conversation_id = $1",
+                row = await conn.fetchrow(
+                    """
+                    SELECT COALESCE(SUM(
+                        CASE WHEN tokens IS NOT NULL AND tokens > 0
+                             THEN tokens
+                             ELSE (length(content) / 4)::int
+                        END
+                    ), 0) AS total
+                    FROM messages
+                    WHERE conversation_id = $1
+                    """,
                     conversation_id,
                 )
-            total = 0
-            for r in rows:
-                if r["tokens"]:
-                    total += r["tokens"]
-                else:
-                    total += len(r["content"]) // 4
-            return total
+            return int(row["total"])
         except Exception as e:
             logger.warning(f"Token estimate failed: {e}")
             return 0

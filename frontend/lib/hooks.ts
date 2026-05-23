@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { streamAgent, stopAgent, getCostStatus, getHistory } from './api'
 
 async function notifyTaskDone() {
@@ -89,6 +89,7 @@ export function useAgentStream() {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [taskId, setTaskId] = useState<string | null>(null)
   const [hydrated, setHydrated] = useState(false)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Restore session from localStorage on mount
   useEffect(() => {
@@ -100,10 +101,16 @@ export function useAgentStream() {
     setHydrated(true)
   }, [])
 
-  // Persist session whenever events or conversationId change (after hydration)
+  // Persist session whenever events or conversationId change (after hydration).
+  // Debounced to 200 ms so rapid SSE events during streaming do not hammer
+  // localStorage on every chunk.
   useEffect(() => {
     if (!hydrated) return
-    saveSession(events, conversationId)
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => saveSession(events, conversationId), 200)
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    }
   }, [events, conversationId, hydrated])
 
   const run = useCallback(async (
@@ -283,8 +290,6 @@ export function useHistory() {
       setLoading(false)
     }
   }, [])
-
-  useEffect(() => { refresh() }, [refresh])
 
   return { data, loading, error, refresh }
 }
