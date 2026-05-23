@@ -47,8 +47,16 @@ from cli import client
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 SLASH_COMMANDS: list[str] = [
-    "/new", "/stop", "/retry", "/history", "/skills",
-    "/memory", "/usage", "/clear", "/help", "/exit",
+    "/new",
+    "/stop",
+    "/retry",
+    "/history",
+    "/skills",
+    "/memory",
+    "/usage",
+    "/clear",
+    "/help",
+    "/exit",
 ]
 
 HELP_TEXT = """\
@@ -75,6 +83,7 @@ HELP_TEXT = """\
 
 
 # ── Input widget ──────────────────────────────────────────────────────────────
+
 
 class AgentInput(TextArea):
     """
@@ -149,9 +158,7 @@ class AgentInput(TextArea):
             hist = AgentInput._history
             if not hist:
                 return
-            AgentInput._history_idx = min(
-                AgentInput._history_idx + 1, len(hist) - 1
-            )
+            AgentInput._history_idx = min(AgentInput._history_idx + 1, len(hist) - 1)
             self.load_text(hist[-(AgentInput._history_idx + 1)])
             self.move_cursor(self.get_cursor_line_end_location())
             return
@@ -171,6 +178,7 @@ class AgentInput(TextArea):
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
+
 
 class AgentApp(App[None]):
     CSS = """
@@ -272,7 +280,11 @@ class AgentApp(App[None]):
     # ── Header ────────────────────────────────────────────────────────────────
 
     def _header_text(self) -> str:
-        conv = f"conv:{self._conversation_id[:8]}…" if self._conversation_id else "no conversation"
+        conv = (
+            f"conv:{self._conversation_id[:8]}…"
+            if self._conversation_id
+            else "no conversation"
+        )
         model = self._last_model
         cost = f"${self._spent:.4f}"
         return f" AI AGENT  ·  {conv}  ·  {model}  ·  {cost}"
@@ -365,9 +377,7 @@ class AgentApp(App[None]):
                     if accumulated:
                         output.write("\n" + "".join(accumulated))
                         accumulated.clear()
-                    output.write(
-                        f"[dim]{'─' * 48} done · ${cost:.5f}[/]\n"
-                    )
+                    output.write(f"[dim]{'─' * 48} done · ${cost:.5f}[/]\n")
                     status.update("")
                     self._refresh_header()
                     break
@@ -385,7 +395,9 @@ class AgentApp(App[None]):
                     # Context window info — show once if high
                     pct = event.get("context_percent")
                     if pct and float(pct) > 0.8:
-                        status.update(f"[yellow]context {pct:.0%} full — consider /new[/]")
+                        status.update(
+                            f"[yellow]context {pct:.0%} full — consider /new[/]"
+                        )
 
         except httpx.ConnectError:
             output.write(f"[red]✗ Cannot connect to {client.BASE_URL}[/]")
@@ -522,7 +534,13 @@ class AgentApp(App[None]):
             status = e.get("status", "?")
             cost = e.get("total_cost") or e.get("cost") or 0
             ts = e.get("created_at", "")[:16].replace("T", " ")
-            status_color = "green" if status == "completed" else "red" if status == "failed" else "yellow"
+            status_color = (
+                "green"
+                if status == "completed"
+                else "red"
+                if status == "failed"
+                else "yellow"
+            )
             lines.append(
                 f"  [{status_color}]●[/] [dim]{ts}[/]  {query}  [dim]${float(cost):.4f}[/]"
             )
@@ -541,8 +559,14 @@ class AgentApp(App[None]):
             success = s.get("success_rate") or s.get("success")
             uses = s.get("total_uses") or s.get("count") or s.get("uses") or "?"
             level = str(s.get("proficiency_level") or "")
-            success_str = f"{float(success)*100:.0f}%" if success is not None else "—"
-            level_color = "green" if level == "expert" else "cyan" if level == "competent" else "dim"
+            success_str = f"{float(success) * 100:.0f}%" if success is not None else "—"
+            level_color = (
+                "green"
+                if level == "expert"
+                else "cyan"
+                if level == "competent"
+                else "dim"
+            )
             lines.append(
                 f"  [bold]{name}[/] [dim]{task_type}[/]"
                 f"  success:{success_str}  uses:{uses}"
@@ -564,8 +588,10 @@ class AgentApp(App[None]):
             cat = str(m.get("category", ""))
             ts = str(m.get("created_at", ""))[:10]
             cat_color = {
-                "preference": "magenta", "insight": "green",
-                "fact": "blue", "pattern": "yellow",
+                "preference": "magenta",
+                "insight": "green",
+                "fact": "blue",
+                "pattern": "yellow",
             }.get(cat, "dim")
             lines.append(f"  [{cat_color}]{cat}[/] [dim]{ts}[/]  {content}")
         self._print("\n".join(lines) + "\n")
