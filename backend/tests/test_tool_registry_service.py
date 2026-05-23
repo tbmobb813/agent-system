@@ -494,28 +494,25 @@ async def test_code_execution_import_and_runtime_error_branches(monkeypatch):
     registry = ToolRegistry()
     monkeypatch.setattr("app.config.settings.E2B_API_KEY", "present")
 
-    # ImportError path
-    class _ImportGuard(dict):
-        pass
-
-    original = sys.modules.pop("e2b_code_interpreter", None)
-    try:
-        result_import = await registry._code_execution("print(1)")
-    finally:
-        if original is not None:
-            sys.modules["e2b_code_interpreter"] = original
-
+    # ImportError path — setting the module to None in sys.modules makes
+    # "from e2b_code_interpreter import AsyncSandbox" raise ImportError.
+    monkeypatch.setitem(sys.modules, "e2b_code_interpreter", None)
+    result_import = await registry._code_execution("print(1)")
     assert "install e2b-code-interpreter package" in result_import
 
-    # Runtime error path via fake module
-    class _BoomSandbox:
-        async def __aenter__(self):
+    # Runtime error path — AsyncSandbox.create() raises
+    class _BoomAsyncSandbox:
+        @classmethod
+        async def create(cls, **kwargs):
             raise RuntimeError("sandbox fail")
+
+        async def __aenter__(self):
+            return self
 
         async def __aexit__(self, *args):
             return False
 
-    fake_module = types.SimpleNamespace(Sandbox=lambda: _BoomSandbox())
+    fake_module = types.SimpleNamespace(AsyncSandbox=_BoomAsyncSandbox)
     monkeypatch.setitem(sys.modules, "e2b_code_interpreter", fake_module)
 
     result_runtime = await registry._code_execution("print(1)")
@@ -608,29 +605,193 @@ async def test_brave_search_success_path(monkeypatch):
     assert result["results"][0]["title"] == "News"
 
 
-async def test_code_execution_success_path(monkeypatch):
+async def test_code_execution_success_stdout(monkeypatch):
+    """stdout lines from print() are returned."""
     registry = ToolRegistry()
     monkeypatch.setattr("app.config.settings.E2B_API_KEY", "present")
 
-    class _Result:
-        results = ["ok"]
-        error = None
+    _make_fake_module(monkeypatch, stdout=["hello\n", "world\n"])
 
-    class _Sandbox:
+    result = await registry._code_execution("print('hello'); print('world')")
+    assert "hello" in result
+    assert "world" in result
+
+
+async def test_code_execution_rich_result(monkeypatch):
+    """Rich results (return values, reprs) are included when stdout is empty."""
+    registry = ToolRegistry()
+    monkeypatch.setattr("app.config.settings.E2B_API_KEY", "present")
+
+    _make_fake_module(monkeypatch, result_texts=["42"])
+
+    result = await registry._code_execution("6 * 7")
+    assert "42" in result
+
+
+async def test_code_execution_stderr_included(monkeypatch):
+    """stderr output is labelled and included."""
+    registry = ToolRegistry()
+    monkeypatch.setattr("app.config.settings.E2B_API_KEY", "present")
+
+    _make_fake_module(monkeypatch, stderr=["DeprecationWarning: old api\n"])
+
+    result = await registry._code_execution("import warnings; warnings.warn('old api')")
+    assert "stderr" in result
+    assert "DeprecationWarning" in result
+
+
+async def test_code_execution_error_included(monkeypatch):
+    """Execution errors include name, value, and traceback."""
+    registry = ToolRegistry()
+    monkeypatch.setattr("app.config.settings.E2B_API_KEY", "present")
+
+    _make_fake_module(
+        monkeypatch,
+        error_name="ZeroDivisionError",
+        error_value="division by zero",
+        error_traceback="Traceback (most recent call last):\n  ...",
+    )
+
+    result = await registry._code_execution("1/0")
+    assert "ZeroDivisionError" in result
+    assert "division by zero" in result
+    assert "Traceback" in result
+
+
+async def test_code_execution_no_output_message(monkeypatch):
+    """Returns '(no output)' when all output fields are empty."""
+    registry = ToolRegistry()
+    monkeypatch.setattr("app.config.settings.E2B_API_KEY", "present")
+
+    _make_fake_module(monkeypatch)
+
+    result = await registry._code_execution("x = 1")
+    assert result == "(no output)"
+
+
+async def test_code_execution_non_python_language_passed_through(monkeypatch):
+    """Non-python language is forwarded to run_code."""
+    registry = ToolRegistry()
+    monkeypatch.setattr("app.config.settings.E2B_API_KEY", "present")
+
+    received_language: list = []
+
+    class _FakeSandbox:
+        @classmethod
+        async def create(cls, **kwargs):
+            return cls()
+
         async def __aenter__(self):
             return self
 
         async def __aexit__(self, *args):
-            return False
+            pass
 
-        def run_code(self, code):
-            return _Result()
+        async def run_code(self, code, language=None, timeout=None, **kwargs):
+            received_language.append(language)
+            return _make_execution(stdout=["ok\n"])
 
-    fake_module = types.SimpleNamespace(Sandbox=lambda: _Sandbox())
+    fake_module = types.SimpleNamespace(AsyncSandbox=_FakeSandbox)
     monkeypatch.setitem(sys.modules, "e2b_code_interpreter", fake_module)
 
-    result = await registry._code_execution("print(1)")
-    assert result == "ok"
+    await registry._code_execution("console.log('ok')", language="javascript")
+    assert received_language[0] == "javascript"
+
+
+async def test_code_execution_python_language_passes_none(monkeypatch):
+    """Python (the default) passes language=None to run_code, not 'python'."""
+    registry = ToolRegistry()
+    monkeypatch.setattr("app.config.settings.E2B_API_KEY", "present")
+
+    received_language: list = []
+
+    class _FakeSandbox:
+        @classmethod
+        async def create(cls, **kwargs):
+            return cls()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def run_code(self, code, language=None, timeout=None, **kwargs):
+            received_language.append(language)
+            return _make_execution()
+
+    fake_module = types.SimpleNamespace(AsyncSandbox=_FakeSandbox)
+    monkeypatch.setitem(sys.modules, "e2b_code_interpreter", fake_module)
+
+    await registry._code_execution("x = 1", language="python")
+    assert received_language[0] is None
+
+
+# ── helpers for code execution tests ─────────────────────────────────────────
+
+
+def _make_execution(
+    stdout=None,
+    stderr=None,
+    result_texts=None,
+    error_name=None,
+    error_value=None,
+    error_traceback=None,
+):
+    """Build a minimal fake Execution object matching the e2b v2 API shape."""
+
+    class _Logs:
+        pass
+
+    class _Result:
+        def __init__(self, text):
+            self.text = text
+
+    class _Error:
+        pass
+
+    class _Execution:
+        pass
+
+    logs = _Logs()
+    logs.stdout = list(stdout or [])
+    logs.stderr = list(stderr or [])
+
+    execution = _Execution()
+    execution.logs = logs
+    execution.results = [_Result(t) for t in (result_texts or [])]
+    if error_name:
+        err = _Error()
+        err.name = error_name
+        err.value = error_value or ""
+        err.traceback = error_traceback or ""
+        execution.error = err
+    else:
+        execution.error = None
+
+    return execution
+
+
+def _make_fake_module(monkeypatch, **execution_kwargs):
+    """Register a fake AsyncSandbox in sys.modules returning the given execution."""
+    execution = _make_execution(**execution_kwargs)
+
+    class _FakeSandbox:
+        @classmethod
+        async def create(cls, **kwargs):
+            return cls()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def run_code(self, code, language=None, timeout=None, **kwargs):
+            return execution
+
+    fake_module = types.SimpleNamespace(AsyncSandbox=_FakeSandbox)
+    monkeypatch.setitem(sys.modules, "e2b_code_interpreter", fake_module)
 
 
 def _install_fake_playwright(monkeypatch, *, fail_on_goto: bool = False):

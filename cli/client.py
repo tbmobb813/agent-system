@@ -29,6 +29,7 @@ _HEADERS = {
 
 # ── Streaming ─────────────────────────────────────────────────────────────────
 
+
 async def stream_agent(
     query: str,
     conversation_id: str | None = None,
@@ -44,9 +45,7 @@ async def stream_agent(
     if conversation_id:
         payload["conversation_id"] = conversation_id
 
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(300.0, connect=5.0)
-    ) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=5.0)) as client:
         async with client.stream(
             "POST",
             f"{BASE_URL}/agent/stream",
@@ -64,6 +63,7 @@ async def stream_agent(
 
 # ── Control ───────────────────────────────────────────────────────────────────
 
+
 async def stop_task(task_id: str) -> bool:
     """POST /agent/stop?task_id=... — returns True if accepted."""
     try:
@@ -79,6 +79,7 @@ async def stop_task(task_id: str) -> bool:
 
 
 # ── History ───────────────────────────────────────────────────────────────────
+
 
 async def get_history(limit: int = 15) -> list[dict]:
     """GET /history — returns list of recent task/thread entries."""
@@ -102,6 +103,7 @@ async def get_history(limit: int = 15) -> list[dict]:
 
 # ── Memory ────────────────────────────────────────────────────────────────────
 
+
 async def search_memories(query: str, limit: int = 6) -> list[dict]:
     """GET /memory/search?q=... — semantic/FTS memory search."""
     try:
@@ -120,6 +122,7 @@ async def search_memories(query: str, limit: int = 6) -> list[dict]:
 
 # ── Skills ────────────────────────────────────────────────────────────────────
 
+
 async def get_skills() -> tuple[list[dict], list[str]]:
     """GET /analytics/skills — returns (skills, growth_areas)."""
     try:
@@ -135,6 +138,7 @@ async def get_skills() -> tuple[list[dict], list[str]]:
 
 # ── Budget ────────────────────────────────────────────────────────────────────
 
+
 async def get_cost_status() -> dict:
     """GET /status/costs — budget and spend summary."""
     try:
@@ -149,9 +153,12 @@ async def get_cost_status() -> dict:
 
 # ── Config helpers ────────────────────────────────────────────────────────────
 
+
 def config_errors() -> list[str]:
     """Return list of configuration warnings shown at startup."""
     errors: list[str] = []
     if not API_KEY:
-        errors.append("BACKEND_API_KEY not set — requests will be rejected by the backend")
+        errors.append(
+            "BACKEND_API_KEY not set — requests will be rejected by the backend"
+        )
     return errors

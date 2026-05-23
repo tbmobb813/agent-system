@@ -41,6 +41,9 @@ ruff
 # Browser automation
 playwright
 
+# Code execution sandbox
+e2b-code-interpreter>=2.7.0,<3
+
 # Rate limiting
 slowapi
 redis[hiredis]>=5.0.0
