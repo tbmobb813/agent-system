@@ -49,9 +49,9 @@ async def learn_tool_chains() -> None:
     # Track status alongside so we can compute a real success rate.
     type_sequences: dict[str, list[list[str]]] = {}
     type_outcomes: dict[str, list[bool]] = {}  # task_type → [was_successful, ...]
-    current_task_tools: dict[str, tuple[str, list[str], bool]] = (
-        {}
-    )  # task_key → (type, [tools], success)
+    current_task_tools: dict[
+        str, tuple[str, list[str], bool]
+    ] = {}  # task_key → (type, [tools], success)
 
     for row in rows:
         query = row["query"] or ""

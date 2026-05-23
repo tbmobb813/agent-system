@@ -354,9 +354,9 @@ class AgentOrchestrator:
             last_update=datetime.now(UTC),
         )
         self.active_tasks[task_id] = state
-        tools_used: list[str] = (
-            []
-        )  # initialised here so except handlers can always read it
+        tools_used: list[
+            str
+        ] = []  # initialised here so except handlers can always read it
 
         try:
             # ── Round 1: fully independent startup work in parallel ───────────
