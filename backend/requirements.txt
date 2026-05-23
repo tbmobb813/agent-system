@@ -42,7 +42,7 @@ ruff
 playwright
 
 # Code execution sandbox
-e2b-code-interpreter
+e2b-code-interpreter>=2.7.0,<3
 
 # Rate limiting
 slowapi
