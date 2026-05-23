@@ -34,6 +34,7 @@ import asyncio
 from datetime import datetime
 from typing import ClassVar
 
+import httpx
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
