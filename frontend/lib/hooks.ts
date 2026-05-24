@@ -94,12 +94,6 @@ export function useAgentStream() {
     null,
   )
 
-  const flushPendingSave = () => {
-    if (!pendingSaveRef.current) return
-    saveSession(pendingSaveRef.current.events, pendingSaveRef.current.conversationId)
-    pendingSaveRef.current = null
-  }
-
   // Restore session from localStorage on mount
   useEffect(() => {
     const session = loadSession()
@@ -118,7 +112,9 @@ export function useAgentStream() {
     if (saveTimerRef.current) return
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null
-      flushPendingSave()
+      if (!pendingSaveRef.current) return
+      saveSession(pendingSaveRef.current.events, pendingSaveRef.current.conversationId)
+      pendingSaveRef.current = null
     }, 200)
   }, [events, conversationId, hydrated])
 
@@ -128,7 +124,9 @@ export function useAgentStream() {
         clearTimeout(saveTimerRef.current)
         saveTimerRef.current = null
       }
-      flushPendingSave()
+      if (!pendingSaveRef.current) return
+      saveSession(pendingSaveRef.current.events, pendingSaveRef.current.conversationId)
+      pendingSaveRef.current = null
     }
   }, [])
 
