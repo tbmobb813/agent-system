@@ -90,6 +90,15 @@ export function useAgentStream() {
   const [taskId, setTaskId] = useState<string | null>(null)
   const [hydrated, setHydrated] = useState(false)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingSaveRef = useRef<{ events: StreamEvent[]; conversationId: string | null } | null>(
+    null,
+  )
+
+  const flushPendingSave = () => {
+    if (!pendingSaveRef.current) return
+    saveSession(pendingSaveRef.current.events, pendingSaveRef.current.conversationId)
+    pendingSaveRef.current = null
+  }
 
   // Restore session from localStorage on mount
   useEffect(() => {
@@ -102,16 +111,26 @@ export function useAgentStream() {
   }, [])
 
   // Persist session whenever events or conversationId change (after hydration).
-  // Debounced to 200 ms so rapid SSE events during streaming do not hammer
-  // localStorage on every chunk.
+  // Throttled to at most one write per 200 ms while streaming.
   useEffect(() => {
     if (!hydrated) return
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = setTimeout(() => saveSession(events, conversationId), 200)
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    }
+    pendingSaveRef.current = { events, conversationId }
+    if (saveTimerRef.current) return
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null
+      flushPendingSave()
+    }, 200)
   }, [events, conversationId, hydrated])
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
+      }
+      flushPendingSave()
+    }
+  }, [])
 
   const run = useCallback(async (
     query: string,
