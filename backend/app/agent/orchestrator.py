@@ -1051,7 +1051,6 @@ class AgentOrchestrator:
                                 content=final_text[i : i + chunk_size],
                                 model=agent_model,
                             )
-                            await asyncio.sleep(0.12)
 
                     # ── Save turn to conversation history ─────────────
                     try:

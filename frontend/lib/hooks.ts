@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { streamAgent, stopAgent, getCostStatus, getHistory } from './api'
 
 async function notifyTaskDone() {
@@ -89,6 +89,10 @@ export function useAgentStream() {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [taskId, setTaskId] = useState<string | null>(null)
   const [hydrated, setHydrated] = useState(false)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingSaveRef = useRef<{ events: StreamEvent[]; conversationId: string | null } | null>(
+    null,
+  )
 
   // Restore session from localStorage on mount
   useEffect(() => {
@@ -100,11 +104,31 @@ export function useAgentStream() {
     setHydrated(true)
   }, [])
 
-  // Persist session whenever events or conversationId change (after hydration)
+  // Persist session whenever events or conversationId change (after hydration).
+  // Throttled to at most one write per 200 ms while streaming.
   useEffect(() => {
     if (!hydrated) return
-    saveSession(events, conversationId)
+    pendingSaveRef.current = { events, conversationId }
+    if (saveTimerRef.current) return
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null
+      if (!pendingSaveRef.current) return
+      saveSession(pendingSaveRef.current.events, pendingSaveRef.current.conversationId)
+      pendingSaveRef.current = null
+    }, 200)
   }, [events, conversationId, hydrated])
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
+      }
+      if (!pendingSaveRef.current) return
+      saveSession(pendingSaveRef.current.events, pendingSaveRef.current.conversationId)
+      pendingSaveRef.current = null
+    }
+  }, [])
 
   const run = useCallback(async (
     query: string,
@@ -283,8 +307,6 @@ export function useHistory() {
       setLoading(false)
     }
   }, [])
-
-  useEffect(() => { refresh() }, [refresh])
 
   return { data, loading, error, refresh }
 }

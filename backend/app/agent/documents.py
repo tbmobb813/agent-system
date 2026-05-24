@@ -156,13 +156,13 @@ async def ingest_document(
     user_id = user_id or "default"
     file_type = filename.rsplit(".", 1)[-1].lower() if "." in filename else "txt"
 
-    # 1. Parse
-    text = parse_document(filename, data)
+    # 1. Parse — CPU-bound; run in thread pool to keep the event loop free
+    text = await asyncio.to_thread(parse_document, filename, data)
     if not text.strip():
         raise ValueError("Document appears to be empty or unreadable")
 
-    # 2. Chunk
-    raw_chunks = _token_chunks(text)
+    # 2. Chunk — also CPU-bound (tiktoken tokenisation)
+    raw_chunks = await asyncio.to_thread(_token_chunks, text)
     chunks = raw_chunks[:MAX_CHUNKS]
     if len(raw_chunks) > MAX_CHUNKS:
         logger.warning(
@@ -197,19 +197,16 @@ async def ingest_document(
 
     embeddings = await asyncio.gather(*[_embed_limited(c) for c in chunks])
 
-    stored = 0
+    # 5. Batch-insert all chunks in a single executemany call
     now = datetime.now(UTC)
-    async with _db.db_pool.acquire() as conn:
-        for i, (chunk_text, token_count, embedding) in enumerate(
-            zip(chunks, token_counts, embeddings)
-        ):
-            if embedding:
-                await conn.execute(
-                    """
-                    INSERT INTO document_chunks
-                        (id, document_id, chunk_index, content, token_count, embedding, created_at)
-                    VALUES ($1, $2, $3, $4, $5, $6::vector, $7)
-                    """,
+    rows_with_embedding = []
+    rows_no_embedding = []
+    for i, (chunk_text, token_count, embedding) in enumerate(
+        zip(chunks, token_counts, embeddings)
+    ):
+        if embedding:
+            rows_with_embedding.append(
+                (
                     str(uuid.uuid4()),
                     doc_id,
                     i,
@@ -218,30 +215,41 @@ async def ingest_document(
                     str(embedding),
                     now,
                 )
-            else:
-                await conn.execute(
-                    """
-                    INSERT INTO document_chunks
-                        (id, document_id, chunk_index, content, token_count, created_at)
-                    VALUES ($1, $2, $3, $4, $5, $6)
-                    """,
-                    str(uuid.uuid4()),
-                    doc_id,
-                    i,
-                    chunk_text,
-                    token_count,
-                    now,
-                )
-            stored += 1
+            )
+        else:
+            rows_no_embedding.append(
+                (str(uuid.uuid4()), doc_id, i, chunk_text, token_count, now)
+            )
 
+    async with _db.db_pool.acquire() as conn:
+        if rows_with_embedding:
+            await conn.executemany(
+                """
+                INSERT INTO document_chunks
+                    (id, document_id, chunk_index, content, token_count, embedding, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6::vector, $7)
+                """,
+                rows_with_embedding,
+            )
+        if rows_no_embedding:
+            await conn.executemany(
+                """
+                INSERT INTO document_chunks
+                    (id, document_id, chunk_index, content, token_count, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                """,
+                rows_no_embedding,
+            )
+
+    stored = len(rows_with_embedding) + len(rows_no_embedding)
     logger.info(f"Ingested {filename}: {stored} chunks stored (doc_id={doc_id})")
     return {
         "document_id": doc_id,
         "filename": filename,
         "file_type": file_type,
         "chunk_count": stored,
-        "total_tokens": sum(_count_tokens(c) for c in chunks),
-        "embeddings": stored if settings.OPENAI_API_KEY else 0,
+        "total_tokens": sum(token_counts),
+        "embeddings": len(rows_with_embedding) if settings.OPENAI_API_KEY else 0,
     }
 
 

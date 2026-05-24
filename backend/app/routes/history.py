@@ -41,8 +41,12 @@ async def get_history(
     Search falls back to a flat per-task view so individual messages are findable.
     """
     if q and q.strip():
-        # Search: flat per-task results so every matching message is surfaced
-        pattern = f"%{q.strip()}%"
+        # Search: flat per-task results using the GIN full-text index
+        # tasks_query_result_fts (created in migration 010).
+        # The WHERE expression to_tsvector('english', coalesce(...) || ' ' || coalesce(...))
+        # exactly matches the index definition so PostgreSQL uses the GIN index
+        # rather than a full table scan.
+        tsq = q.strip()
         rows = await fetch(
             """
             SELECT
@@ -62,17 +66,24 @@ async def get_history(
                     ORDER BY tf.created_at DESC LIMIT 1
                 ) AS feedback_signal
             FROM tasks t
-            WHERE t.query ILIKE $3 OR t.result ILIKE $3
+            WHERE to_tsvector('english',
+                      coalesce(t.query, '') || ' ' || coalesce(t.result, ''))
+                  @@ plainto_tsquery('english', $3)
             ORDER BY t.created_at DESC
             LIMIT $1 OFFSET $2
             """,
             limit,
             offset,
-            pattern,
+            tsq,
         )
         total = await fetchval(
-            "SELECT COUNT(*) FROM tasks WHERE query ILIKE $1 OR result ILIKE $1",
-            pattern,
+            """
+            SELECT COUNT(*) FROM tasks
+            WHERE to_tsvector('english',
+                      coalesce(query, '') || ' ' || coalesce(result, ''))
+                  @@ plainto_tsquery('english', $1)
+            """,
+            tsq,
         )
         return {
             "tasks": [dict(r) for r in rows],

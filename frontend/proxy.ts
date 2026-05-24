@@ -4,13 +4,21 @@ import type { NextRequest } from 'next/server'
 const SESSION_COOKIE = 'agent-session'
 const SESSION_MESSAGE = 'authenticated'
 
+// Cache the computed HMAC token — it only changes when SESSION_SECRET changes,
+// which requires a process restart anyway.
+let _cachedToken: string | null = null
+let _cachedSecret: string | null = null
+
 async function computeToken(secret: string): Promise<string> {
+  if (_cachedToken !== null && _cachedSecret === secret) return _cachedToken
   const enc = new TextEncoder()
   const key = await crypto.subtle.importKey(
     'raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
   )
   const sig = await crypto.subtle.sign('HMAC', key, enc.encode(SESSION_MESSAGE))
-  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('')
+  _cachedToken = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('')
+  _cachedSecret = secret
+  return _cachedToken
 }
 
 export async function proxy(request: NextRequest) {

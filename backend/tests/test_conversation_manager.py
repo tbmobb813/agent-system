@@ -85,13 +85,15 @@ async def test_save_turn_is_noop_when_no_db(monkeypatch):
 async def test_estimate_tokens_counts_stored_tokens_and_falls_back_to_length(
     monkeypatch,
 ):
-    fake_rows = [
-        {"content": "a" * 400, "tokens": 100},  # has stored tokens
-        {"content": "b" * 400, "tokens": 0},  # no stored, estimate from length
-    ]
+    # The implementation now pushes the row-level fallback into a single SQL
+    # SUM:  CASE WHEN tokens > 0 THEN tokens ELSE length(content)/4 END
+    # Row 1: tokens=100 → contributes 100
+    # Row 2: tokens=0  → contributes 400/4 = 100
+    # DB returns a single scalar: total = 200
+    fake_row = {"total": 200}
 
     fake_conn = AsyncMock()
-    fake_conn.fetch = AsyncMock(return_value=fake_rows)
+    fake_conn.fetchrow = AsyncMock(return_value=fake_row)
 
     fake_pool = AsyncMock()
     fake_pool.acquire = lambda: AsyncContextManager(fake_conn)
